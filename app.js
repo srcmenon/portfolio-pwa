@@ -30,6 +30,7 @@ updateFX();
 document.getElementById("addAsset").onclick = () => {
 
 let name = prompt("Asset name");
+if(!name) return;
 let ticker = prompt("Ticker (example: NVDA)");
 let broker = prompt("Broker (Kite / Scalable / TradeRepublic / eToro)");
 let type = prompt("Asset type (Stock / ETF / Crypto / Mutual Fund)");
@@ -69,9 +70,9 @@ table.innerHTML = "";
 let total = 0;
 
 req.result.forEach(a=>{
-
-let pl = (a.currentPrice - a.buyPrice) * a.quantity;
-let value = a.currentPrice * a.quantity;
+  
+let pl = ((a.currentPrice || 0) - (a.buyPrice || 0)) * (a.quantity || 0);
+let value = (a.currentPrice || 0) * (a.quantity || 0);
 total += convertToEUR(value, a.currency);
 
 let row = `<tr>
@@ -127,29 +128,65 @@ loadAssets();
 };
 
 }
+async function fetchPrice(ticker){
 
+try{
+
+let url = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=" + ticker;
+
+let r = await fetch(url);
+
+let data = await r.json();
+
+return data.quoteResponse.result[0].regularMarketPrice;
+
+}catch(e){
+
+console.log("Price fetch failed", ticker);
+
+return null;
+
+}
+
+}
 async function updatePrices(){
 
-let tx = db.transaction("assets","readonly");
+let tx = db.transaction("assets","readwrite");
+let store = tx.objectStore("assets");
 
-let assets = await tx.objectStore("assets").getAll();
+let req = store.getAll();
+
+req.onsuccess = async () => {
+
+let assets = req.result;
 
 for (let a of assets){
+
+try{
 
 let price = await fetchPrice(a.ticker);
 
 a.currentPrice = price;
 
+store.put(a);
+
+}catch(e){
+
+console.log("Price fetch failed for", a.ticker);
+
 }
+
+}
+
+loadAssets();
+
+};
 
 }
 
 function convertToEUR(value, currency){
 
 return value * (FX[currency] || 1);
-
-}
-return value * FX[currency];
 
 }
 
@@ -165,3 +202,6 @@ return allocation;
 
 }
 setTimeout(loadAssets,500);
+if(navigator.onLine){
+setTimeout(updatePrices,2000);
+}
