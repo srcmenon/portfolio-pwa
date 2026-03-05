@@ -1,8 +1,31 @@
 if ('serviceWorker' in navigator) {
 navigator.serviceWorker.register('sw.js');
 }
+let FX = {
+EUR:1,
+USD:0.92,
+INR:0.011
+};
+async function updateFX(){
 
+try{
+
+let r = await fetch("https://api.exchangerate.host/latest?base=EUR");
+
+let data = await r.json();
+
+FX.USD = 1 / data.rates.USD;
+FX.INR = 1 / data.rates.INR;
+
+}catch(e){
+
+console.log("FX update failed, using cached rates");
+
+}
+
+}
 initDB();
+updateFX();
 
 document.getElementById("addAsset").onclick = () => {
 
@@ -48,7 +71,8 @@ let total = 0;
 req.result.forEach(a=>{
 
 let pl = (a.currentPrice - a.buyPrice) * a.quantity;
-total += a.currentPrice * a.quantity;
+let value = a.currentPrice * a.quantity;
+total += convertToEUR(value, a.currency);
 
 let row = `<tr>
 <td>${a.name}</td>
@@ -122,12 +146,9 @@ a.currentPrice = price;
 
 function convertToEUR(value, currency){
 
-const FX = {
-EUR:1,
-USD:0.92,
-INR:0.011
-};
+return value * (FX[currency] || 1);
 
+}
 return value * FX[currency];
 
 }
