@@ -1,0 +1,50 @@
+body {
+font-family: Arial, sans-serif;
+background: #111;
+color: #fff;
+margin: 0;
+padding: 0;
+}
+
+header {
+background: #222;
+padding: 10px;
+text-align: center;
+}
+
+#summary {
+display: flex;
+justify-content: space-around;
+padding: 10px;
+}
+
+.card {
+background: #1e1e1e;
+padding: 10px;
+border-radius: 8px;
+text-align: center;
+width: 45%;
+}
+
+table {
+width: 100%;
+border-collapse: collapse;
+}
+
+th, td {
+padding: 8px;
+border-bottom: 1px solid #333;
+text-align: center;
+}
+
+#addAsset {
+position: fixed;
+bottom: 20px;
+right: 20px;
+font-size: 24px;
+padding: 15px;
+border-radius: 50%;
+background: #00c853;
+color: white;
+border: none;
+}

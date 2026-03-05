@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Global Investor Dashboard</title>
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<header>
+<h1>Global Portfolio</h1>
+</header>
+
+<section id="summary">
+
+<div class="card">
+<h3>Total Portfolio</h3>
+<p id="totalValue">€0</p>
+</div>
+
+<div class="card">
+<h3>Total Assets</h3>
+<p id="assetCount">0</p>
+</div>
+
+</section>
+
+<section>
+
+<table id="assetTable">
+<thead>
+<tr>
+<th>Asset</th>
+<th>Qty</th>
+<th>Buy</th>
+<th>Current</th>
+<th>P/L</th>
+</tr>
+</thead>
+
+<tbody></tbody>
+</table>
+
+</section>
+
+<button id="addAsset">+</button>
+
+<script src="db.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>
