@@ -14,8 +14,10 @@ let r = await fetch("https://api.exchangerate.host/latest?base=EUR");
 
 let data = await r.json();
 
-FX.USD = 1 / data.rates.USD;
-FX.INR = 1 / data.rates.INR;
+if(data && data.rates){
+FX.USD = 1 / (data.rates.USD || 1);
+FX.INR = 1 / (data.rates.INR || 1);
+}
 
 }catch(e){
 
@@ -27,35 +29,6 @@ console.log("FX update failed, using cached rates");
 initDB();
 updateFX();
 
-document.getElementById("addAsset").onclick = () => {
-
-let name = prompt("Asset name");
-if(!name) return;
-let ticker = prompt("Ticker (example: NVDA)");
-let broker = prompt("Broker (Kite / Scalable / TradeRepublic / eToro)");
-let type = prompt("Asset type (Stock / ETF / Crypto / Mutual Fund)");
-let qty = parseFloat(prompt("Quantity"));
-let price = parseFloat(prompt("Buy price"));
-let currency = prompt("Currency (EUR / USD / INR)");
-let buyDate = prompt("Buy date (YYYY-MM-DD)");
-
-let tx = db.transaction("assets","readwrite");
-
-tx.objectStore("assets").add({
-name:name,
-ticker:ticker,
-broker:broker,
-type:type,
-quantity:qty,
-buyPrice:price,
-currentPrice:price,
-currency:currency,
-buyDate:buyDate
-});
-
-loadAssets();
-
-};
 function loadAssets(){
 
 let tx = db.transaction("assets","readonly");
@@ -65,6 +38,7 @@ let req = store.getAll();
 req.onsuccess = () => {
 
 let table = document.querySelector("#assetTable tbody");
+if(!table) return;
 table.innerHTML = "";
 
 let total = 0;
@@ -88,8 +62,11 @@ table.innerHTML += row;
 
 });
 
-document.getElementById("assetCount").innerText = req.result.length;
-document.getElementById("totalValue").innerText = "€" + total.toFixed(2);
+let countEl = document.getElementById("assetCount");
+let valueEl = document.getElementById("totalValue");
+
+if(countEl) countEl.innerText = req.result.length;
+if(valueEl) valueEl.innerText = "€" + total.toFixed(2);
 
 };
 
@@ -138,7 +115,11 @@ let r = await fetch(url);
 
 let data = await r.json();
 
-return data.quoteResponse.result[0].regularMarketPrice;
+if(!data.quoteResponse.result.length) return null;
+
+let result = data.quoteResponse.result[0];
+if(!result) return null;
+return result.regularMarketPrice || null;
 
 }catch(e){
 
@@ -161,14 +142,15 @@ req.onsuccess = async () => {
 let assets = req.result;
 
 for (let a of assets){
-
+if(!a.ticker) continue;
 try{
 
 let price = await fetchPrice(a.ticker);
 
+if(price !== null && price !== undefined){
 a.currentPrice = price;
-
 store.put(a);
+}
 
 }catch(e){
 
@@ -186,6 +168,7 @@ loadAssets();
 
 function convertToEUR(value, currency){
 
+if(!currency) return value;
 return value * (FX[currency] || 1);
 
 }
@@ -201,7 +184,51 @@ allocation[a.type] = (allocation[a.type] || 0) + a.currentPrice * a.quantity;
 return allocation;
 
 }
-setTimeout(loadAssets,500);
-if(navigator.onLine){
-setTimeout(updatePrices,2000);
+window.addEventListener("load", () => {
+
+let addBtn = document.getElementById("addAsset");
+
+if(addBtn){
+addBtn.onclick = () => {
+
+let name = prompt("Asset name");
+if(!name) return;
+
+let ticker = prompt("Ticker (example: NVDA)");
+let broker = prompt("Broker (Kite / Scalable / TradeRepublic / eToro)");
+let type = prompt("Asset type (Stock / ETF / Crypto / Mutual Fund)");
+let qty = parseFloat(prompt("Quantity")) || 0;
+let price = parseFloat(prompt("Buy price")) || 0;
+let currency = prompt("Currency (EUR / USD / INR)");
+let buyDate = prompt("Buy date (YYYY-MM-DD)");
+
+let tx = db.transaction("assets","readwrite");
+
+tx.objectStore("assets").add({
+name:name,
+ticker:ticker,
+broker:broker,
+type:type,
+quantity:qty,
+buyPrice:price,
+currentPrice:price,
+currency:currency,
+buyDate:buyDate
+});
+
+loadAssets();
+
+};
 }
+
+loadAssets();
+
+if(navigator.onLine){
+setInterval(() => {
+if(navigator.onLine){
+updatePrices();
+}
+},300000);
+}
+
+});
