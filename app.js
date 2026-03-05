@@ -78,4 +78,69 @@ tx.objectStore("assets").delete(id);
 loadAssets();
 
 }
+function editAsset(id){
+
+let newQty = prompt("New quantity");
+let newPrice = prompt("New buy price");
+
+let tx = db.transaction("assets","readwrite");
+
+let store = tx.objectStore("assets");
+
+let req = store.get(id);
+
+req.onsuccess = () => {
+
+let asset = req.result;
+
+asset.quantity = newQty;
+asset.buyPrice = newPrice;
+
+store.put(asset);
+
+loadAssets();
+
+};
+
+}
+
+async function updatePrices(){
+
+let tx = db.transaction("assets","readonly");
+
+let assets = await tx.objectStore("assets").getAll();
+
+for (let a of assets){
+
+let price = await fetchPrice(a.ticker);
+
+a.currentPrice = price;
+
+}
+
+}
+
+function convertToEUR(value, currency){
+
+const FX = {
+EUR:1,
+USD:0.92,
+INR:0.011
+};
+
+return value * FX[currency];
+
+}
+
+function calculateAllocation(assets){
+
+let allocation = {};
+
+assets.forEach(a=>{
+allocation[a.type] = (allocation[a.type] || 0) + a.currentPrice * a.quantity;
+});
+
+return allocation;
+
+}
 setTimeout(loadAssets,500);
