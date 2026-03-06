@@ -238,11 +238,13 @@ document.getElementById("assetPrice").value="";
 loadAssets();
 
 if(navigator.onLine){
+updatePrices();   // run once immediately
+
 setInterval(()=>{
 if(navigator.onLine){
 updatePrices();
 }
-},300000);
+},300000);   // refresh every 5 minutes
 }
 
 });
