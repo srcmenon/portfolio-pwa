@@ -109,17 +109,19 @@ async function fetchPrice(ticker){
 
 try{
 
-let url = "https://query1.finance.yahoo.com/v7/finance/quote?symbols=" + ticker;
+let url = "https://query2.finance.yahoo.com/v8/finance/chart/" + ticker;
 
 let r = await fetch(url);
 
 let data = await r.json();
 
-if(!data.quoteResponse.result.length) return null;
+let result = data.chart.result;
 
-let result = data.quoteResponse.result[0];
 if(!result) return null;
-return result.regularMarketPrice || null;
+
+let price = result[0].meta.regularMarketPrice;
+
+return price || null;
 
 }catch(e){
 
