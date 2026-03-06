@@ -27,7 +27,45 @@
 </div>
 
 </section>
+<div id="assetForm" class="card">
 
+<h3>Add Asset</h3>
+
+<input id="assetName" placeholder="Asset Name">
+
+<input id="assetTicker" placeholder="Ticker (example: NVDA or BTC-USD)">
+
+<select id="assetBroker">
+<option value="">Broker</option>
+<option>Kite</option>
+<option>Scalable</option>
+<option>TradeRepublic</option>
+<option>eToro</option>
+</select>
+
+<select id="assetType">
+<option value="">Asset Type</option>
+<option>Stock</option>
+<option>ETF</option>
+<option>Crypto</option>
+<option>Mutual Fund</option>
+</select>
+
+<select id="assetCurrency">
+<option value="EUR">EUR</option>
+<option value="USD">USD</option>
+<option value="INR">INR</option>
+</select>
+
+<input id="assetQty" type="number" step="any" placeholder="Quantity">
+
+<input id="assetPrice" type="number" step="any" placeholder="Buy Price">
+
+<input id="assetDate" type="date">
+
+<button id="saveAsset">Add Asset</button>
+
+</div>
 <section>
 
 <table id="assetTable">
