@@ -261,19 +261,26 @@ updatePrices();
 });
 window.addEventListener("load", () => {
 
-document.querySelectorAll(".tabBtn").forEach(btn=>{
+document.querySelectorAll(".tabBtn").forEach(btn => {
+
 btn.onclick = () => {
 
-document.querySelectorAll(".tabBtn").forEach(b=>b.classList.remove("active"));
-document.querySelectorAll(".tabContent").forEach(c=>c.classList.remove("active"));
+document.querySelectorAll(".tabBtn").forEach(b => b.classList.remove("active"));
+document.querySelectorAll(".tabContent").forEach(c => c.classList.remove("active"));
 
 btn.classList.add("active");
 
-document.getElementById(btn.dataset.tab).classList.add("active");
+let target = document.getElementById(btn.dataset.tab);
+if(target){
+target.classList.add("active");
+}
 
 drawCharts();
 
-}};
+};
+
+});
+
 });
 function calculateAllocationByType(assets){
 
