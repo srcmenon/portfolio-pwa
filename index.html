@@ -7,7 +7,11 @@
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="style.css">
 </head>
-
+<div id="tabs">
+<button class="tabBtn active" data-tab="portfolioTab">Portfolio</button>
+<button class="tabBtn" data-tab="insightsTab">Insights</button>
+</div>
+<div id="portfolioTab" class="tabContent active">
 <body>
 
 <header>
@@ -81,7 +85,21 @@
 </table>
 
 </section>
+</div>
+<div id="insightsTab" class="tabContent">
 
+<div class="card">
+<h3>Asset Allocation</h3>
+<canvas id="allocationChart"></canvas>
+</div>
+
+<div class="card">
+<h3>Currency Exposure</h3>
+<canvas id="currencyChart"></canvas>
+</div>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="db.js"></script>
 <script src="app.js"></script>
 
