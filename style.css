@@ -86,3 +86,28 @@ font-size:24px;
 box-shadow:0 4px 10px rgba(0,0,0,0.2);
 cursor:pointer;
 }
+#tabs{
+display:flex;
+gap:10px;
+margin:20px;
+}
+
+.tabBtn{
+padding:10px 20px;
+border:none;
+background:#333;
+color:white;
+cursor:pointer;
+}
+
+.tabBtn.active{
+background:#2ecc71;
+}
+
+.tabContent{
+display:none;
+}
+
+.tabContent.active{
+display:block;
+}
