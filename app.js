@@ -132,7 +132,7 @@ return null;
 }
 async function updatePrices(){
 
-let tx = db.transaction("assets","readwrite");
+let tx = db.transaction("assets","readonly");
 let store = tx.objectStore("assets");
 
 let req = store.getAll();
@@ -142,14 +142,22 @@ req.onsuccess = async () => {
 let assets = req.result;
 
 for (let a of assets){
+
 if(!a.ticker) continue;
+
 try{
 
 let price = await fetchPrice(a.ticker);
 
 if(price !== null && price !== undefined){
+
+let tx2 = db.transaction("assets","readwrite");
+let store2 = tx2.objectStore("assets");
+
 a.currentPrice = price;
-store.put(a);
+
+store2.put(a);
+
 }
 
 }catch(e){
