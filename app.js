@@ -109,27 +109,19 @@ async function fetchPrice(ticker){
 
 try{
 
-let url = "https://query2.finance.yahoo.com/v8/finance/chart/" + ticker;
+let url = "https://financialmodelingprep.com/api/v3/quote/" + ticker + "?apikey=demo";
 
 let r = await fetch(url);
 
 let data = await r.json();
 
-console.log("Yahoo response:", data);
+if(!data || !data.length) return null;
 
-let result = data.chart?.result;
-
-if(!result) return null;
-
-let price = result[0]?.meta?.regularMarketPrice;
-
-console.log("Price fetched:", ticker, price);
-
-return price || null;
+return data[0].price;
 
 }catch(e){
 
-console.log("Price fetch failed", ticker, e);
+console.log("Price fetch failed", ticker);
 
 return null;
 
