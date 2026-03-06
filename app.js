@@ -244,3 +244,81 @@ updatePrices();
 }
 
 });
+document.querySelectorAll(".tabBtn").forEach(btn=>{
+btn.onclick = () => {
+
+document.querySelectorAll(".tabBtn").forEach(b=>b.classList.remove("active"));
+document.querySelectorAll(".tabContent").forEach(c=>c.classList.remove("active"));
+
+btn.classList.add("active");
+
+document.getElementById(btn.dataset.tab).classList.add("active");
+
+drawCharts();
+
+};
+});
+function calculateAllocationByType(assets){
+
+let result = {};
+
+assets.forEach(a=>{
+let value = (a.currentPrice || 0) * (a.quantity || 0);
+
+result[a.type] = (result[a.type] || 0) + value;
+});
+
+return result;
+
+}
+function calculateCurrencyExposure(assets){
+
+let result = {};
+
+assets.forEach(a=>{
+
+let value = (a.currentPrice || 0) * (a.quantity || 0);
+
+result[a.currency] = (result[a.currency] || 0) + value;
+
+});
+
+return result;
+
+}
+function drawCharts(){
+
+let tx = db.transaction("assets","readonly");
+let store = tx.objectStore("assets");
+let req = store.getAll();
+
+req.onsuccess = () => {
+
+let assets = req.result;
+
+let allocation = calculateAllocationByType(assets);
+let currencies = calculateCurrencyExposure(assets);
+
+new Chart(document.getElementById("allocationChart"),{
+type:"pie",
+data:{
+labels:Object.keys(allocation),
+datasets:[{
+data:Object.values(allocation)
+}]
+}
+});
+
+new Chart(document.getElementById("currencyChart"),{
+type:"pie",
+data:{
+labels:Object.keys(currencies),
+datasets:[{
+data:Object.values(currencies)
+}]
+}
+});
+
+};
+
+}
