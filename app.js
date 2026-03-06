@@ -1,3 +1,5 @@
+let allocationChartInstance = null;
+let currencyChartInstance = null;
 if ('serviceWorker' in navigator) {
 navigator.serviceWorker.register('sw.js');
 }
@@ -28,6 +30,7 @@ console.log("FX update failed, using cached rates");
 }
 initDB();
 updateFX();
+setInterval(updateFX,3600000);
 
 function loadAssets(){
 
@@ -67,7 +70,9 @@ let valueEl = document.getElementById("totalValue");
 
 if(countEl) countEl.innerText = req.result.length;
 if(valueEl) valueEl.innerText = "€" + total.toFixed(2);
-
+if(document.getElementById("insightsTab")?.classList.contains("active")){
+drawCharts();
+}
 };
 
 }
@@ -137,6 +142,9 @@ req.onsuccess = async () => {
 
 let assets = req.result;
 
+let tx2 = db.transaction("assets","readwrite");
+let store2 = tx2.objectStore("assets");
+
 for (let a of assets){
 
 if(!a.ticker) continue;
@@ -146,9 +154,6 @@ try{
 let price = await fetchPrice(a.ticker);
 
 if(price !== null && price !== undefined){
-
-let tx2 = db.transaction("assets","readwrite");
-let store2 = tx2.objectStore("assets");
 
 a.currentPrice = price;
 
@@ -164,7 +169,9 @@ console.log("Price fetch failed for", a.ticker);
 
 }
 
+tx2.oncomplete = () => {
 loadAssets();
+};
 
 };
 
@@ -182,7 +189,12 @@ function calculateAllocation(assets){
 let allocation = {};
 
 assets.forEach(a=>{
-allocation[a.type] = (allocation[a.type] || 0) + a.currentPrice * a.quantity;
+
+let value = (a.currentPrice || 0) * (a.quantity || 0);
+let type = a.type || "Other";
+
+allocation[type] = (allocation[type] || 0) + value;
+
 });
 
 return allocation;
@@ -223,7 +235,10 @@ buyDate:buyDate
 });
 
 loadAssets();
-
+document.getElementById("assetBroker").value="";
+document.getElementById("assetType").value="";
+document.getElementById("assetCurrency").value="EUR";
+document.getElementById("assetDate").value="";
 document.getElementById("assetName").value="";
 document.getElementById("assetTicker").value="";
 document.getElementById("assetQty").value="";
@@ -244,6 +259,8 @@ updatePrices();
 }
 
 });
+window.addEventListener("load", () => {
+
 document.querySelectorAll(".tabBtn").forEach(btn=>{
 btn.onclick = () => {
 
@@ -256,16 +273,19 @@ document.getElementById(btn.dataset.tab).classList.add("active");
 
 drawCharts();
 
-};
+}};
 });
 function calculateAllocationByType(assets){
 
 let result = {};
 
 assets.forEach(a=>{
+
+let type = a.type || "Other";
 let value = (a.currentPrice || 0) * (a.quantity || 0);
 
-result[a.type] = (result[a.type] || 0) + value;
+result[type] = (result[type] || 0) + value;
+
 });
 
 return result;
@@ -277,9 +297,10 @@ let result = {};
 
 assets.forEach(a=>{
 
+let currency = a.currency || "Unknown";
 let value = (a.currentPrice || 0) * (a.quantity || 0);
 
-result[a.currency] = (result[a.currency] || 0) + value;
+result[currency] = (result[currency] || 0) + value;
 
 });
 
@@ -287,7 +308,10 @@ return result;
 
 }
 function drawCharts(){
+let allocCanvas = document.getElementById("allocationChart");
+let currCanvas = document.getElementById("currencyChart");
 
+if(!allocCanvas || !currCanvas) return;
 let tx = db.transaction("assets","readonly");
 let store = tx.objectStore("assets");
 let req = store.getAll();
@@ -299,22 +323,44 @@ let assets = req.result;
 let allocation = calculateAllocationByType(assets);
 let currencies = calculateCurrencyExposure(assets);
 
-new Chart(document.getElementById("allocationChart"),{
+if(allocationChartInstance){
+allocationChartInstance.destroy();
+}
+
+if(currencyChartInstance){
+currencyChartInstance.destroy();
+}
+
+allocationChartInstance = new Chart(document.getElementById("allocationChart"),{
 type:"pie",
 data:{
 labels:Object.keys(allocation),
 datasets:[{
-data:Object.values(allocation)
+data:Object.values(allocation),
+backgroundColor:[
+"#2ecc71",
+"#3498db",
+"#f39c12",
+"#e74c3c",
+"#9b59b6"
+]
 }]
 }
 });
 
-new Chart(document.getElementById("currencyChart"),{
+currencyChartInstance = new Chart(document.getElementById("currencyChart"),{
 type:"pie",
 data:{
 labels:Object.keys(currencies),
 datasets:[{
-data:Object.values(currencies)
+data:Object.values(currencies),
+backgroundColor:[
+"#2ecc71",
+"#3498db",
+"#f39c12",
+"#e74c3c",
+"#9b59b6"
+]
 }]
 }
 });
