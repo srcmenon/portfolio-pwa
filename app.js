@@ -115,17 +115,21 @@ let r = await fetch(url);
 
 let data = await r.json();
 
-let result = data.chart.result;
+console.log("Yahoo response:", data);
+
+let result = data.chart?.result;
 
 if(!result) return null;
 
-let price = result[0].meta.regularMarketPrice;
+let price = result[0]?.meta?.regularMarketPrice;
+
+console.log("Price fetched:", ticker, price);
 
 return price || null;
 
 }catch(e){
 
-console.log("Price fetch failed", ticker);
+console.log("Price fetch failed", ticker, e);
 
 return null;
 
