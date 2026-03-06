@@ -109,15 +109,19 @@ async function fetchPrice(ticker){
 
 try{
 
-let url = "https://financialmodelingprep.com/api/v3/quote/" + ticker + "?apikey=demo";
+let url = "https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=" 
++ ticker + 
+"&apikey=PMH16M5KPHMVZLK7";
 
 let r = await fetch(url);
 
 let data = await r.json();
 
-if(!data || !data.length) return null;
+let price = data["Global Quote"]?.["05. price"];
 
-return data[0].price;
+if(!price) return null;
+
+return parseFloat(price);
 
 }catch(e){
 
