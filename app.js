@@ -109,23 +109,17 @@ async function fetchPrice(ticker){
 
 try{
 
-let url = "https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=" 
-+ ticker + 
-"&apikey=PMH16M5KPHMVZLK7";
-
-let r = await fetch(url);
+let r = await fetch("/api/price?ticker=" + ticker);
 
 let data = await r.json();
 
-let price = data["Global Quote"]?.["05. price"];
+console.log("Price received:", ticker, data.price);
 
-if(!price) return null;
-
-return parseFloat(price);
+return data.price || null;
 
 }catch(e){
 
-console.log("Price fetch failed", ticker);
+console.log("Price fetch failed", ticker, e);
 
 return null;
 
@@ -204,7 +198,7 @@ saveBtn.onclick = () => {
 let name = document.getElementById("assetName").value;
 if(!name) return;
 
-let ticker = document.getElementById("assetTicker").value;
+let ticker = document.getElementById("assetTicker").value.trim().toUpperCase();
 let broker = document.getElementById("assetBroker").value;
 let type = document.getElementById("assetType").value;
 
@@ -240,13 +234,13 @@ document.getElementById("assetPrice").value="";
 loadAssets();
 
 if(navigator.onLine){
-updatePrices();   // run once immediately
+updatePrices();
 
 setInterval(()=>{
 if(navigator.onLine){
 updatePrices();
 }
-},300000);   // refresh every 5 minutes
+},300000);
 }
 
 });
