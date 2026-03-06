@@ -189,7 +189,45 @@ window.addEventListener("load", () => {
 let addBtn = document.getElementById("addAsset");
 
 if(addBtn){
-addBtn.onclick = () => {
+let saveBtn = document.getElementById("saveAsset");
+
+if(saveBtn){
+saveBtn.onclick = () => {
+
+let name = document.getElementById("assetName").value;
+if(!name) return;
+
+let ticker = document.getElementById("assetTicker").value;
+let broker = document.getElementById("assetBroker").value;
+let type = document.getElementById("assetType").value;
+
+let qty = parseFloat(document.getElementById("assetQty").value) || 0;
+let price = parseFloat(document.getElementById("assetPrice").value) || 0;
+
+let currency = document.getElementById("assetCurrency").value;
+let buyDate = document.getElementById("assetDate").value;
+
+let tx = db.transaction("assets","readwrite");
+
+tx.objectStore("assets").add({
+name:name,
+ticker:ticker,
+broker:broker,
+type:type,
+quantity:qty,
+buyPrice:price,
+currentPrice:price,
+currency:currency,
+buyDate:buyDate
+});
+
+loadAssets();
+document.getElementById("assetName").value="";
+document.getElementById("assetTicker").value="";
+document.getElementById("assetQty").value="";
+document.getElementById("assetPrice").value="";
+};
+}
 
 let name = prompt("Asset name");
 if(!name) return;
