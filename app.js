@@ -44,7 +44,16 @@ console.log("FX update failed, using cached rates");
 initDB();
 updateFX();
 setInterval(updateFX,3600000);
+function startApp(){
 
+loadAssets();
+
+if(navigator.onLine){
+updatePrices();
+recordPortfolioSnapshot();
+}
+
+}
 function loadAssets(){
 
 if(!db) return;
