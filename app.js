@@ -1,6 +1,7 @@
 let allocationChartInstance = null;
 let currencyChartInstance = null;
 let priceUpdateRunning = false;
+let growthChartInstance = null;
 if ('serviceWorker' in navigator) {
 navigator.serviceWorker.register('sw.js');
 }
@@ -521,7 +522,7 @@ return d.toLocaleDateString();
 
 let values = history.map(h=>h.value);
 
-new Chart(canvas,{
+if(growthChartInstance){ growthChartInstance.destroy(); }  growthChartInstance = new Chart(canvas,{
 type:"line",
 data:{
 labels:labels,
