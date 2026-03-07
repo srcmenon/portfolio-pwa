@@ -91,11 +91,6 @@ function getAssets(){
 
 return new Promise(resolve=>{
 
-if(!db){
-resolve([])
-return
-}
-
 let tx=db.transaction("assets","readonly")
 let store=tx.objectStore("assets")
 
@@ -111,6 +106,19 @@ function saveAsset(asset){
 
 let tx=db.transaction("assets","readwrite")
 tx.objectStore("assets").add(asset)
+
+}
+
+function deleteAsset(id){
+
+if(!db) return
+
+let tx=db.transaction("assets","readwrite")
+tx.objectStore("assets").delete(id)
+
+tx.oncomplete=()=>{
+loadAssets()
+}
 
 }
 
@@ -195,9 +203,11 @@ let groups=groupAssets(assets)
 
 renderPortfolioTable(groups)
 renderPortfolioSummary(groups)
+renderPortfolioReturn(groups)
 
 if(document.getElementById("insightsTab")?.classList.contains("active")){
 drawCharts()
+drawGrowthChart()
 }
 
 }
@@ -298,6 +308,35 @@ ${formatCurrency(total,"EUR")}
 
 }
 
+function renderPortfolioReturn(groups){
+
+let returnEl=document.getElementById("portfolioReturn")
+if(!returnEl) return
+
+let invested=0
+let current=0
+
+Object.values(groups).forEach(list=>{
+
+let pos=calculatePosition(list)
+
+invested+=pos.avgBuy*pos.qty
+current+=pos.value
+
+})
+
+if(invested<=0){
+returnEl.textContent="No data yet"
+return
+}
+
+let change=((current-invested)/invested)*100
+let sign=change>0?"+":""
+
+returnEl.textContent=`${sign}${change.toFixed(2)}%`
+
+}
+
 function setupToggleButtons(){
 
 document.querySelectorAll(".toggleBtn").forEach(btn=>{
@@ -383,10 +422,8 @@ let assets=await getAssets()
 let total=0
 
 assets.forEach(a=>{
-
 let value=(a.currentPrice||0)*(a.quantity||0)
 total+=convertToEUR(value,a.currency)
-
 })
 
 let tx=db.transaction("portfolioHistory","readwrite")
@@ -508,4 +545,94 @@ recordPortfolioSnapshot()
 }
 },300000)
 
+}
+
+/* =========================
+FORM + TABS ENGINE
+========================= */
+
+function parseNumber(value){
+return Number(value||0)
+}
+
+function bindAssetForm(){
+
+let saveBtn=document.getElementById("saveAsset")
+if(!saveBtn) return
+
+saveBtn.onclick=()=>{
+
+if(!db) return
+
+let name=document.getElementById("assetName")?.value?.trim()
+let ticker=document.getElementById("assetTicker")?.value?.trim().toUpperCase()
+let broker=document.getElementById("assetBroker")?.value||""
+let type=document.getElementById("assetType")?.value||"Other"
+let currency=document.getElementById("assetCurrency")?.value||"EUR"
+let quantity=parseNumber(document.getElementById("assetQty")?.value)
+let buyPrice=parseNumber(document.getElementById("assetPrice")?.value)
+let buyDate=document.getElementById("assetDate")?.value||""
+
+if(!name || quantity<=0 || buyPrice<0){
+return
+}
+
+let buyPriceEUR=convertToEUR(buyPrice,currency)
+
+saveAsset({
+name,
+ticker,
+broker,
+type,
+currency,
+quantity,
+buyPrice,
+buyPriceEUR,
+currentPrice:buyPrice,
+buyDate
+})
+
+document.getElementById("assetName").value=""
+document.getElementById("assetTicker").value=""
+document.getElementById("assetQty").value=""
+document.getElementById("assetPrice").value=""
+document.getElementById("assetDate").value=""
+
+loadAssets()
+
+}
+
+}
+
+function bindTabs(){
+
+document.querySelectorAll(".tabBtn").forEach(btn=>{
+
+btn.onclick=()=>{
+
+document.querySelectorAll(".tabBtn").forEach(b=>b.classList.remove("active"))
+document.querySelectorAll(".tabContent").forEach(tab=>tab.classList.remove("active"))
+
+btn.classList.add("active")
+
+let tabId=btn.dataset.tab
+let tab=document.getElementById(tabId)
+if(tab) tab.classList.add("active")
+
+if(tabId==="insightsTab"){
+drawCharts()
+drawGrowthChart()
+}
+
+}
+
+})
+
+}
+
+bindAssetForm()
+bindTabs()
+
+if(typeof initDB==="function"){
+initDB()
 }
