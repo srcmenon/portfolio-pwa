@@ -460,7 +460,7 @@ target.classList.add("active");
 }
 
 drawCharts();
-
+drawGrowthChart();
 };
 
 });
