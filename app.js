@@ -1,5 +1,6 @@
 let allocationChartInstance = null;
 let currencyChartInstance = null;
+let priceUpdateRunning = false;
 if ('serviceWorker' in navigator) {
 navigator.serviceWorker.register('sw.js');
 }
@@ -222,22 +223,42 @@ try{
 
 let r = await fetch("/api/price?ticker=" + ticker);
 
+if(!r.ok){
+throw new Error("API request failed");
+}
+
 let data = await r.json();
 
-console.log("Price received:", ticker, data.price);
+if(!data || data.price === undefined || data.price === null){
+console.log("Price not available for", ticker);
+return null;
+}
 
-return Number(data.price) || null;
+let price = Number(data.price);
+
+if(isNaN(price)){
+console.log("Invalid price format for", ticker, data.price);
+return null;
+}
+
+console.log("Price received:", ticker, price);
+
+return price;
 
 }catch(e){
 
 console.log("Price fetch failed", ticker, e);
-
 return null;
 
 }
 
 }
+
 async function updatePrices(){
+
+if(priceUpdateRunning) return;
+
+priceUpdateRunning = true;
 
 let tx = db.transaction("assets","readonly");
 let store = tx.objectStore("assets");
@@ -276,6 +297,10 @@ console.log("Price update error:", a.ticker, e);
 }
 
 loadAssets();
+
+/* release guard */
+
+priceUpdateRunning = false;
 
 };
 
@@ -339,12 +364,17 @@ currency:currency,
 buyDate:buyDate
 });
 
+/* run UI updates only after DB commit */
+
 tx.oncomplete = () => {
-loadAssets();
-updatePrices();
+
+loadAssets();     // refresh table
+updatePrices();   // fetch real market price
+
 };
 
-loadAssets();
+/* reset form */
+
 document.getElementById("assetBroker").value="";
 document.getElementById("assetType").value="";
 document.getElementById("assetCurrency").value="EUR";
@@ -353,6 +383,7 @@ document.getElementById("assetName").value="";
 document.getElementById("assetTicker").value="";
 document.getElementById("assetQty").value="";
 document.getElementById("assetPrice").value="";
+
 };
 }
 
