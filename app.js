@@ -506,22 +506,32 @@ function calculatePortfolioReturn(history){
 
 if(!history || history.length < 2) return null;
 
-history.sort((a,b)=>a.timestamp-b.timestamp);
+/* ensure sorted */
+
+history = [...history].sort((a,b)=>a.timestamp-b.timestamp);
 
 let first = history[0];
 let last = history[history.length-1];
+
+if(!first.value || !last.value) return null;
+
+/* elapsed time in years */
 
 let years = (last.timestamp - first.timestamp) / (1000*60*60*24*365);
 
 if(years <= 0) return null;
 
+/* total return */
+
 let totalReturn = (last.value / first.value) - 1;
 
-let annualized = Math.pow(1 + totalReturn, 1/years) - 1;
+/* annualized return */
+
+let annualizedReturn = Math.pow(1 + totalReturn, 1/years) - 1;
 
 return {
 total: totalReturn,
-annual: annualized
+annual: annualizedReturn
 };
 
 }
@@ -536,21 +546,16 @@ let store = tx.objectStore("portfolioHistory");
 let req = store.getAll();
 
 req.onsuccess = () => {
-let result = calculatePortfolioReturn(history);
 
-let el = document.getElementById("portfolioReturn");
-
-if(result && el){
-
-let total = (result.total*100).toFixed(2);
-let annual = (result.annual*100).toFixed(2);
-
-el.innerText = `Total: ${total}% | Annualized: ${annual}%`;
-
-}
 let history = req.result;
 
+if(!history || history.length === 0) return;
+
+/* sort snapshots */
+
 history.sort((a,b)=>a.timestamp-b.timestamp);
+
+/* prepare chart data */
 
 let labels = history.map(h=>{
 let d = new Date(h.timestamp);
@@ -558,10 +563,36 @@ return d.toLocaleString();
 });
 
 let values = history.map(h=>h.value);
-if(values.length < 2){
-return;
+
+/* calculate return */
+
+let result = calculatePortfolioReturn(history);
+let el = document.getElementById("portfolioReturn");
+
+if(el){
+
+if(result){
+
+let total = (result.total*100).toFixed(2);
+let annual = (result.annual*100).toFixed(2);
+
+el.innerText = `Total: ${total}% | Annualized: ${annual}%`;
+
+}else{
+
+el.innerText = "Waiting for more history...";
+
 }
-if(growthChartInstance){ growthChartInstance.destroy(); }  growthChartInstance = new Chart(canvas,{
+
+}
+
+/* draw chart */
+
+if(growthChartInstance){
+growthChartInstance.destroy();
+}
+
+growthChartInstance = new Chart(canvas,{
 type:"line",
 data:{
 labels:labels,
