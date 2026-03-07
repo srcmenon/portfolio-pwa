@@ -520,7 +520,7 @@ history.sort((a,b)=>a.timestamp-b.timestamp);
 
 let labels = history.map(h=>{
 let d = new Date(h.timestamp);
-return d.toLocaleDateString();
+return d.toLocaleString();
 });
 
 let values = history.map(h=>h.value);
