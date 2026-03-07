@@ -29,7 +29,7 @@ startApp();
 };
 
 request.onerror = (event) => {
-console.error("IndexedDB failed to open", event);
+console.error("IndexedDB failed to open:", request.error);
 };
 
 }
