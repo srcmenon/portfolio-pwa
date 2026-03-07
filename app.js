@@ -2,6 +2,17 @@ let allocationChartInstance = null;
 let currencyChartInstance = null;
 let priceUpdateRunning = false;
 let growthChartInstance = null;
+function formatCurrency(value, currency){
+
+let symbol = "";
+
+if(currency === "EUR") symbol = "€";
+if(currency === "USD") symbol = "$";
+if(currency === "INR") symbol = "₹";
+
+return symbol + Number(value).toFixed(2);
+
+}
 if ('serviceWorker' in navigator) {
 navigator.serviceWorker.register('sw.js');
 }
@@ -114,7 +125,7 @@ ${list[0].name || ticker}
 </td>
 <td>${totalQty}</td>
 <td>${avgBuy.toFixed(2)}</td>
-<td>${currentPrice.toFixed(2)}</td>
+let eurValue = convertToEUR(currentPrice, list[0].currency);  <td> ${formatCurrency(currentPrice, list[0].currency)} <br> <span class="eurValue">${formatCurrency(eurValue,"EUR")}</span> </td>
 <td class="${plClass}">${positionPL.toFixed(2)}</td>
 <td>${lastDate || ""}</td>
 `;
@@ -323,10 +334,23 @@ priceUpdateRunning = false;
 function convertToEUR(value, currency){
 
 if(!currency) return value;
-return value * (FX[currency] || 1);
+
+if(currency === "EUR") return value;
+
+if(!FX[currency]) return value;
+
+return value * FX[currency];
 
 }
+function convertFromEUR(value, currency){
 
+if(currency === "EUR") return value;
+
+if(!FX[currency]) return value;
+
+return value / FX[currency];
+
+}
 function calculateAllocation(assets){
 
 let allocation = {};
@@ -432,8 +456,16 @@ let assets = req.result;
 let total = 0;
 
 assets.forEach(a=>{
-let value = (a.currentPrice || 0) * (a.quantity || 0);
-total += convertToEUR(value,a.currency);
+
+let price = Number(a.currentPrice) || 0;
+let qty = Number(a.quantity) || 0;
+
+let value = price * qty;
+
+let currency = a.currency || "EUR";
+
+total += convertToEUR(value,currency);
+
 });
 
 let tx2 = db.transaction("portfolioHistory","readwrite");
@@ -448,7 +480,48 @@ value: total
 
 }
 window.addEventListener("load", () => {
+let brokerSelect = document.getElementById("assetBroker");
+let currencySelect = document.getElementById("assetCurrency");
 
+if(brokerSelect && currencySelect){
+
+brokerSelect.onchange = () => {
+
+let broker = brokerSelect.value;
+
+currencySelect.innerHTML = "";
+
+if(broker === "KITE"){
+
+currencySelect.innerHTML = `<option value="INR">INR</option>`;
+currencySelect.value = "INR";
+
+}
+
+else if(
+broker === "TRADEREPUBLIC" ||
+broker === "SCALABLE" ||
+broker === "ETORO"
+){
+
+currencySelect.innerHTML = `<option value="EUR">EUR</option>`;
+currencySelect.value = "EUR";
+
+}
+
+else{
+
+currencySelect.innerHTML = `
+<option value="EUR">EUR</option>
+<option value="USD">USD</option>
+<option value="INR">INR</option>
+`;
+
+}
+
+};
+
+}
 document.querySelectorAll(".tabBtn").forEach(btn => {
 
 btn.onclick = () => {
