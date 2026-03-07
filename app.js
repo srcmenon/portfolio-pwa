@@ -502,6 +502,29 @@ result[currency] = (result[currency] || 0) + value;
 return result;
 
 }
+function calculatePortfolioReturn(history){
+
+if(!history || history.length < 2) return null;
+
+history.sort((a,b)=>a.timestamp-b.timestamp);
+
+let first = history[0];
+let last = history[history.length-1];
+
+let years = (last.timestamp - first.timestamp) / (1000*60*60*24*365);
+
+if(years <= 0) return null;
+
+let totalReturn = (last.value / first.value) - 1;
+
+let annualized = Math.pow(1 + totalReturn, 1/years) - 1;
+
+return {
+total: totalReturn,
+annual: annualized
+};
+
+}
 function drawGrowthChart(){
 
 let canvas = document.getElementById("growthChart");
