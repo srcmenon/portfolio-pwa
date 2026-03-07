@@ -91,6 +91,11 @@ function getAssets(){
 
 return new Promise(resolve=>{
 
+if(!db){
+resolve([])
+return
+}
+
 let tx=db.transaction("assets","readonly")
 let store=tx.objectStore("assets")
 
