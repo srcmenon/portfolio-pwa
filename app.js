@@ -94,12 +94,18 @@ let positionPL = (currentPrice - avgBuy) * totalQty;
 
 portfolioTotal += convertToEUR(positionValue, list[0].currency);
 
+let plClass = "neutral";
+
+if(positionPL > 0) plClass = "profit";
+else if(positionPL < 0) plClass = "loss";
+
 /* MAIN ROW */
 
 let groupId = "grp_" + ticker;
 
 let mainRow = document.createElement("tr");
 mainRow.className = "mainRow";
+let plClass = "neutral";
 
 mainRow.innerHTML = `
 <td>
