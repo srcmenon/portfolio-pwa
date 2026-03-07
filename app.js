@@ -120,7 +120,7 @@ let data = await r.json();
 
 console.log("Price received:", ticker, data.price);
 
-return data.price || null;
+return Number(data.price) || null;
 
 }catch(e){
 
@@ -142,9 +142,6 @@ req.onsuccess = async () => {
 
 let assets = req.result;
 
-let tx2 = db.transaction("assets","readwrite");
-let store2 = tx2.objectStore("assets");
-
 for (let a of assets){
 
 if(!a.ticker) continue;
@@ -155,6 +152,9 @@ let price = await fetchPrice(a.ticker);
 
 if(price !== null && price !== undefined){
 
+let tx2 = db.transaction("assets","readwrite");
+let store2 = tx2.objectStore("assets");
+
 a.currentPrice = price;
 
 store2.put(a);
@@ -163,15 +163,13 @@ store2.put(a);
 
 }catch(e){
 
-console.log("Price fetch failed for", a.ticker);
+console.log("Price update error:", a.ticker, e);
 
 }
 
 }
 
-tx2.oncomplete = () => {
 loadAssets();
-};
 
 };
 
