@@ -91,7 +91,8 @@ let lastDate = "";
 list.forEach(a=>{
 
 totalQty += (a.quantity || 0);
-totalCost += (a.quantity || 0) * (a.buyPrice || 0);
+let buyEUR = a.buyPriceEUR || convertToEUR(a.buyPrice || 0, a.currency);
+totalCost += (a.quantity || 0) * buyEUR;
 
 if(a.buyDate && a.buyDate > lastDate){
 lastDate = a.buyDate;
@@ -111,8 +112,6 @@ let avgBuyEUR = convertToEUR(avgBuy, list[0].currency);
 let positionValue = currentEUR * totalQty;
 let positionPL = (currentEUR - avgBuyEUR) * totalQty;
 portfolioTotal += positionValue;
-  
-let portfolioINR = convertFromEUR(portfolioTotal,"INR");
 
 let plClass = "neutral";
 
@@ -121,17 +120,14 @@ else if(positionPL < 0) plClass = "loss";
 
 /* MAIN ROW */
 
+/* MAIN ROW */
+
 let groupId = "grp_" + ticker;
 
 let mainRow = document.createElement("tr");
 mainRow.className = "mainRow";
 
-mainRow.innerHTML = `
-<td>
-<span class="toggleBtn" data-target="${groupId}">▶</span>
-${list[0].name || ticker}
-</td>
-<td>${totalQty}</td>
+/* calculate display conversion */
 
 let eurValue = convertToEUR(currentPrice, list[0].currency);
 
@@ -148,9 +144,6 @@ ${formatCurrency(currentPrice, list[0].currency)}
 <span class="eurValue">${formatCurrency(eurValue,"EUR")}</span>
 </td>
 <td class="${plClass}">${formatCurrency(positionPL,"EUR")}</td>
-<td>${lastDate || ""}</td>
-`;
-<td class="${plClass}">${positionPL.toFixed(2)}</td>
 <td>${lastDate || ""}</td>
 `;
 
