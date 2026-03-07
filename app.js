@@ -524,7 +524,9 @@ return d.toLocaleString();
 });
 
 let values = history.map(h=>h.value);
-
+if(values.length < 2){
+return;
+}
 if(growthChartInstance){ growthChartInstance.destroy(); }  growthChartInstance = new Chart(canvas,{
 type:"line",
 data:{
