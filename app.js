@@ -207,7 +207,8 @@ let saveBtn = document.getElementById("saveAsset");
 if(saveBtn){
 saveBtn.onclick = () => {
 
-let name = document.getElementById("assetName").value;
+let name = document.getElementById("assetName").value.trim();
+name = name.charAt(0).toUpperCase() + name.slice(1).toLowerCase();
 if(!name) return;
 
 let ticker = document.getElementById("assetTicker").value.trim().toUpperCase();
@@ -233,6 +234,11 @@ currentPrice:price,
 currency:currency,
 buyDate:buyDate
 });
+
+tx.oncomplete = () => {
+loadAssets();
+updatePrices();
+};
 
 loadAssets();
 document.getElementById("assetBroker").value="";
