@@ -126,3 +126,23 @@ cursor:pointer;
 margin-right:8px;
 font-weight:bold;
 }
+.profit{
+color:#1e9c3f;
+font-weight:600;
+}
+
+.loss{
+color:#d93025;
+font-weight:600;
+}
+
+.neutral{
+color:#555;
+}
+.mainRow .profit{
+background:rgba(46,204,113,0.08);
+}
+
+.mainRow .loss{
+background:rgba(231,76,60,0.08);
+}
