@@ -536,7 +536,18 @@ let store = tx.objectStore("portfolioHistory");
 let req = store.getAll();
 
 req.onsuccess = () => {
+let result = calculatePortfolioReturn(history);
 
+let el = document.getElementById("portfolioReturn");
+
+if(result && el){
+
+let total = (result.total*100).toFixed(2);
+let annual = (result.annual*100).toFixed(2);
+
+el.innerText = `Total: ${total}% | Annualized: ${annual}%`;
+
+}
 let history = req.result;
 
 history.sort((a,b)=>a.timestamp-b.timestamp);
