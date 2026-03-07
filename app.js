@@ -535,6 +535,9 @@ datasets:[{
 label:"Portfolio Value",
 data:values,
 borderColor:"#3498db",
+backgroundColor:"#3498db",
+pointRadius:5,
+pointHoverRadius:7,
 fill:false
 }]
 },
