@@ -2,7 +2,7 @@ let db;
 
 function initDB(){
 
-let request = indexedDB.open("portfolioDB",1);
+let request = indexedDB.open("portfolioDB",3);
 
 request.onupgradeneeded = (event) => {
 
