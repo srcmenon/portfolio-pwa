@@ -10,7 +10,7 @@ if(currency === "EUR") symbol = "€";
 if(currency === "USD") symbol = "$";
 if(currency === "INR") symbol = "₹";
 
-return symbol + Number(value).toFixed(2);
+return symbol + Number(value).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 
 }
 if ('serviceWorker' in navigator) {
@@ -105,6 +105,7 @@ let positionValue = currentPrice * totalQty;
 let positionPL = (currentPrice - avgBuy) * totalQty;
 
 portfolioTotal += convertToEUR(positionValue, list[0].currency);
+let portfolioINR = convertFromEUR(portfolioTotal,"INR");
 
 let plClass = "neutral";
 
@@ -175,7 +176,14 @@ let valueEl = document.getElementById("totalValue");
 let assetCount = Object.keys(groups).length;
 
 if(countEl) countEl.innerText = assetCount;
-if(valueEl) valueEl.innerText = "€" + portfolioTotal.toFixed(2);
+if(valueEl){
+
+valueEl.innerHTML =
+`€ ${formatEUR(portfolioTotal)}
+<br>
+<span class="inrValue">₹ ${formatINR(portfolioINR)}</span>`;
+
+}
 
 /* TOGGLE LOGIC */
 
@@ -390,6 +398,8 @@ let buyDate = document.getElementById("assetDate").value;
 
 let tx = db.transaction("assets","readwrite");
 
+let eurBuyPrice = convertToEUR(price, currency);
+
 tx.objectStore("assets").add({
 name:name,
 ticker:ticker,
@@ -397,6 +407,7 @@ broker:broker,
 type:type,
 quantity:qty,
 buyPrice:price,
+buyPriceEUR:eurBuyPrice,
 currentPrice:price,
 currency:currency,
 buyDate:buyDate
@@ -606,6 +617,14 @@ return {
 total: totalReturn,
 annual: annualizedReturn
 };
+
+}
+function formatINR(value){
+
+return Number(value).toLocaleString("en-IN",{
+minimumFractionDigits:2,
+maximumFractionDigits:2
+});
 
 }
 function drawGrowthChart(){
