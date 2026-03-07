@@ -22,12 +22,14 @@ request.onsuccess = (event) => {
 
 db = event.target.result;
 
-/* start the application AFTER DB is ready */
-
 if(typeof startApp === "function"){
 startApp();
 }
 
+};
+
+request.onerror = (event) => {
+console.error("IndexedDB failed to open", event);
 };
 
 }
