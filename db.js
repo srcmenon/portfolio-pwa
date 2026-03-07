@@ -22,13 +22,10 @@ request.onsuccess = (event) => {
 
 db = event.target.result;
 
-/* START APP ONLY AFTER DB READY */
+/* start the application AFTER DB is ready */
 
-loadAssets();
-
-if(navigator.onLine){
-updatePrices();
-recordPortfolioSnapshot();
+if(typeof startApp === "function"){
+startApp();
 }
 
 };
