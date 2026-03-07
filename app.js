@@ -404,7 +404,9 @@ document.getElementById("assetPrice").value="";
 loadAssets();
 
 if(navigator.onLine){
+
 updatePrices();
+recordPortfolioSnapshot();   // take first snapshot immediately
 
 setInterval(()=>{
 if(navigator.onLine){
@@ -412,6 +414,7 @@ updatePrices();
 recordPortfolioSnapshot();
 }
 },300000);
+
 }
 
 });
