@@ -101,8 +101,13 @@ let avgBuy = totalQty ? totalCost / totalQty : 0;
 
 let currentPrice = list[0].currentPrice || avgBuy;
 
-let positionValue = currentPrice * totalQty;
-let positionPL = (currentPrice - avgBuy) * totalQty;
+/* convert to EUR for portfolio math */
+
+let currentEUR = convertToEUR(currentPrice, list[0].currency);
+let avgBuyEUR = convertToEUR(avgBuy, list[0].currency);
+
+let positionValue = currentEUR * totalQty;
+let positionPL = (currentEUR - avgBuyEUR) * totalQty;
 
 portfolioTotal += convertToEUR(positionValue, list[0].currency);
 let portfolioINR = convertFromEUR(portfolioTotal,"INR");
@@ -143,7 +148,7 @@ sub.className = "subRow " + groupId;
 
 sub.style.display = "none";
 
-let pl = ((a.currentPrice || 0) - (a.buyPrice || 0)) * (a.quantity || 0);
+let currentEUR = convertToEUR(a.currentPrice || 0, a.currency); let buyEUR = a.buyPriceEUR || convertToEUR(a.buyPrice || 0, a.currency);  let pl = (currentEUR - buyEUR) * (a.quantity || 0);
 if(Math.abs(pl) < 0.01) pl = 0;
 let subClass = "neutral";
 
