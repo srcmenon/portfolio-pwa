@@ -202,7 +202,7 @@ if(!db) return
 
 let assets=await getAssets()
 let groups=groupAssets(assets)
-renderPortfolioReturn(groups)
+
 renderPortfolioTable(groups)
 renderPortfolioSummary(groups)
 renderPortfolioReturn(groups)
@@ -348,8 +348,8 @@ btn.onclick=()=>{
 
 let target=btn.dataset.target
 let rows=document.querySelectorAll("."+target)
-
-let open=rows[0].style.display==="table-row"
+if(!rows.length) return
+let open = rows[0].style.display === "table-row"
 
 rows.forEach(r=>{
 r.style.display=open?"none":"table-row"
