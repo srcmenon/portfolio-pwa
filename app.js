@@ -47,6 +47,8 @@ setInterval(updateFX,3600000);
 
 function loadAssets(){
 
+if(!db) return;
+
 let tx = db.transaction("assets","readonly");
 let store = tx.objectStore("assets");
 let req = store.getAll();
@@ -108,8 +110,8 @@ let avgBuyEUR = convertToEUR(avgBuy, list[0].currency);
 
 let positionValue = currentEUR * totalQty;
 let positionPL = (currentEUR - avgBuyEUR) * totalQty;
-
-portfolioTotal += convertToEUR(positionValue, list[0].currency);
+portfolioTotal += positionValue;
+  
 let portfolioINR = convertFromEUR(portfolioTotal,"INR");
 
 let plClass = "neutral";
@@ -130,8 +132,24 @@ mainRow.innerHTML = `
 ${list[0].name || ticker}
 </td>
 <td>${totalQty}</td>
-<td>${avgBuy.toFixed(2)}</td>
-let eurValue = convertToEUR(currentPrice, list[0].currency);  <td> ${formatCurrency(currentPrice, list[0].currency)} <br> <span class="eurValue">${formatCurrency(eurValue,"EUR")}</span> </td>
+
+let eurValue = convertToEUR(currentPrice, list[0].currency);
+
+mainRow.innerHTML = `
+<td>
+<span class="toggleBtn" data-target="${groupId}">▶</span>
+${list[0].name || ticker}
+</td>
+<td>${totalQty}</td>
+<td>${formatCurrency(avgBuy, list[0].currency)}</td>
+<td>
+${formatCurrency(currentPrice, list[0].currency)}
+<br>
+<span class="eurValue">${formatCurrency(eurValue,"EUR")}</span>
+</td>
+<td class="${plClass}">${formatCurrency(positionPL,"EUR")}</td>
+<td>${lastDate || ""}</td>
+`;
 <td class="${plClass}">${positionPL.toFixed(2)}</td>
 <td>${lastDate || ""}</td>
 `;
@@ -172,7 +190,7 @@ table.appendChild(sub);
 });
 
 /* UPDATE SUMMARY */
-
+let portfolioINR = convertFromEUR(portfolioTotal,"INR");
 let countEl = document.getElementById("assetCount");
 let valueEl = document.getElementById("totalValue");
 
@@ -184,9 +202,9 @@ if(countEl) countEl.innerText = assetCount;
 if(valueEl){
 
 valueEl.innerHTML =
-`€ ${formatEUR(portfolioTotal)}
+`${formatCurrency(portfolioTotal,"EUR")}
 <br>
-<span class="inrValue">₹ ${formatINR(portfolioINR)}</span>`;
+<span class="inrValue">${formatCurrency(portfolioINR,"INR")}</span>`;
 
 }
 
@@ -422,7 +440,6 @@ buyDate:buyDate
 
 tx.oncomplete = () => {
 
-loadAssets();     // refresh table
 updatePrices();   // fetch real market price
 
 };
@@ -634,6 +651,7 @@ maximumFractionDigits:2
 }
 function drawGrowthChart(){
 
+if(!db) return;
 let canvas = document.getElementById("growthChart");
 if(!canvas) return;
 
@@ -715,6 +733,8 @@ legend:{display:true}
 
 }
 function drawCharts(){
+
+if(!db) return;
 let allocCanvas = document.getElementById("allocationChart");
 let currCanvas = document.getElementById("currencyChart");
 
