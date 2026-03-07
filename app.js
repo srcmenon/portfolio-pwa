@@ -42,37 +42,143 @@ req.onsuccess = () => {
 
 let table = document.querySelector("#assetTable tbody");
 if(!table) return;
+
 table.innerHTML = "";
 
-let total = 0;
+let assets = req.result;
 
-req.result.forEach(a=>{
-  
+/* GROUP BY TICKER */
+
+let groups = {};
+
+assets.forEach(a=>{
+let key = a.ticker || a.name;
+
+if(!groups[key]) groups[key] = [];
+
+groups[key].push(a);
+});
+
+let portfolioTotal = 0;
+
+/* RENDER GROUPS */
+
+Object.keys(groups).forEach(ticker=>{
+
+let list = groups[ticker];
+
+/* CALCULATE POSITION TOTALS */
+
+let totalQty = 0;
+let totalCost = 0;
+let lastDate = "";
+
+list.forEach(a=>{
+
+totalQty += (a.quantity || 0);
+totalCost += (a.quantity || 0) * (a.buyPrice || 0);
+
+if(a.buyDate && a.buyDate > lastDate){
+lastDate = a.buyDate;
+}
+
+});
+
+let avgBuy = totalCost / totalQty;
+
+let currentPrice = list[0].currentPrice || avgBuy;
+
+let positionValue = currentPrice * totalQty;
+let positionPL = (currentPrice - avgBuy) * totalQty;
+
+portfolioTotal += convertToEUR(positionValue, list[0].currency);
+
+/* MAIN ROW */
+
+let groupId = "grp_" + ticker;
+
+let mainRow = document.createElement("tr");
+mainRow.className = "mainRow";
+
+mainRow.innerHTML = `
+<td>
+<span class="toggleBtn" data-target="${groupId}">▶</span>
+${list[0].name || ticker}
+</td>
+<td>${totalQty}</td>
+<td>${avgBuy.toFixed(2)}</td>
+<td>${currentPrice.toFixed(2)}</td>
+<td>${positionPL.toFixed(2)}</td>
+<td>${lastDate || ""}</td>
+`;
+
+table.appendChild(mainRow);
+
+/* SUBROWS */
+
+list.forEach(a=>{
+
+let sub = document.createElement("tr");
+
+sub.className = "subRow " + groupId;
+
+sub.style.display = "none";
+
 let pl = ((a.currentPrice || 0) - (a.buyPrice || 0)) * (a.quantity || 0);
-let value = (a.currentPrice || 0) * (a.quantity || 0);
-total += convertToEUR(value, a.currency);
 
-let row = `<tr>
-<td>${a.name}</td>
+sub.innerHTML = `
+<td style="padding-left:30px">↳ ${a.buyDate || ""}</td>
 <td>${a.quantity}</td>
 <td>${a.buyPrice}</td>
 <td>${a.currentPrice}</td>
 <td>${pl.toFixed(2)}</td>
-<td><button onclick="deleteAsset(${a.id})">❌</button></td>
-</tr>`;
+<td>
+<button onclick="deleteAsset(${a.id})">❌</button>
+</td>
+`;
 
-table.innerHTML += row;
+table.appendChild(sub);
 
 });
+
+});
+
+/* UPDATE SUMMARY */
 
 let countEl = document.getElementById("assetCount");
 let valueEl = document.getElementById("totalValue");
 
-if(countEl) countEl.innerText = req.result.length;
-if(valueEl) valueEl.innerText = "€" + total.toFixed(2);
+if(countEl) countEl.innerText = assets.length;
+if(valueEl) valueEl.innerText = "€" + portfolioTotal.toFixed(2);
+
+/* TOGGLE LOGIC */
+
+document.querySelectorAll(".toggleBtn").forEach(btn=>{
+
+btn.onclick = ()=>{
+
+let target = btn.dataset.target;
+
+let rows = document.querySelectorAll("." + target);
+
+let open = rows[0].style.display === "table-row";
+
+rows.forEach(r=>{
+r.style.display = open ? "none" : "table-row";
+});
+
+btn.textContent = open ? "▶" : "▼";
+
+};
+
+});
+
+/* UPDATE CHARTS IF TAB OPEN */
+
 if(document.getElementById("insightsTab")?.classList.contains("active")){
 drawCharts();
 }
+
 };
 
 }
