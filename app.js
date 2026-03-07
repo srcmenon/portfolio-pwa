@@ -85,7 +85,7 @@ lastDate = a.buyDate;
 
 });
 
-let avgBuy = totalCost / totalQty;
+let avgBuy = totalQty ? totalCost / totalQty : 0;
 
 let currentPrice = list[0].currentPrice || avgBuy;
 
@@ -105,7 +105,6 @@ let groupId = "grp_" + ticker;
 
 let mainRow = document.createElement("tr");
 mainRow.className = "mainRow";
-let plClass = "neutral";
 
 mainRow.innerHTML = `
 <td>
@@ -115,7 +114,7 @@ ${list[0].name || ticker}
 <td>${totalQty}</td>
 <td>${avgBuy.toFixed(2)}</td>
 <td>${currentPrice.toFixed(2)}</td>
-<td>${positionPL.toFixed(2)}</td>
+<td class="${plClass}">${positionPL.toFixed(2)}</td>
 <td>${lastDate || ""}</td>
 `;
 
@@ -132,13 +131,17 @@ sub.className = "subRow " + groupId;
 sub.style.display = "none";
 
 let pl = ((a.currentPrice || 0) - (a.buyPrice || 0)) * (a.quantity || 0);
+if(Math.abs(pl) < 0.01) pl = 0;
+let subClass = "neutral";
 
+if(pl > 0) subClass = "profit";
+else if(pl < 0) subClass = "loss";
 sub.innerHTML = `
 <td style="padding-left:30px">↳ ${a.buyDate || ""}</td>
 <td>${a.quantity}</td>
-<td>${a.buyPrice}</td>
-<td>${a.currentPrice}</td>
-<td>${pl.toFixed(2)}</td>
+<td>${(a.buyPrice || 0).toFixed(2)}</td>
+<td>${(a.currentPrice || 0).toFixed(2)}</td>
+<td class="${subClass}">${pl.toFixed(2)}</td>
 <td>
 <button onclick="deleteAsset(${a.id})">❌</button>
 </td>
