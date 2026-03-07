@@ -149,7 +149,11 @@ table.appendChild(sub);
 let countEl = document.getElementById("assetCount");
 let valueEl = document.getElementById("totalValue");
 
-if(countEl) countEl.innerText = assets.length;
+/* count unique asset groups instead of transactions */
+
+let assetCount = Object.keys(groups).length;
+
+if(countEl) countEl.innerText = assetCount;
 if(valueEl) valueEl.innerText = "€" + portfolioTotal.toFixed(2);
 
 /* TOGGLE LOGIC */
