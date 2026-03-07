@@ -122,6 +122,8 @@ loadAssets()
 
 }
 
+
+
 /* =========================
 PORTFOLIO ENGINE
 ========================= */
@@ -200,7 +202,7 @@ if(!db) return
 
 let assets=await getAssets()
 let groups=groupAssets(assets)
-
+renderPortfolioReturn(groups)
 renderPortfolioTable(groups)
 renderPortfolioSummary(groups)
 renderPortfolioReturn(groups)
@@ -336,6 +338,7 @@ let sign=change>0?"+":""
 returnEl.textContent=`${sign}${change.toFixed(2)}%`
 
 }
+
 
 function setupToggleButtons(){
 
