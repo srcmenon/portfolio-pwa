@@ -408,11 +408,41 @@ updatePrices();
 setInterval(()=>{
 if(navigator.onLine){
 updatePrices();
+recordPortfolioSnapshot();
 }
 },300000);
 }
 
 });
+
+async function recordPortfolioSnapshot(){
+
+let tx = db.transaction("assets","readonly");
+let store = tx.objectStore("assets");
+let req = store.getAll();
+
+req.onsuccess = () => {
+
+let assets = req.result;
+
+let total = 0;
+
+assets.forEach(a=>{
+let value = (a.currentPrice || 0) * (a.quantity || 0);
+total += convertToEUR(value,a.currency);
+});
+
+let tx2 = db.transaction("portfolioHistory","readwrite");
+let store2 = tx2.objectStore("portfolioHistory");
+
+store2.put({
+timestamp: Date.now(),
+value: total
+});
+
+};
+
+}
 window.addEventListener("load", () => {
 
 document.querySelectorAll(".tabBtn").forEach(btn => {
@@ -466,6 +496,51 @@ result[currency] = (result[currency] || 0) + value;
 });
 
 return result;
+
+}
+function drawGrowthChart(){
+
+let canvas = document.getElementById("growthChart");
+if(!canvas) return;
+
+let tx = db.transaction("portfolioHistory","readonly");
+let store = tx.objectStore("portfolioHistory");
+
+let req = store.getAll();
+
+req.onsuccess = () => {
+
+let history = req.result;
+
+history.sort((a,b)=>a.timestamp-b.timestamp);
+
+let labels = history.map(h=>{
+let d = new Date(h.timestamp);
+return d.toLocaleDateString();
+});
+
+let values = history.map(h=>h.value);
+
+new Chart(canvas,{
+type:"line",
+data:{
+labels:labels,
+datasets:[{
+label:"Portfolio Value",
+data:values,
+borderColor:"#3498db",
+fill:false
+}]
+},
+options:{
+responsive:true,
+plugins:{
+legend:{display:true}
+}
+}
+});
+
+};
 
 }
 function drawCharts(){
