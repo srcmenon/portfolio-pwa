@@ -435,7 +435,74 @@ btn.textContent=open?"▶":"▼"
 /* =========================
 PRICE ENGINE
 ========================= */
+async function updateMutualFundNAV(){
 
+if(!db) return
+
+try{
+
+let r = await fetch("https://www.amfiindia.com/spages/NAVAll.txt")
+let text = await r.text()
+
+let lines = text.split("\n")
+
+let navMap={}
+
+lines.forEach(line=>{
+
+let parts=line.split(";")
+
+if(parts.length>4){
+
+let schemeName=parts[3]?.trim()
+let nav=parseFloat(parts[4])
+
+if(schemeName && nav){
+navMap[schemeName.toLowerCase()]=nav
+}
+
+}
+
+})
+
+let assets=await getAssets()
+
+assets.forEach(a=>{
+
+if(a.type!=="MutualFund") return
+
+let name=a.name?.toLowerCase()
+
+let nav=null
+
+Object.keys(navMap).forEach(key=>{
+if(name && key.includes(name.substring(0,12))){
+nav=navMap[key]
+}
+})
+
+if(nav){
+
+let tx=db.transaction("assets","readwrite")
+
+tx.objectStore("assets").put({
+...a,
+currentPrice:nav
+})
+
+}
+
+})
+
+loadAssets()
+
+}catch(e){
+
+console.log("MF NAV update failed")
+
+}
+
+}
 async function fetchPrice(ticker){
 
 try{
@@ -653,15 +720,23 @@ function startApp(){
 loadAssets()
 
 if(navigator.onLine){
+
 updatePrices()
+updateMutualFundNAV()
 recordPortfolioSnapshot()
+
 }
 
 setInterval(()=>{
+
 if(navigator.onLine && db){
+
 updatePrices()
+updateMutualFundNAV()
 recordPortfolioSnapshot()
+
 }
+
 },300000)
 
 }
