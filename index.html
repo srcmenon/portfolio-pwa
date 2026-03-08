@@ -34,7 +34,7 @@
 
 </section>
 <div id="assetForm" class="card">
-<div class="card">
+
 <h3>Import CSV</h3>
 
 <input type="file" id="csvFile" accept=".csv">
@@ -44,8 +44,11 @@
 Expected format:
 Date,Name,Ticker,Broker,Type,Quantity,Price,Currency
 </p>
-</div>
+
+<hr>
+
 <h3>Add Asset</h3>
+
 <input id="assetName" placeholder="Asset Name" required>
 
 <input id="assetTicker" placeholder="Ticker (example: NVDA or BTC-USD)">
@@ -71,6 +74,7 @@ Date,Name,Ticker,Broker,Type,Quantity,Price,Currency
 <option value="USD">USD</option>
 <option value="INR">INR</option>
 </select>
+
 <input id="assetQty" type="number" step="any" placeholder="Quantity" required>
 
 <input id="assetPrice" type="number" step="any" placeholder="Buy Price">
