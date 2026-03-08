@@ -1,4 +1,4 @@
-const CACHE = "portfolio-v1";
+const CACHE = "portfolio-pwa-v2";
 
 self.addEventListener("install", e => {
 e.waitUntil(
