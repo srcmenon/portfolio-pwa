@@ -680,6 +680,11 @@ drawGrowthChart()
 bindAssetForm()
 bindTabs()
 bindCSVImport()
+
+document.getElementById("sortAssets")?.addEventListener("change", () => {
+    loadAssets()
+})
+
 if(typeof initDB==="function"){
 initDB()
 }
