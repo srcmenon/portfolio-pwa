@@ -601,7 +601,63 @@ loadAssets()
 }
 
 }
+/* =========================
+CSV IMPORT ENGINE
+========================= */
 
+function bindCSVImport(){
+
+let btn=document.getElementById("importCSV")
+let fileInput=document.getElementById("csvFile")
+
+if(!btn || !fileInput) return
+
+btn.onclick=()=>{
+
+let file=fileInput.files[0]
+if(!file) return
+
+let reader=new FileReader()
+
+reader.onload=(e)=>{
+
+let text=e.target.result
+let rows=text.split("\n").map(r=>r.trim()).filter(r=>r)
+
+if(rows.length<=1) return
+
+let header=rows.shift().split(",")
+
+rows.forEach(row=>{
+
+let cols=row.split(",")
+
+let asset={
+name:cols[1],
+ticker:cols[2],
+broker:cols[3]||"",
+type:cols[4]||"Other",
+quantity:Number(cols[5])||0,
+buyPrice:Number(cols[6])||0,
+currency:cols[7]||"EUR",
+buyPriceEUR:convertToEUR(Number(cols[6])||0,cols[7]||"EUR"),
+currentPrice:Number(cols[6])||0,
+buyDate:cols[0]||""
+}
+
+saveAsset(asset)
+
+})
+
+loadAssets()
+
+}
+
+reader.readAsText(file)
+
+}
+
+}
 function bindTabs(){
 
 document.querySelectorAll(".tabBtn").forEach(btn=>{
@@ -630,7 +686,7 @@ drawGrowthChart()
 
 bindAssetForm()
 bindTabs()
-
+bindCSVImport()
 if(typeof initDB==="function"){
 initDB()
 }
