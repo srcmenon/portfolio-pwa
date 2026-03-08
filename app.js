@@ -6,6 +6,7 @@ let allocationChartInstance = null
 let currencyChartInstance = null
 let growthChartInstance = null
 let priceUpdateRunning = false
+let allocationBarChartInstance=null
 
 /* =========================
 SERVICE WORKER
@@ -255,6 +256,7 @@ sortedGroups[r.key]=r.list
 renderPortfolioTable(sortedGroups)
 renderPortfolioSummary(sortedGroups)
 renderPortfolioReturn(sortedGroups)
+drawPortfolioAllocation()
 
 if(document.getElementById("insightsTab")?.classList.contains("active")){
 drawCharts()
@@ -556,7 +558,54 @@ datasets:[{data:Object.values(currencies)}]}
 }
 
 }
+function drawPortfolioAllocation(){
 
+if(!db) return
+
+let tx=db.transaction("assets","readonly")
+let store=tx.objectStore("assets")
+
+store.getAll().onsuccess=(e)=>{
+
+let assets=e.target.result
+
+let allocation={}
+
+assets.forEach(a=>{
+
+let value=(a.currentPrice||a.buyPrice||0)*(a.quantity||0)
+
+let eur=convertToEUR(value,a.currency)
+
+let type=a.type||"Other"
+
+allocation[type]=(allocation[type]||0)+eur
+
+})
+
+let labels=Object.keys(allocation)
+let values=Object.values(allocation)
+
+if(allocationBarChartInstance)
+allocationBarChartInstance.destroy()
+
+allocationBarChartInstance=new Chart(
+document.getElementById("portfolioAllocationChart"),
+{
+type:"bar",
+data:{
+labels,
+datasets:[{
+label:"Portfolio Allocation (€)",
+data:values
+}]
+}
+}
+)
+
+}
+
+}
 function drawGrowthChart(){
 
 if(!db) return
