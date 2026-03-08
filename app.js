@@ -195,12 +195,66 @@ async function loadAssets(){
 
 if(!db) return
 
-let assets=await getAssets()
-let groups=groupAssets(assets)
+let assets = await getAssets()
+let groups = groupAssets(assets)
 
-renderPortfolioTable(groups)
-renderPortfolioSummary(groups)
-renderPortfolioReturn(groups)
+/* Convert groups to sortable array */
+
+let rows = Object.keys(groups).map(key => {
+
+let list = groups[key]
+let pos = calculatePosition(list)
+
+let qty = pos.qty
+let avgBuy = pos.avgBuy
+
+let currentPrice = pos.currentPrice
+let currentEUR = convertToEUR(currentPrice,list[0].currency)
+
+let investedValue = avgBuy * qty
+let currentValue = currentEUR * qty
+
+let profit = currentValue - investedValue
+let growth = investedValue > 0 ? (profit/investedValue)*100 : 0
+
+return {
+key,
+list,
+pos,
+qty,
+profit,
+growth,
+value:currentValue
+}
+
+})
+
+/* Sorting */
+
+let sortType = document.getElementById("sortAssets")?.value || "name"
+
+rows.sort((a,b)=>{
+
+if(sortType==="name") return a.key.localeCompare(b.key)
+if(sortType==="profit") return b.profit-a.profit
+if(sortType==="growth") return b.growth-a.growth
+if(sortType==="value") return b.value-a.value
+if(sortType==="qty") return b.qty-a.qty
+
+return 0
+
+})
+
+/* rebuild sorted groups */
+
+let sortedGroups={}
+rows.forEach(r=>{
+sortedGroups[r.key]=r.list
+})
+
+renderPortfolioTable(sortedGroups)
+renderPortfolioSummary(sortedGroups)
+renderPortfolioReturn(sortedGroups)
 
 if(document.getElementById("insightsTab")?.classList.contains("active")){
 drawCharts()
@@ -682,7 +736,7 @@ bindTabs()
 bindCSVImport()
 
 document.getElementById("sortAssets")?.addEventListener("change", () => {
-    loadAssets()
+loadAssets()
 })
 
 if(typeof initDB==="function"){
