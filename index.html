@@ -85,7 +85,15 @@ Date,Name,Ticker,Broker,Type,Quantity,Price,Currency
 
 </div>
 <section>
-
+<div style="margin-bottom:10px">
+<select id="sortAssets">
+<option value="name">Sort by Name</option>
+<option value="profit">Sort by Profit</option>
+<option value="growth">Sort by Growth %</option>
+<option value="value">Sort by Total Value</option>
+<option value="qty">Sort by Quantity</option>
+</select>
+</div>
 <table id="assetTable">
 <thead>
 <tr>
