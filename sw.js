@@ -1,4 +1,4 @@
-const CACHE_NAME = "portfolio-pwa-v1.5";
+const CACHE_NAME = "portfolio-pwa-v1.6";
 
 const STATIC_ASSETS = [
 "/",
