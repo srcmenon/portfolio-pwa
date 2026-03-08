@@ -34,7 +34,17 @@
 
 </section>
 <div id="assetForm" class="card">
+<div class="card">
+<h3>Import CSV</h3>
 
+<input type="file" id="csvFile" accept=".csv">
+<button id="importCSV">Import Portfolio CSV</button>
+
+<p style="font-size:12px;color:gray">
+Expected format:
+Date,Name,Ticker,Broker,Type,Quantity,Price,Currency
+</p>
+</div>
 <h3>Add Asset</h3>
 <input id="assetName" placeholder="Asset Name" required>
 
