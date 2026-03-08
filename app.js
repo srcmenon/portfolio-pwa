@@ -33,8 +33,8 @@ let r = await fetch("https://api.exchangerate.host/latest?base=EUR")
 let data = await r.json()
 
 if(data && data.rates){
-FX.USD = 1/(data.rates.USD || 1)
-FX.INR = 1/(data.rates.INR || 1)
+FX.INR = data.rates.INR
+FX.USD = data.rates.USD
 }
 
 }catch(e){
@@ -67,19 +67,15 @@ maximumFractionDigits:2
 
 function convertToEUR(value,currency){
 
-if(!currency || currency==="EUR") return value
-if(!FX[currency]) return value
-
-return value*FX[currency]
+if(currency==="EUR") return value
+return value / FX[currency]
 
 }
 
 function convertFromEUR(value,currency){
 
 if(currency==="EUR") return value
-if(!FX[currency]) return value
-
-return value/FX[currency]
+return value * FX[currency]
 
 }
 
