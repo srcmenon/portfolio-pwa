@@ -369,7 +369,10 @@ sub.innerHTML=`
 <td>${a.quantity}</td>
 <td>${formatCurrency(a.buyPrice,a.currency)}</td>
 <td>${formatCurrency(a.currentPrice || a.buyPrice,a.currency)}</td>
-<td colspan="6">${a.broker || ""}</td>
+<td>${a.broker || ""}</td>
+<td>
+<button onclick="deleteAsset(${a.id})">❌</button>
+</td>
 `
 
 table.appendChild(sub)
@@ -851,8 +854,8 @@ let header=rows.shift().split(",")
 
 rows.forEach(row=>{
 
-let cols=row.split(",")
-
+let cols=row.split(/[\t,]+/)
+if(cols[1]=="Name") return
 let buy=parseMoney(cols[6])
 let qty=parseMoney(cols[5])
 let cur=cols[7]||"EUR"
