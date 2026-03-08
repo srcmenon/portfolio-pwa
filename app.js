@@ -283,7 +283,7 @@ let qty=pos.qty
 let avgBuy=pos.avgBuy
 let currentPrice=pos.currentPrice
 
-let currency=list[0].currency||"EUR"
+let currency=list[0].currency || "EUR"
 
 let buyEUR=convertToEUR(avgBuy,currency)
 let currentEUR=convertToEUR(currentPrice,currency)
@@ -297,23 +297,21 @@ let totalCurrentEUR=currentEUR*qty
 let profitEUR=totalCurrentEUR-totalBuyEUR
 let profitLocal=totalCurrentLocal-totalBuyLocal
 
-let growth=totalBuyEUR>0?(profitEUR/totalBuyEUR)*100:0
+let growth=totalBuyEUR>0 ? (profitEUR/totalBuyEUR)*100 : 0
 
 let plClass="neutral"
 if(profitEUR>0) plClass="profit"
 else if(profitEUR<0) plClass="loss"
 
-let row=document.createElement("tr")
 let groupId="grp_"+ticker
+
+let row=document.createElement("tr")
 
 row.innerHTML=`
 <td>
 <span class="toggleBtn" data-target="${groupId}">▶</span>
 ${list[0].name || ticker}
 </td>
-
-row.innerHTML=`
-<td>${list[0].name || ticker}</td>
 
 <td>${qty.toFixed(3)}</td>
 
@@ -351,12 +349,15 @@ ${formatCurrency(profitLocal,currency)}
 ${growth.toFixed(2)}%
 </td>
 
-<td>${list[0].type||""}</td>
+<td>${list[0].type || ""}</td>
 
-<td>${pos.lastDate||""}</td>
+<td>${pos.lastDate || ""}</td>
 `
 
 table.appendChild(row)
+
+/* Sub rows for transaction history */
+
 list.forEach(a=>{
 
 let sub=document.createElement("tr")
@@ -364,16 +365,17 @@ sub.className="subRow "+groupId
 sub.style.display="none"
 
 sub.innerHTML=`
-<td style="padding-left:30px">↳ ${a.buyDate||""}</td>
+<td style="padding-left:30px">↳ ${a.buyDate || ""}</td>
 <td>${a.quantity}</td>
 <td>${formatCurrency(a.buyPrice,a.currency)}</td>
-<td>${formatCurrency(a.currentPrice||a.buyPrice,a.currency)}</td>
-<td colspan="6">${a.broker||""}</td>
+<td>${formatCurrency(a.currentPrice || a.buyPrice,a.currency)}</td>
+<td colspan="6">${a.broker || ""}</td>
 `
 
 table.appendChild(sub)
 
 })
+
 })
 
 setupToggleButtons()
