@@ -157,7 +157,7 @@ if(a.buyDate && a.buyDate>lastDate) lastDate=a.buyDate
 
 let avgBuy= totalQty ? totalCost/totalQty : 0
 
-let currentPrice=list[0].currentPrice || avgBuy
+let currentPrice=list[0].currentPrice || list[0].buyPrice || avgBuy
 let currentEUR=convertToEUR(currentPrice,list[0].currency)
 
 let value=currentEUR*totalQty
@@ -221,65 +221,58 @@ Object.keys(groups).forEach(ticker=>{
 let list=groups[ticker]
 let pos=calculatePosition(list)
 
+let qty=pos.qty
+let avgBuy=pos.avgBuy
+
+let currentPrice=pos.currentPrice
+let currentEUR=convertToEUR(currentPrice,list[0].currency)
+
+let investedValue=avgBuy*qty
+let currentValue=currentEUR*qty
+
+let pl=currentValue-investedValue
+
+let growth=investedValue>0 ? (pl/investedValue)*100 : 0
+
 let plClass="neutral"
-if(pos.pl>0) plClass="profit"
-else if(pos.pl<0) plClass="loss"
-
-let eurValue=convertToEUR(pos.currentPrice,list[0].currency)
-
-let groupId="grp_"+ticker
+if(pl>0) plClass="profit"
+if(pl<0) plClass="loss"
 
 let row=document.createElement("tr")
 
 row.innerHTML=`
+<td>${list[0].name || ticker}</td>
+
+<td>${qty.toFixed(3)}</td>
+
+<td>${formatCurrency(avgBuy,list[0].currency)}</td>
+
 <td>
-<span class="toggleBtn" data-target="${groupId}">▶</span>
-${list[0].name || ticker}
-</td>
-<td>${pos.qty}</td>
-<td>${formatCurrency(pos.avgBuy,list[0].currency)}</td>
-<td>
-${formatCurrency(pos.currentPrice,list[0].currency)}
+${formatCurrency(currentPrice,list[0].currency)}
 <br>
-<span class="eurValue">${formatCurrency(eurValue,"EUR")}</span>
+<span class="eurValue">${formatCurrency(currentEUR,"EUR")}</span>
 </td>
-<td class="${plClass}">${formatCurrency(pos.pl,"EUR")}</td>
-<td>${pos.lastDate||""}</td>
+
+<td>${formatCurrency(investedValue,"EUR")}</td>
+
+<td>${formatCurrency(currentValue,"EUR")}</td>
+
+<td class="${plClass}">
+${formatCurrency(pl,"EUR")}
+</td>
+
+<td class="${plClass}">
+${growth.toFixed(2)}%
+</td>
+
+<td>${list[0].type || ""}</td>
+
+<td>${pos.lastDate || ""}</td>
 `
 
 table.appendChild(row)
 
-list.forEach(a=>{
-
-let sub=document.createElement("tr")
-sub.className="subRow "+groupId
-sub.style.display="none"
-
-let currentEUR=convertToEUR(a.currentPrice||0,a.currency)
-let buyEUR=a.buyPriceEUR || convertToEUR(a.buyPrice||0,a.currency)
-
-let pl=(currentEUR-buyEUR)*(a.quantity||0)
-
-let subClass="neutral"
-if(pl>0) subClass="profit"
-else if(pl<0) subClass="loss"
-
-sub.innerHTML=`
-<td style="padding-left:30px">↳ ${a.buyDate||""}</td>
-<td>${a.quantity}</td>
-<td>${formatCurrency(a.buyPrice,a.currency)}</td>
-<td>${formatCurrency(a.currentPrice,a.currency)}</td>
-<td class="${subClass}">${formatCurrency(pl,"EUR")}</td>
-<td><button onclick="deleteAsset(${a.id})">❌</button></td>
-`
-
-table.appendChild(sub)
-
 })
-
-})
-
-setupToggleButtons()
 
 }
 
