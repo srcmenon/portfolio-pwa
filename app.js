@@ -64,7 +64,9 @@ maximumFractionDigits:2
 })
 
 }
-
+function parseMoney(v){
+return Number(String(v).replace(/[^0-9.-]+/g,""))
+}
 function convertToEUR(value,currency){
 
 if(currency==="EUR") return value
@@ -281,33 +283,34 @@ let qty=pos.qty
 let avgBuy=pos.avgBuy
 let currentPrice=pos.currentPrice
 
-let currency=list[0].currency || "EUR"
-
-/* convert unit prices */
+let currency=list[0].currency||"EUR"
 
 let buyEUR=convertToEUR(avgBuy,currency)
 let currentEUR=convertToEUR(currentPrice,currency)
 
-/* totals */
+let totalBuyLocal=avgBuy*qty
+let totalCurrentLocal=currentPrice*qty
 
 let totalBuyEUR=buyEUR*qty
 let totalCurrentEUR=currentEUR*qty
 
-/* local totals */
+let profitEUR=totalCurrentEUR-totalBuyEUR
+let profitLocal=totalCurrentLocal-totalBuyLocal
 
-let totalBuyLocal=avgBuy*qty
-let totalCurrentLocal=currentPrice*qty
-
-/* profit */
-
-let pl=totalCurrentEUR-totalBuyEUR
-let growth=totalBuyEUR>0?(pl/totalBuyEUR)*100:0
+let growth=totalBuyEUR>0?(profitEUR/totalBuyEUR)*100:0
 
 let plClass="neutral"
-if(pl>0) plClass="profit"
-else if(pl<0) plClass="loss"
+if(profitEUR>0) plClass="profit"
+else if(profitEUR<0) plClass="loss"
 
 let row=document.createElement("tr")
+let groupId="grp_"+ticker
+
+row.innerHTML=`
+<td>
+<span class="toggleBtn" data-target="${groupId}">▶</span>
+${list[0].name || ticker}
+</td>
 
 row.innerHTML=`
 <td>${list[0].name || ticker}</td>
@@ -339,21 +342,41 @@ ${formatCurrency(totalCurrentLocal,currency)}
 </td>
 
 <td class="${plClass}">
-${formatCurrency(pl,"EUR")}
+${formatCurrency(profitLocal,currency)}
+<br>
+<span class="eurValue">${formatCurrency(profitEUR,"EUR")}</span>
 </td>
 
 <td class="${plClass}">
 ${growth.toFixed(2)}%
 </td>
 
-<td>${list[0].type || ""}</td>
+<td>${list[0].type||""}</td>
 
-<td>${pos.lastDate || ""}</td>
+<td>${pos.lastDate||""}</td>
 `
 
 table.appendChild(row)
+list.forEach(a=>{
+
+let sub=document.createElement("tr")
+sub.className="subRow "+groupId
+sub.style.display="none"
+
+sub.innerHTML=`
+<td style="padding-left:30px">↳ ${a.buyDate||""}</td>
+<td>${a.quantity}</td>
+<td>${formatCurrency(a.buyPrice,a.currency)}</td>
+<td>${formatCurrency(a.currentPrice||a.buyPrice,a.currency)}</td>
+<td colspan="6">${a.broker||""}</td>
+`
+
+table.appendChild(sub)
 
 })
+})
+
+setupToggleButtons()
 
 }
 
@@ -828,7 +851,8 @@ rows.forEach(row=>{
 
 let cols=row.split(",")
 
-let buy=Number(cols[6])||0
+let buy=parseMoney(cols[6])
+let qty=parseMoney(cols[5])
 let cur=cols[7]||"EUR"
 
 let asset={
@@ -836,7 +860,7 @@ name:cols[1],
 ticker:cols[2],
 broker:cols[3]||"",
 type:cols[4]||"Other",
-quantity:Number(cols[5])||0,
+quantity:qty,
 buyPrice:buy,
 currency:cur,
 buyPriceEUR:convertToEUR(buy,cur),
