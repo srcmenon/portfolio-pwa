@@ -277,20 +277,33 @@ let pos=calculatePosition(list)
 
 let qty=pos.qty
 let avgBuy=pos.avgBuy
-
 let currentPrice=pos.currentPrice
-let currentEUR=convertToEUR(currentPrice,list[0].currency)
 
-let investedValue=avgBuy*qty
-let currentValue=currentEUR*qty
+let currency=list[0].currency || "EUR"
 
-let pl=currentValue-investedValue
+/* convert unit prices */
 
-let growth=investedValue>0 ? (pl/investedValue)*100 : 0
+let buyEUR=convertToEUR(avgBuy,currency)
+let currentEUR=convertToEUR(currentPrice,currency)
+
+/* totals */
+
+let totalBuyEUR=buyEUR*qty
+let totalCurrentEUR=currentEUR*qty
+
+/* local totals */
+
+let totalBuyLocal=avgBuy*qty
+let totalCurrentLocal=currentPrice*qty
+
+/* profit */
+
+let pl=totalCurrentEUR-totalBuyEUR
+let growth=totalBuyEUR>0?(pl/totalBuyEUR)*100:0
 
 let plClass="neutral"
 if(pl>0) plClass="profit"
-if(pl<0) plClass="loss"
+else if(pl<0) plClass="loss"
 
 let row=document.createElement("tr")
 
@@ -299,17 +312,29 @@ row.innerHTML=`
 
 <td>${qty.toFixed(3)}</td>
 
-<td>${formatCurrency(avgBuy,list[0].currency)}</td>
+<td>
+${formatCurrency(avgBuy,currency)}
+<br>
+<span class="eurValue">${formatCurrency(buyEUR,"EUR")}</span>
+</td>
 
 <td>
-${formatCurrency(currentPrice,list[0].currency)}
+${formatCurrency(currentPrice,currency)}
 <br>
 <span class="eurValue">${formatCurrency(currentEUR,"EUR")}</span>
 </td>
 
-<td>${formatCurrency(investedValue,"EUR")}</td>
+<td>
+${formatCurrency(totalBuyLocal,currency)}
+<br>
+<span class="eurValue">${formatCurrency(totalBuyEUR,"EUR")}</span>
+</td>
 
-<td>${formatCurrency(currentValue,"EUR")}</td>
+<td>
+${formatCurrency(totalCurrentLocal,currency)}
+<br>
+<span class="eurValue">${formatCurrency(totalCurrentEUR,"EUR")}</span>
+</td>
 
 <td class="${plClass}">
 ${formatCurrency(pl,"EUR")}
@@ -679,16 +704,19 @@ rows.forEach(row=>{
 
 let cols=row.split(",")
 
+let buy=Number(cols[6])||0
+let cur=cols[7]||"EUR"
+
 let asset={
 name:cols[1],
 ticker:cols[2],
 broker:cols[3]||"",
 type:cols[4]||"Other",
 quantity:Number(cols[5])||0,
-buyPrice:Number(cols[6])||0,
-currency:cols[7]||"EUR",
-buyPriceEUR:convertToEUR(Number(cols[6])||0,cols[7]||"EUR"),
-currentPrice:Number(cols[6])||0,
+buyPrice:buy,
+currency:cur,
+buyPriceEUR:convertToEUR(buy,cur),
+currentPrice:0,
 buyDate:cols[0]||""
 }
 
