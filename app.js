@@ -18,11 +18,10 @@ navigator.serviceWorker.register("sw.js")
 /* =========================
 FX ENGINE
 ========================= */
-
 let FX = {
-EUR:1,
-USD:0.92,
-INR:0.011
+EUR: 1,
+USD: 1.09,
+INR: 104
 }
 
 async function updateFX(){
