@@ -916,7 +916,28 @@ drawGrowthChart()
 })
 
 }
+/*FilterLogic*/
+function applyFilters(rows){
 
+let asset=document.getElementById("filterAsset")?.value.toLowerCase()
+let type=document.getElementById("filterType")?.value
+let growth=document.getElementById("filterGrowth")?.value
+
+return rows.filter(r=>{
+
+if(asset && !r.name.toLowerCase().includes(asset)) return false
+
+if(type && r.type!=type) return false
+
+if(growth=="positive" && r.profit<=0) return false
+
+if(growth=="negative" && r.profit>=0) return false
+
+return true
+
+})
+
+}
 bindAssetForm()
 bindTabs()
 bindCSVImport()
