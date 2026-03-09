@@ -98,6 +98,25 @@ Date,Name,Ticker,Broker,Type,Quantity,Price,Currency
 <option value="qty">Sort by Quantity</option>
 </select>
 </div>
+<div id="filters">
+
+<input id="filterAsset" placeholder="Filter Asset">
+
+<select id="filterType">
+<option value="">All Types</option>
+<option>Stock</option>
+<option>ETF</option>
+<option>MutualFund</option>
+<option>Crypto</option>
+</select>
+
+<select id="filterGrowth">
+<option value="">All Growth</option>
+<option value="positive">Profit</option>
+<option value="negative">Loss</option>
+</select>
+
+</div>
 <table id="assetTable">
 <thead>
 <tr>
