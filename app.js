@@ -178,7 +178,7 @@ if(a.buyDate && a.buyDate>lastDate) lastDate=a.buyDate
 })
 
 let avgBuy = qty ? totalBuyLocal/qty : 0
-let currentPrice=list[0].currentPrice || list[0].buyPrice || avgBuy
+let currentPrice=list.reduce((p,c)=>c.currentPrice || p ,0) || avgBuy
 
 let totalCurrentLocal=currentPrice*qty
 
@@ -453,8 +453,8 @@ try{
 let r = await fetch("/api/mfnav")
 let text = await r.text()
 
-let navMap={}
-let lines=text.split("\n")
+let navMap = {}
+let lines = text.split("\n")
 
 lines.forEach(line=>{
 
@@ -462,18 +462,18 @@ let parts=line.split(";")
 
 if(parts.length>4){
 
-let schemeCode=parts[0]?.trim()
-let schemeName=parts[3]?.toLowerCase()
-let nav=parseFloat(parts[4])
+let schemeCode = parts[0]?.trim()
+let schemeName = parts[3]?.toLowerCase()
+let nav = parseFloat(parts[4])
 
-/* Ignore IDCW/dividend options */
+/* ONLY accept Direct Plan Growth */
+
 if(
 schemeCode &&
 nav &&
 schemeName &&
-!schemeName.includes("idcw") &&
-!schemeName.includes("dividend") &&
-!navMap[schemeCode]
+schemeName.includes("direct") &&
+schemeName.includes("growth")
 ){
 navMap[schemeCode]=nav
 }
@@ -482,17 +482,17 @@ navMap[schemeCode]=nav
 
 })
 
-let assets=await getAssets()
+let assets = await getAssets()
 
 for(let a of assets){
 
-if(a.type!=="MutualFund") continue
+if(a.type !== "MutualFund") continue
 
-let nav=navMap[a.ticker]
+let nav = navMap[a.ticker]
 
 if(nav){
 
-let tx=db.transaction("assets","readwrite")
+let tx = db.transaction("assets","readwrite")
 
 tx.objectStore("assets").put({
 ...a,
