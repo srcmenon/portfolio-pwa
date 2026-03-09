@@ -141,7 +141,78 @@ groups[key].push(a)
 return groups
 
 }
+/*New function single Portfolio engine*/
+function calculatePortfolio(groups){
 
+let results=[]
+
+Object.keys(groups).forEach(key=>{
+
+let list=groups[key]
+
+let qty=0
+let totalBuyLocal=0
+let currency=list[0].currency || "EUR"
+let name=list[0].name || key
+let type=list[0].type || ""
+let lastDate=""
+
+list.forEach(a=>{
+
+let q=a.quantity || 0
+let buy=a.buyPrice || 0
+let current=a.currentPrice || buy
+
+qty+=q
+totalBuyLocal+=buy*q
+
+if(a.buyDate && a.buyDate>lastDate) lastDate=a.buyDate
+
+})
+
+let avgBuy = qty ? totalBuyLocal/qty : 0
+let currentPrice=list[0].currentPrice || avgBuy
+
+let totalCurrentLocal=currentPrice*qty
+
+let buyEUR=convertToEUR(avgBuy,currency)
+let currentEUR=convertToEUR(currentPrice,currency)
+
+let totalBuyEUR=buyEUR*qty
+let totalCurrentEUR=currentEUR*qty
+
+let profitLocal=totalCurrentLocal-totalBuyLocal
+let profitEUR=totalCurrentEUR-totalBuyEUR
+
+let growth=0
+if(totalBuyLocal>0){
+growth=(profitLocal/totalBuyLocal)*100
+}
+
+results.push({
+key,
+name,
+type,
+currency,
+qty,
+avgBuy,
+currentPrice,
+totalBuyLocal,
+totalCurrentLocal,
+totalBuyEUR,
+totalCurrentEUR,
+profitLocal,
+profitEUR,
+growth,
+lastDate,
+list
+})
+
+})
+
+return results
+
+}
 function calculatePosition(list){
 
 let totalQty=0
@@ -200,66 +271,24 @@ async function loadAssets(){
 if(!db) return
 
 let assets = await getAssets()
+
 let groups = groupAssets(assets)
 
-/* Convert groups to sortable array */
+/* Use unified portfolio engine */
 
-let rows = Object.keys(groups).map(key => {
+let portfolio = calculatePortfolio(groups)
 
-let list = groups[key]
-let pos = calculatePosition(list)
+/* Render UI */
 
-let qty = pos.qty
-let avgBuy = pos.avgBuy
+renderPortfolioTable(portfolio)
 
-let currentPrice = pos.currentPrice
-let currentEUR = convertToEUR(currentPrice,list[0].currency)
+renderPortfolioSummary(portfolio)
 
-let investedValue = avgBuy * qty
-let currentValue = currentEUR * qty
+renderPortfolioReturn(portfolio)
 
-let profit = currentValue - investedValue
-let growth = investedValue > 0 ? (profit/investedValue)*100 : 0
+/* Charts */
 
-return {
-key,
-list,
-pos,
-qty,
-profit,
-growth,
-value:currentValue
-}
-
-})
-
-/* Sorting */
-
-let sortType = document.getElementById("sortAssets")?.value || "name"
-
-rows.sort((a,b)=>{
-
-if(sortType==="name") return a.key.localeCompare(b.key)
-if(sortType==="profit") return b.profit-a.profit
-if(sortType==="growth") return b.growth-a.growth
-if(sortType==="value") return b.value-a.value
-if(sortType==="qty") return b.qty-a.qty
-
-return 0
-
-})
-
-/* rebuild sorted groups */
-
-let sortedGroups={}
-rows.forEach(r=>{
-sortedGroups[r.key]=r.list
-})
-
-renderPortfolioTable(sortedGroups)
-renderPortfolioSummary(sortedGroups)
-renderPortfolioReturn(sortedGroups)
-drawPortfolioAllocation()
+drawPortfolioAllocation(portfolio)
 
 if(document.getElementById("insightsTab")?.classList.contains("active")){
 drawCharts()
@@ -268,116 +297,100 @@ drawGrowthChart()
 
 }
 
-function renderPortfolioTable(groups){
+function renderPortfolioTable(portfolio){
 
 let table=document.querySelector("#assetTable tbody")
 if(!table) return
 
 table.innerHTML=""
 
-Object.keys(groups).forEach(ticker=>{
-
-let list=groups[ticker]
-let pos=calculatePosition(list)
-
-let qty=pos.qty
-let avgBuy=pos.avgBuy
-let currentPrice=pos.currentPrice
-
-let currency=list[0].currency || "EUR"
-
-let buyEUR=convertToEUR(avgBuy,currency)
-let currentEUR=convertToEUR(currentPrice,currency)
-
-let totalBuyLocal=avgBuy*qty
-let totalCurrentLocal=currentPrice*qty
-
-let totalBuyEUR=buyEUR*qty
-let totalCurrentEUR=currentEUR*qty
-
-let profitEUR=totalCurrentEUR-totalBuyEUR
-let profitLocal=totalCurrentLocal-totalBuyLocal
-
-let growth = 0
-
-if(totalBuyLocal > 0){
-growth = ((totalCurrentLocal - totalBuyLocal) / totalBuyLocal) * 100
-}
+portfolio.forEach(pos=>{
 
 let plClass="neutral"
-if(profitEUR>0) plClass="profit"
-else if(profitEUR<0) plClass="loss"
 
-let groupId="grp_"+ticker
+if(pos.profitEUR>0) plClass="profit"
+else if(pos.profitEUR<0) plClass="loss"
+
+let groupId="grp_"+pos.key
 
 let row=document.createElement("tr")
 
 row.innerHTML=`
+
 <td>
 <span class="toggleBtn" data-target="${groupId}">▶</span>
-${list[0].name || ticker}
+${pos.name}
 </td>
 
-<td>${qty.toFixed(3)}</td>
+<td>${pos.qty.toFixed(3)}</td>
 
 <td>
-${formatCurrency(avgBuy,currency)}
+${formatCurrency(pos.avgBuy,pos.currency)}
 <br>
-<span class="eurValue">${formatCurrency(buyEUR,"EUR")}</span>
-</td>
-
-<td>
-${formatCurrency(currentPrice,currency)}
-<br>
-<span class="eurValue">${formatCurrency(currentEUR,"EUR")}</span>
+<span class="eurValue">${formatCurrency(convertToEUR(pos.avgBuy,pos.currency),"EUR")}</span>
 </td>
 
 <td>
-${formatCurrency(totalBuyLocal,currency)}
+${formatCurrency(pos.currentPrice,pos.currency)}
 <br>
-<span class="eurValue">${formatCurrency(totalBuyEUR,"EUR")}</span>
+<span class="eurValue">${formatCurrency(convertToEUR(pos.currentPrice,pos.currency),"EUR")}</span>
 </td>
 
 <td>
-${formatCurrency(totalCurrentLocal,currency)}
+${formatCurrency(pos.totalBuyLocal,pos.currency)}
 <br>
-<span class="eurValue">${formatCurrency(totalCurrentEUR,"EUR")}</span>
+<span class="eurValue">${formatCurrency(pos.totalBuyEUR,"EUR")}</span>
+</td>
+
+<td>
+${formatCurrency(pos.totalCurrentLocal,pos.currency)}
+<br>
+<span class="eurValue">${formatCurrency(pos.totalCurrentEUR,"EUR")}</span>
 </td>
 
 <td class="${plClass}">
-${formatCurrency(profitLocal,currency)}
+${formatCurrency(pos.profitLocal,pos.currency)}
 <br>
-<span class="eurValue">${formatCurrency(profitEUR,"EUR")}</span>
+<span class="eurValue">${formatCurrency(pos.profitEUR,"EUR")}</span>
 </td>
 
 <td class="${plClass}">
-${growth.toFixed(2)}%
+${pos.growth.toFixed(2)}%
 </td>
 
-<td>${list[0].type || ""}</td>
+<td>${pos.type || ""}</td>
 
 <td>${pos.lastDate || ""}</td>
+
 `
 
 table.appendChild(row)
 
-/* Sub rows for transaction history */
+/* Transaction history rows */
 
-list.forEach(a=>{
+pos.list.forEach(a=>{
 
 let sub=document.createElement("tr")
+
 sub.className="subRow "+groupId
 sub.style.display="none"
 
 sub.innerHTML=`
+
 <td style="padding-left:30px">↳ ${a.buyDate || ""}</td>
+
 <td>${a.quantity}</td>
+
 <td>${formatCurrency(a.buyPrice,a.currency)}</td>
+
 <td>${formatCurrency(a.currentPrice || a.buyPrice,a.currency)}</td>
-<td>${a.broker || ""}</td>
+
+<td colspan="4">${a.broker || ""}</td>
+
 <td>
 <button onclick="deleteAsset(${a.id})">❌</button>
 </td>
+
 `
 
 table.appendChild(sub)
