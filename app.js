@@ -7,7 +7,8 @@ let currencyChartInstance = null
 let growthChartInstance = null
 let priceUpdateRunning = false
 let allocationBarChartInstance=null
-
+document.getElementById("assetDate").value =
+new Date().toISOString().split("T")[0]
 /* =========================
 SERVICE WORKER
 ========================= */
