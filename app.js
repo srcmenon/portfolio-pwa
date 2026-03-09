@@ -297,7 +297,11 @@ let totalCurrentEUR=currentEUR*qty
 let profitEUR=totalCurrentEUR-totalBuyEUR
 let profitLocal=totalCurrentLocal-totalBuyLocal
 
-let growth=totalBuyEUR>0 ? (profitEUR/totalBuyEUR)*100 : 0
+let growth = 0
+
+if(totalBuyLocal > 0){
+growth = ((totalCurrentLocal - totalBuyLocal) / totalBuyLocal) * 100
+}
 
 let plClass="neutral"
 if(profitEUR>0) plClass="profit"
@@ -469,7 +473,7 @@ if(!db) return
 
 try{
 
-let r = await fetch("https://www.amfiindia.com/spages/NAVAll.txt")
+let r = await fetch("/api/mfnav")
 let text = await r.text()
 
 let lines = text.split("\n")
