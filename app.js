@@ -463,11 +463,11 @@ let parts=line.split(";")
 
 if(parts.length>4){
 
-let schemeName=parts[3]?.trim()
+let schemeCode=parts[0]?.trim()
 let nav=parseFloat(parts[4])
 
-if(schemeName && nav){
-navMap[schemeName.toLowerCase()]=nav
+if(schemeCode && nav){
+navMap[schemeCode]=nav
 }
 
 }
@@ -482,13 +482,7 @@ if(a.type!=="MutualFund") return
 
 let name=a.name?.toLowerCase()
 
-let nav=null
-
-Object.keys(navMap).forEach(key=>{
-if(name && key.includes(name.substring(0,12))){
-nav=navMap[key]
-}
-})
+let nav = navMap[a.ticker]
 
 if(nav){
 
