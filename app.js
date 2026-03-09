@@ -252,7 +252,7 @@ renderPortfolioReturn(portfolio)
 drawPortfolioAllocation(portfolio)
 
 if(document.getElementById("insightsTab")?.classList.contains("active")){
-drawCharts()
+drawCharts(portfolio)
 drawGrowthChart()
 }
 
@@ -450,12 +450,11 @@ if(!db) return
 
 try{
 
-let r = await fetch("/api/mfnav")
-let text = await r.text()
-
-let lines = text.split("\n")
+let r=await fetch("/api/mfnav")
+let text=await r.text()
 
 let navMap={}
+let lines=text.split("\n")
 
 lines.forEach(line=>{
 
@@ -480,9 +479,7 @@ assets.forEach(a=>{
 
 if(a.type!=="MutualFund") return
 
-let name=a.name?.toLowerCase()
-
-let nav = navMap[a.ticker]
+let nav=navMap[a.ticker]
 
 if(nav){
 
@@ -533,6 +530,9 @@ let assets=await getAssets()
 
 for(let a of assets){
 
+/* Skip mutual funds */
+if(a.type==="MutualFund") continue
+
 if(!a.ticker) continue
 
 let price=await fetchPrice(a.ticker)
@@ -540,7 +540,11 @@ let price=await fetchPrice(a.ticker)
 if(price!==null){
 
 let tx=db.transaction("assets","readwrite")
-tx.objectStore("assets").put({...a,currentPrice:price})
+
+tx.objectStore("assets").put({
+...a,
+currentPrice:price
+})
 
 }
 
@@ -581,26 +585,15 @@ value:total
 CHARTS ENGINE
 ========================= */
 
-function drawCharts(){
-
-if(!db) return
-
-let tx=db.transaction("assets","readonly")
-let store=tx.objectStore("assets")
-
-store.getAll().onsuccess=(e)=>{
-
-let assets=e.target.result
+function drawCharts(portfolio){
 
 let allocation={}
 let currencies={}
 
-assets.forEach(a=>{
+portfolio.forEach(p=>{
 
-let value=(a.currentPrice||0)*(a.quantity||0)
-
-allocation[a.type]=(allocation[a.type]||0)+value
-currencies[a.currency]=(currencies[a.currency]||0)+value
+allocation[p.type]=(allocation[p.type]||0)+p.totalCurrentEUR
+currencies[p.currency]=(currencies[p.currency]||0)+p.totalCurrentEUR
 
 })
 
@@ -611,8 +604,10 @@ allocationChartInstance=new Chart(
 document.getElementById("allocationChart"),
 {
 type:"pie",
-data:{labels:Object.keys(allocation),
-datasets:[{data:Object.values(allocation)}]}
+data:{
+labels:Object.keys(allocation),
+datasets:[{data:Object.values(allocation)}]
+}
 }
 )
 
@@ -620,12 +615,12 @@ currencyChartInstance=new Chart(
 document.getElementById("currencyChart"),
 {
 type:"pie",
-data:{labels:Object.keys(currencies),
-datasets:[{data:Object.values(currencies)}]}
+data:{
+labels:Object.keys(currencies),
+datasets:[{data:Object.values(currencies)}]
+}
 }
 )
-
-}
 
 }
 function drawPortfolioAllocation(portfolio){
@@ -720,14 +715,14 @@ setInterval(()=>{
 if(navigator.onLine && db){
 
 updatePrices()
-updateMutualFundNAV()
 recordPortfolioSnapshot()
 
 }
 
 },300000)
 
-}
+/* Mutual funds once per day */
+setInterval(updateMutualFundNAV,86400000)
 
 /* =========================
 FORM + TABS ENGINE
