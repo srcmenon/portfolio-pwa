@@ -7,8 +7,15 @@ let currencyChartInstance = null
 let growthChartInstance = null
 let priceUpdateRunning = false
 let allocationBarChartInstance=null
-document.getElementById("assetDate").value =
-new Date().toISOString().split("T")[0]
+window.addEventListener("DOMContentLoaded",()=>{
+
+let d=document.getElementById("assetDate")
+
+if(d){
+d.value=new Date().toISOString().split("T")[0]
+}
+
+})
 /* =========================
 SERVICE WORKER
 ========================= */
@@ -171,7 +178,7 @@ if(a.buyDate && a.buyDate>lastDate) lastDate=a.buyDate
 })
 
 let avgBuy = qty ? totalBuyLocal/qty : 0
-let currentPrice=list[0].currentPrice || avgBuy
+let currentPrice=list[0].currentPrice || list[0].buyPrice || avgBuy
 
 let totalCurrentLocal=currentPrice*qty
 
@@ -184,9 +191,10 @@ let totalCurrentEUR=currentEUR*qty
 let profitLocal=totalCurrentLocal-totalBuyLocal
 let profitEUR=totalCurrentEUR-totalBuyEUR
 
-let growth=0
-if(totalBuyLocal>0){
-growth=(profitLocal/totalBuyLocal)*100
+let growth = 0
+
+if(totalBuyLocal > 0){
+growth = ((totalCurrentLocal - totalBuyLocal) / totalBuyLocal) * 100
 }
 
 results.push({
@@ -213,54 +221,7 @@ list
 return results
 
 }
-function calculatePosition(list){
 
-let totalQty=0
-let totalCost=0
-let lastDate=""
-
-list.forEach(a=>{
-
-let buyEUR=a.buyPriceEUR || convertToEUR(a.buyPrice||0,a.currency)
-
-totalQty+=a.quantity||0
-totalCost+=buyEUR*(a.quantity||0)
-
-if(a.buyDate && a.buyDate>lastDate) lastDate=a.buyDate
-
-})
-
-let avgBuy= totalQty ? totalCost/totalQty : 0
-
-let currentPrice=list[0].currentPrice || list[0].buyPrice || avgBuy
-let currentEUR=convertToEUR(currentPrice,list[0].currency)
-
-let value=currentEUR*totalQty
-let pl=(currentEUR-avgBuy)*totalQty
-
-return{
-qty:totalQty,
-avgBuy,
-currentPrice,
-value,
-pl,
-lastDate
-}
-
-}
-
-function calculatePortfolioTotal(groups){
-
-let total=0
-
-Object.values(groups).forEach(list=>{
-let pos=calculatePosition(list)
-total+=pos.value
-})
-
-return total
-
-}
 
 /* =========================
 UI RENDER ENGINE
@@ -403,20 +364,25 @@ setupToggleButtons()
 
 }
 
-function renderPortfolioSummary(groups){
+function renderPortfolioSummary(portfolio){
 
-let total=calculatePortfolioTotal(groups)
-let inr=convertFromEUR(total,"INR")
+let totalEUR = 0
+
+portfolio.forEach(p=>{
+totalEUR += p.totalCurrentEUR
+})
+
+let inr = convertFromEUR(totalEUR,"INR")
 
 let countEl=document.getElementById("assetCount")
 let valueEl=document.getElementById("totalValue")
 
-if(countEl) countEl.innerText=Object.keys(groups).length
+if(countEl) countEl.innerText = portfolio.length
 
 if(valueEl){
 
 valueEl.innerHTML=`
-${formatCurrency(total,"EUR")}
+${formatCurrency(totalEUR,"EUR")}
 <br>
 <span class="inrValue">${formatCurrency(inr,"INR")}</span>
 `
@@ -425,22 +391,19 @@ ${formatCurrency(total,"EUR")}
 
 }
 
-function renderPortfolioReturn(groups){
-
-let returnEl=document.getElementById("portfolioReturn")
-if(!returnEl) return
+function renderPortfolioReturn(portfolio){
 
 let invested=0
 let current=0
 
-Object.values(groups).forEach(list=>{
-
-let pos=calculatePosition(list)
-
-invested+=pos.avgBuy*pos.qty
-current+=pos.value
-
+portfolio.forEach(p=>{
+invested += p.totalBuyEUR
+current += p.totalCurrentEUR
 })
+
+let returnEl=document.getElementById("portfolioReturn")
+
+if(!returnEl) return
 
 if(invested<=0){
 returnEl.textContent="No data yet"
@@ -671,28 +634,15 @@ datasets:[{data:Object.values(currencies)}]}
 }
 
 }
-function drawPortfolioAllocation(){
-
-if(!db) return
-
-let tx=db.transaction("assets","readonly")
-let store=tx.objectStore("assets")
-
-store.getAll().onsuccess=(e)=>{
-
-let assets=e.target.result
+function drawPortfolioAllocation(portfolio){
 
 let allocation={}
 
-assets.forEach(a=>{
+portfolio.forEach(p=>{
 
-let value=(a.currentPrice||a.buyPrice||0)*(a.quantity||0)
+let type=p.type || "Other"
 
-let eur=convertToEUR(value,a.currency)
-
-let type=a.type||"Other"
-
-allocation[type]=(allocation[type]||0)+eur
+allocation[type]=(allocation[type]||0)+p.totalCurrentEUR
 
 })
 
@@ -715,8 +665,6 @@ data:values
 }
 }
 )
-
-}
 
 }
 function drawGrowthChart(){
@@ -887,7 +835,7 @@ quantity:qty,
 buyPrice:buy,
 currency:cur,
 buyPriceEUR:convertToEUR(buy,cur),
-currentPrice:0,
+currentPrice:buy,
 buyDate:cols[0]||""
 }
 
@@ -942,9 +890,8 @@ if(asset && !r.name.toLowerCase().includes(asset)) return false
 
 if(type && r.type!=type) return false
 
-if(growth=="positive" && r.profit<=0) return false
-
-if(growth=="negative" && r.profit>=0) return false
+if(growth=="positive" && r.profitEUR<=0) return false
+if(growth=="negative" && r.profitEUR>=0) return false
 
 return true
 
