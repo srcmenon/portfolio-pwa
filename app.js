@@ -723,7 +723,7 @@ recordPortfolioSnapshot()
 
 /* Mutual funds once per day */
 setInterval(updateMutualFundNAV,86400000)
-
+}
 /* =========================
 FORM + TABS ENGINE
 ========================= */
