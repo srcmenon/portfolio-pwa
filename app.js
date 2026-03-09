@@ -450,15 +450,15 @@ if(!db) return
 
 try{
 
-let r=await fetch("/api/mfnav")
-let text=await r.text()
+let r = await fetch("/api/mfnav")
+let text = await r.text()
 
-let navMap={}
-let lines=text.split("\n")
+let navMap = {}
+let lines = text.split("\n")
 
 lines.forEach(line=>{
 
-let parts=line.split(";")
+let parts = line.split(";")
 
 if(parts.length>4){
 
@@ -466,12 +466,14 @@ let schemeCode = parts[0]?.trim()
 let schemeName = parts[3]?.toLowerCase()
 let nav = parseFloat(parts[4])
 
-/* Only store Growth option NAV */
+/* Accept only Growth option NAV
+   and prevent IDCW rows from overwriting */
 if(
 schemeCode &&
 nav &&
 schemeName &&
-schemeName.includes("growth")
+schemeName.includes("growth") &&
+!navMap[schemeCode]
 ){
 navMap[schemeCode] = nav
 }
@@ -480,17 +482,17 @@ navMap[schemeCode] = nav
 
 })
 
-let assets=await getAssets()
+let assets = await getAssets()
 
-assets.forEach(a=>{
+for(let a of assets){
 
-if(a.type!=="MutualFund") return
+if(a.type!=="MutualFund") continue
 
-let nav=navMap[a.ticker]
+let nav = navMap[a.ticker]
 
 if(nav){
 
-let tx=db.transaction("assets","readwrite")
+let tx = db.transaction("assets","readwrite")
 
 tx.objectStore("assets").put({
 ...a,
@@ -499,13 +501,13 @@ currentPrice:nav
 
 }
 
-})
+}
 
 loadAssets()
 
 }catch(e){
 
-console.log("MF NAV update failed")
+console.log("MF NAV update failed",e)
 
 }
 
