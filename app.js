@@ -462,11 +462,18 @@ let parts=line.split(";")
 
 if(parts.length>4){
 
-let schemeCode=parts[0]?.trim()
-let nav=parseFloat(parts[4])
+let schemeCode = parts[0]?.trim()
+let schemeName = parts[3]?.toLowerCase()
+let nav = parseFloat(parts[4])
 
-if(schemeCode && nav){
-navMap[schemeCode]=nav
+/* Only store Growth option NAV */
+if(
+schemeCode &&
+nav &&
+schemeName &&
+schemeName.includes("growth")
+){
+navMap[schemeCode] = nav
 }
 
 }
