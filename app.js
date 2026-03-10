@@ -473,9 +473,11 @@ schemeCode &&
 nav &&
 schemeName &&
 schemeName.includes("direct") &&
-schemeName.includes("growth")
+schemeName.includes("growth") &&
+!schemeName.includes("idcw") &&
+!schemeName.includes("dividend")
 ){
-navMap[schemeCode]=nav
+navMap[schemeCode] = nav
 }
 
 }
