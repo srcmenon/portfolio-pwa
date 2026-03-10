@@ -450,68 +450,64 @@ if(!db) return
 
 try{
 
-let r = await fetch("/api/mfnav")
-let text = await r.text()
+const res = await fetch("/api/mfnav")
+const text = await res.text()
 
-let assets = await getAssets()
-let lines = text.split("\n")
+const navMap = {}
 
-let navMap = {}
+const lines = text.split("\n")
 
-lines.forEach(line => {
+for(const line of lines){
 
-let parts = line.split(";")
+if(!line || !line.includes(";")) continue
 
-if(parts.length < 5) return
+const parts = line.split(";")
 
-let schemeCode = parts[0]?.trim()
-let schemeName = parts[3]?.toLowerCase()
-let nav = parseFloat(parts[4])
+/* must contain exactly NAV structure */
+if(parts.length < 6) continue
 
-if(!schemeCode || !schemeName || !nav) return
+const schemeCode = parts[0].trim()
+const schemeName = parts[3].toLowerCase()
+const nav = parseFloat(parts[4])
 
-assets.forEach(asset => {
-
-if(asset.type !== "MutualFund") return
-
-if(asset.ticker !== schemeCode) return
-
-let assetName = asset.name.toLowerCase()
-
-/* match scheme name to asset name */
 if(
-schemeName.includes(assetName.split(" ")[0]) &&
-schemeName.includes("growth") &&
-!schemeName.includes("idcw") &&
-!schemeName.includes("dividend")
-){
+!schemeCode ||
+isNaN(nav) ||
+nav <= 0
+) continue
+
+/* accept only growth NAVs */
+if(
+schemeName.includes("idcw") ||
+schemeName.includes("dividend") ||
+schemeName.includes("payout")
+) continue
+
 navMap[schemeCode] = nav
+
 }
 
-})
+const assets = await getAssets()
 
-})
+const tx = db.transaction("assets","readwrite")
+const store = tx.objectStore("assets")
 
-for(let a of assets){
+for(const a of assets){
 
 if(a.type !== "MutualFund") continue
 
-let nav = navMap[a.ticker]
+const nav = navMap[a.ticker]
 
-if(nav){
+if(!nav) continue
 
-let tx = db.transaction("assets","readwrite")
-
-tx.objectStore("assets").put({
+store.put({
 ...a,
 currentPrice: nav
 })
 
 }
 
-}
-
-loadAssets()
+tx.oncomplete = () => loadAssets()
 
 }catch(e){
 
