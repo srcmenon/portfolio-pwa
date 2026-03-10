@@ -17,6 +17,39 @@ d.value=new Date().toISOString().split("T")[0]
 }
 
 })
+
+/* =========================
+NSE DISPLAY NAMES
+========================= */
+const NSE_NAMES = {
+  BAJFINANCE:"Bajaj Finance", BEL:"Bharat Electronics", BERGEPAINT:"Berger Paints",
+  CDSL:"CDSL", COALINDIA:"Coal India", CRISIL:"CRISIL Ltd",
+  DREAMFOLKS:"Dreamfolks Services", ENGINERSIN:"Engineers India", ETERNAL:"Eternal Ltd",
+  GESHIP:"Great Eastern Shipping", HDFCBANK:"HDFC Bank", HEROMOTOCO:"Hero MotoCorp",
+  HINDUNILVR:"Hindustan Unilever", IDFCFIRSTB:"IDFC First Bank", INDHOTEL:"Indian Hotels",
+  INFY:"Infosys", IOLCP:"IOL Chemicals", IRCTC:"IRCTC", ITC:"ITC Ltd",
+  ITCHOTELS:"ITC Hotels", JINDALSTEL:"Jindal Steel & Power", JIOFIN:"Jio Financial Services",
+  KALYANKJIL:"Kalyan Jewellers", KEI:"KEI Industries", KIRLPNU:"Kirloskar Pneumatic",
+  KPITTECH:"KPIT Technologies", KTKBANK:"Karnataka Bank", KWIL:"Kiri Industries",
+  LICHSGFIN:"LIC Housing Finance", LICI:"LIC of India", LT:"Larsen & Toubro",
+  LTFOODS:"LT Foods", MAANALU:"Maan Aluminium", MAHSEAMLES:"Maharashtra Seamless",
+  NATIONALUM:"National Aluminium", NAVA:"NAVA Ltd", NLCINDIA:"NLC India",
+  NMDC:"NMDC Ltd", OFSS:"Oracle Financial Services", OIL:"Oil India", ONGC:"ONGC",
+  PATELENG:"Patel Engineering", PERSISTENT:"Persistent Systems", PFC:"Power Finance Corp",
+  PIDILITIND:"Pidilite Industries", POWERGRID:"Power Grid Corp", PTC:"PTC India",
+  PVRINOX:"PVR Inox", RECLTD:"REC Ltd", RELIANCE:"Reliance Industries",
+  RPOWER:"Reliance Power", SAIL:"SAIL", SBIN:"State Bank of India",
+  SCHAEFFLER:"Schaeffler India", SHRIRAMFIN:"Shriram Finance", SOBHA:"Sobha Ltd",
+  SOLARINDS:"Solar Industries", SUNDARMFIN:"Sundaram Finance", TATACHEM:"Tata Chemicals",
+  TATASTEEL:"Tata Steel", TATATECH:"Tata Technologies", TCS:"Tata Consultancy Services",
+  TMCV:"Tata Motors (CV)", TMPV:"Tata Motors (PV)", VEDL:"Vedanta Ltd", VOLTAS:"Voltas Ltd"
+}
+
+function resolveDisplayName(pos){
+  if(NSE_NAMES[pos.key]) return NSE_NAMES[pos.key]
+  return pos.name || pos.key
+}
+
 /* =========================
 SERVICE WORKER
 ========================= */
@@ -243,21 +276,31 @@ let portfolio = calculatePortfolio(groups)
 /* Cache for tab reuse */
 lastPortfolio = portfolio
 
+/* Sort */
+let sortVal = document.getElementById("sortAssets")?.value || "name"
+portfolio.sort((a,b)=>{
+  if(sortVal==="growth")  return b.growth - a.growth
+  if(sortVal==="profit")  return b.profitEUR - a.profitEUR
+  if(sortVal==="value")   return b.totalCurrentEUR - a.totalCurrentEUR
+  return resolveDisplayName(a).localeCompare(resolveDisplayName(b))
+})
+
+/* Filter for table only */
+let filtered = applyFilters(portfolio)
+
 /* Render UI */
-
-renderPortfolioTable(portfolio)
-
+renderPortfolioTable(filtered)
 renderPortfolioSummary(portfolio)
-
 renderPortfolioReturn(portfolio)
 
 /* Charts */
-
 drawPortfolioAllocation(portfolio)
 
 if(document.getElementById("insightsTab")?.classList.contains("active")){
-drawCharts(portfolio)
-drawGrowthChart()
+  drawCharts(lastPortfolio)
+  drawGrowthChart()
+  renderInsightsSummary(lastPortfolio)
+  renderTopMovers(lastPortfolio)
 }
 
 }
@@ -269,103 +312,122 @@ if(!table) return
 
 table.innerHTML=""
 
+/* Populate search dropdown */
+updateSearchDropdown(portfolio)
+
 portfolio.forEach(pos=>{
 
 let plClass="neutral"
-
 if(pos.profitEUR>0) plClass="profit"
 else if(pos.profitEUR<0) plClass="loss"
 
-let groupId="grp_"+pos.key
+let groupId="grp_"+pos.key.replace(/[^a-zA-Z0-9]/g,"_")
+let displayName = resolveDisplayName(pos)
+let showTicker = (pos.key !== displayName)
+let typeBadge = pos.type ? `<span class="badge badge-${pos.type}">${pos.type}</span>` : ""
 
 let row=document.createElement("tr")
-
 row.innerHTML=`
-
 <td>
-<span class="toggleBtn" data-target="${groupId}">▶</span>
-${pos.name}
+  <span class="toggleBtn" data-target="${groupId}">▶</span>
+  <span class="asset-name">${displayName}</span>
+  ${showTicker ? `<span class="asset-sub">${pos.key}</span>` : ""}
 </td>
-
-<td>${pos.qty.toFixed(3)}</td>
-
+<td class="num">${pos.qty.toFixed(3)}</td>
 <td>
-${formatCurrency(pos.avgBuy,pos.currency)}
-<br>
-<span class="eurValue">${formatCurrency(convertToEUR(pos.avgBuy,pos.currency),"EUR")}</span>
+  <span class="num">${formatCurrency(pos.avgBuy,pos.currency)}</span>
+  <span class="eurValue">${formatCurrency(convertToEUR(pos.avgBuy,pos.currency),"EUR")}</span>
 </td>
-
 <td>
-${formatCurrency(pos.currentPrice,pos.currency)}
-<br>
-<span class="eurValue">${formatCurrency(convertToEUR(pos.currentPrice,pos.currency),"EUR")}</span>
+  <span class="num">${formatCurrency(pos.currentPrice,pos.currency)}</span>
+  <span class="eurValue">${formatCurrency(convertToEUR(pos.currentPrice,pos.currency),"EUR")}</span>
 </td>
-
 <td>
-${formatCurrency(pos.totalBuyLocal,pos.currency)}
-<br>
-<span class="eurValue">${formatCurrency(pos.totalBuyEUR,"EUR")}</span>
+  <span class="num">${formatCurrency(pos.totalBuyLocal,pos.currency)}</span>
+  <span class="eurValue">${formatCurrency(pos.totalBuyEUR,"EUR")}</span>
 </td>
-
 <td>
-${formatCurrency(pos.totalCurrentLocal,pos.currency)}
-<br>
-<span class="eurValue">${formatCurrency(pos.totalCurrentEUR,"EUR")}</span>
+  <span class="num">${formatCurrency(pos.totalCurrentLocal,pos.currency)}</span>
+  <span class="eurValue">${formatCurrency(pos.totalCurrentEUR,"EUR")}</span>
 </td>
-
 <td class="${plClass}">
-${formatCurrency(pos.profitLocal,pos.currency)}
-<br>
-<span class="eurValue">${formatCurrency(pos.profitEUR,"EUR")}</span>
+  ${formatCurrency(pos.profitLocal,pos.currency)}
+  <span class="eurValue">${formatCurrency(pos.profitEUR,"EUR")}</span>
 </td>
-
-<td class="${plClass}">
-${pos.growth.toFixed(2)}%
-</td>
-
-<td>${pos.type || ""}</td>
-
-<td>${pos.lastDate || ""}</td>
-
+<td class="${plClass}">${pos.growth.toFixed(2)}%</td>
+<td>${typeBadge}</td>
+<td class="num" style="font-size:12px;color:var(--dim)">${pos.lastDate || ""}</td>
 `
-
 table.appendChild(row)
 
-/* Transaction history rows */
-
 pos.list.forEach(a=>{
-
-let sub=document.createElement("tr")
-
-sub.className="subRow "+groupId
-sub.style.display="none"
-
-sub.innerHTML=`
-
-<td style="padding-left:30px">↳ ${a.buyDate || ""}</td>
-
-<td>${a.quantity}</td>
-
-<td>${formatCurrency(a.buyPrice,a.currency)}</td>
-
-<td>${formatCurrency(a.currentPrice || a.buyPrice,a.currency)}</td>
-
-<td colspan="4">${a.broker || ""}</td>
-
-<td>
-<button onclick="deleteAsset(${a.id})">❌</button>
-</td>
-
-`
-
-table.appendChild(sub)
-
+  let sub=document.createElement("tr")
+  sub.className="subRow "+groupId
+  sub.style.display="none"
+  sub.innerHTML=`
+    <td>↳ ${a.buyDate || ""}</td>
+    <td class="num">${a.quantity}</td>
+    <td class="num">${formatCurrency(a.buyPrice,a.currency)}</td>
+    <td class="num">${formatCurrency(a.currentPrice || a.buyPrice,a.currency)}</td>
+    <td colspan="4" style="color:var(--dim)">${a.broker || ""}</td>
+    <td><button onclick="deleteAsset(${a.id})">Remove</button></td>
+  `
+  table.appendChild(sub)
 })
 
 })
 
 setupToggleButtons()
+}
 
+/* ── Search dropdown ── */
+function updateSearchDropdown(portfolio){
+  window._searchPortfolio = portfolio
+}
+
+function bindSearchDropdown(){
+  const input = document.getElementById("filterAsset")
+  const dropdown = document.getElementById("searchDropdown")
+  if(!input || !dropdown) return
+
+  input.addEventListener("input", ()=>{
+    const q = input.value.toLowerCase().trim()
+    if(!q || !window._searchPortfolio){
+      dropdown.style.display="none"
+      loadAssets()
+      return
+    }
+    const matches = window._searchPortfolio.filter(p=>{
+      const dn = resolveDisplayName(p).toLowerCase()
+      return dn.includes(q) || p.key.toLowerCase().includes(q)
+    })
+    if(!matches.length){ dropdown.style.display="none"; loadAssets(); return }
+    dropdown.innerHTML = matches.slice(0,8).map(p=>{
+      const dn = resolveDisplayName(p)
+      const showT = p.key !== dn
+      return `<div class="search-item" data-value="${dn}">
+        <span>${dn}</span>
+        ${showT ? `<span class="ticker-tag">${p.key}</span>` : ""}
+      </div>`
+    }).join("")
+    dropdown.style.display = "block"
+    loadAssets()
+  })
+
+  dropdown.addEventListener("click", e=>{
+    const item = e.target.closest(".search-item")
+    if(item){
+      input.value = item.dataset.value
+      dropdown.style.display = "none"
+      loadAssets()
+    }
+  })
+
+  document.addEventListener("click", e=>{
+    if(!input.contains(e.target) && !dropdown.contains(e.target)){
+      dropdown.style.display = "none"
+    }
+  })
 }
 
 function renderPortfolioSummary(portfolio){
@@ -671,43 +733,61 @@ value:total
 CHARTS ENGINE
 ========================= */
 
+const CHART_COLORS = ["#5b9cf6","#22d17a","#f0a535","#f4506a","#a855f7","#fbbf24","#34d399","#f87171"]
+
+function makeDonut(canvasId, labels, values, instanceVar){
+  if(window[instanceVar]) window[instanceVar].destroy()
+  const ctx = document.getElementById(canvasId)
+  if(!ctx) return
+  window[instanceVar] = new Chart(ctx, {
+    type: "doughnut",
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        backgroundColor: CHART_COLORS.slice(0, labels.length),
+        borderColor: "#0c1428",
+        borderWidth: 3,
+        hoverOffset: 8
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      cutout: "62%",
+      plugins: {
+        legend: {
+          position: "bottom",
+          labels: {
+            color: "#8899bb",
+            font: { family: "Outfit", size: 12 },
+            padding: 14,
+            boxWidth: 12
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const total = ctx.dataset.data.reduce((a,b)=>a+b,0)
+              const pct = ((ctx.raw/total)*100).toFixed(1)
+              return ` ${ctx.label}: €${ctx.raw.toFixed(0)} (${pct}%)`
+            }
+          }
+        }
+      }
+    }
+  })
+}
+
 function drawCharts(portfolio){
-
-let allocation={}
-let currencies={}
-
-portfolio.forEach(p=>{
-
-allocation[p.type]=(allocation[p.type]||0)+p.totalCurrentEUR
-currencies[p.currency]=(currencies[p.currency]||0)+p.totalCurrentEUR
-
-})
-
-if(allocationChartInstance) allocationChartInstance.destroy()
-if(currencyChartInstance) currencyChartInstance.destroy()
-
-allocationChartInstance=new Chart(
-document.getElementById("allocationChart"),
-{
-type:"pie",
-data:{
-labels:Object.keys(allocation),
-datasets:[{data:Object.values(allocation)}]
-}
-}
-)
-
-currencyChartInstance=new Chart(
-document.getElementById("currencyChart"),
-{
-type:"pie",
-data:{
-labels:Object.keys(currencies),
-datasets:[{data:Object.values(currencies)}]
-}
-}
-)
-
+  if(!portfolio || !portfolio.length) return
+  const allocation={}, currencies={}
+  portfolio.forEach(p=>{
+    allocation[p.type||"Other"] = (allocation[p.type||"Other"]||0)+p.totalCurrentEUR
+    currencies[p.currency]      = (currencies[p.currency]||0)+p.totalCurrentEUR
+  })
+  makeDonut("allocationChart", Object.keys(allocation), Object.values(allocation), "allocationChartInstance")
+  makeDonut("currencyChart",   Object.keys(currencies), Object.values(currencies), "currencyChartInstance")
 }
 function drawPortfolioAllocation(portfolio){
 
@@ -743,41 +823,117 @@ data:values
 
 }
 function drawGrowthChart(){
-
 if(!db) return
-
 let tx=db.transaction("portfolioHistory","readonly")
 let store=tx.objectStore("portfolioHistory")
-
 store.getAll().onsuccess=(e)=>{
-
-let history=e.target.result
-
-history.sort((a,b)=>a.timestamp-b.timestamp)
-
-let labels=history.map(h=>new Date(h.timestamp).toLocaleString())
-let values=history.map(h=>h.value)
-
-if(growthChartInstance) growthChartInstance.destroy()
-
-growthChartInstance=new Chart(
-document.getElementById("growthChart"),
-{
-type:"line",
-data:{
-labels,
-datasets:[{
-label:"Portfolio Value",
-data:values,
-borderColor:"#3498db",
-fill:false
-}]
+  let history=e.target.result
+  if(!history.length) return
+  history.sort((a,b)=>a.timestamp-b.timestamp)
+  const labels = history.map(h=>{
+    const d = new Date(h.timestamp)
+    return d.toLocaleDateString(undefined,{month:"short",day:"numeric"}) + " " +
+           d.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})
+  })
+  const values = history.map(h=>h.value)
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  if(growthChartInstance) growthChartInstance.destroy()
+  growthChartInstance = new Chart(document.getElementById("growthChart"),{
+    type:"line",
+    data:{
+      labels,
+      datasets:[{
+        label:"Portfolio Value (€)",
+        data: values,
+        borderColor:"#5b9cf6",
+        borderWidth: 2,
+        pointRadius: values.length > 30 ? 0 : 4,
+        pointHoverRadius: 6,
+        pointBackgroundColor:"#5b9cf6",
+        fill: true,
+        backgroundColor: (ctx)=>{
+          const g = ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height)
+          g.addColorStop(0,"rgba(91,156,246,0.25)")
+          g.addColorStop(1,"rgba(91,156,246,0)")
+          return g
+        },
+        tension: 0.3
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:true,
+      scales:{
+        x:{ ticks:{color:"#4a5c80",font:{size:10},maxTicksLimit:8}, grid:{color:"rgba(26,45,80,0.4)"} },
+        y:{ ticks:{color:"#4a5c80",font:{size:10},callback:v=>"€"+v.toFixed(0)}, grid:{color:"rgba(26,45,80,0.4)"}, suggestedMin: min*0.97, suggestedMax: max*1.03 }
+      },
+      plugins:{
+        legend:{ labels:{color:"#8899bb",font:{family:"Outfit",size:12}} },
+        tooltip:{ callbacks:{ label: ctx=>" €"+ctx.raw.toFixed(2) } }
+      }
+    }
+  })
 }
 }
-)
 
+
+/* =========================
+INSIGHTS ENGINE
+========================= */
+
+function renderInsightsSummary(portfolio){
+if(!portfolio || !portfolio.length) return
+
+let invested=0, current=0
+portfolio.forEach(p=>{ invested+=p.totalBuyEUR; current+=p.totalCurrentEUR })
+const ret = invested>0 ? ((current-invested)/invested)*100 : 0
+const sign = ret>=0 ? "+" : ""
+
+const retEl = document.getElementById("portfolioReturn")
+if(retEl){
+  retEl.textContent = sign+ret.toFixed(2)+"%"
+  retEl.className = ret>=0 ? "profit" : "loss"
 }
 
+const sorted = [...portfolio].sort((a,b)=>b.growth-a.growth)
+const best = sorted[0]
+const worst = sorted[sorted.length-1]
+
+const bestEl = document.getElementById("bestPerformer")
+const bestNm = document.getElementById("bestPerformerName")
+const worstEl = document.getElementById("worstPerformer")
+const worstNm = document.getElementById("worstPerformerName")
+
+if(best && bestEl){
+  bestEl.textContent = "+"+best.growth.toFixed(2)+"%"
+  if(bestNm) bestNm.textContent = resolveDisplayName(best)
+}
+if(worst && worstEl){
+  worstEl.textContent = worst.growth.toFixed(2)+"%"
+  if(worstNm) worstNm.textContent = resolveDisplayName(worst)
+}
+}
+
+function renderTopMovers(portfolio){
+if(!portfolio || !portfolio.length) return
+const sorted = [...portfolio].sort((a,b)=>b.growth-a.growth)
+const gainers = sorted.slice(0,5)
+const losers  = sorted.slice(-5).reverse()
+
+const gEl = document.getElementById("topGainers")
+const lEl = document.getElementById("topLosers")
+
+if(gEl) gEl.innerHTML = gainers.map(p=>`
+  <div class="mover-item">
+    <span class="mover-name">${resolveDisplayName(p)}</span>
+    <span class="mover-pct profit">+${p.growth.toFixed(2)}%</span>
+  </div>`).join("")
+
+if(lEl) lEl.innerHTML = losers.map(p=>`
+  <div class="mover-item">
+    <span class="mover-name">${resolveDisplayName(p)}</span>
+    <span class="mover-pct loss">${p.growth.toFixed(2)}%</span>
+  </div>`).join("")
 }
 
 /* =========================
@@ -947,6 +1103,8 @@ if(tab) tab.classList.add("active")
 if(tabId==="insightsTab"){
 drawCharts(lastPortfolio)
 drawGrowthChart()
+renderInsightsSummary(lastPortfolio)
+renderTopMovers(lastPortfolio)
 }
 
 }
@@ -956,32 +1114,30 @@ drawGrowthChart()
 }
 /*FilterLogic*/
 function applyFilters(rows){
-
-let asset=document.getElementById("filterAsset")?.value.toLowerCase()
-let type=document.getElementById("filterType")?.value
-let growth=document.getElementById("filterGrowth")?.value
+const asset = document.getElementById("filterAsset")?.value.toLowerCase().trim()
+const type  = document.getElementById("filterType")?.value
+const growth= document.getElementById("filterGrowth")?.value
 
 return rows.filter(r=>{
-
-if(asset && !r.name.toLowerCase().includes(asset)) return false
-
-if(type && r.type!=type) return false
-
-if(growth=="positive" && r.profitEUR<=0) return false
-if(growth=="negative" && r.profitEUR>=0) return false
-
-return true
-
+  if(asset){
+    const dn = resolveDisplayName(r).toLowerCase()
+    const ticker = (r.key||"").toLowerCase()
+    if(!dn.includes(asset) && !ticker.includes(asset)) return false
+  }
+  if(type && r.type!=type) return false
+  if(growth=="positive" && r.profitEUR<=0) return false
+  if(growth=="negative" && r.profitEUR>=0) return false
+  return true
 })
-
 }
 bindAssetForm()
 bindTabs()
 bindCSVImport()
+bindSearchDropdown()
 
-document.getElementById("sortAssets")?.addEventListener("change", () => {
-loadAssets()
-})
+document.getElementById("sortAssets")?.addEventListener("change", ()=>loadAssets())
+document.getElementById("filterType")?.addEventListener("change", ()=>loadAssets())
+document.getElementById("filterGrowth")?.addEventListener("change", ()=>loadAssets())
 
 if(typeof initDB==="function"){
 initDB()
