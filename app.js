@@ -478,13 +478,15 @@ nav <= 0
 
 /* accept only growth NAVs */
 if(
-schemeName.includes("idcw") ||
-schemeName.includes("dividend") ||
-schemeName.includes("payout")
-) continue
-
+schemeCode &&
+nav &&
+schemeName.includes("growth") &&
+!schemeName.includes("idcw") &&
+!schemeName.includes("dividend") &&
+!schemeName.includes("payout") &&
+!schemeName.includes("bonus")
+){
 navMap[schemeCode] = nav
-
 }
 
 const assets = await getAssets()
