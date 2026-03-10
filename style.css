@@ -288,3 +288,80 @@ header h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.2px; }
   to   { opacity: 1; transform: translateY(0); }
 }
 .card { animation: fadeUp 0.25s ease both; }
+
+/* ── MOVER ABSOLUTE VALUES ── */
+.mover-vals {
+  display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+}
+.mover-abs {
+  font-family: var(--mono); font-size: 11px;
+  opacity: 0.75;
+}
+.abs-val {
+  font-family: var(--mono); font-size: 14px;
+  opacity: 0.8; margin-left: 6px;
+}
+
+/* ── AI INTEL CARD ── */
+.intel-card { padding: 24px; }
+
+.intel-header {
+  display: flex; justify-content: space-between;
+  align-items: flex-start; gap: 16px; margin-bottom: 16px;
+}
+.intel-header h3 { font-size: 11px; }
+.intel-sub { font-size: 12px; color: var(--dim); margin-top: 4px; }
+
+#runIntelBtn {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #5b9cf6, #7b5cf0);
+  border: none; color: white; border-radius: var(--radius-sm);
+  cursor: pointer; font-family: var(--font); font-size: 13px;
+  font-weight: 600; white-space: nowrap;
+  transition: opacity 0.2s, transform 0.1s;
+  box-shadow: 0 4px 14px rgba(91,156,246,0.3);
+}
+#runIntelBtn:hover { opacity: 0.9; transform: translateY(-1px); }
+#runIntelBtn:active { transform: scale(0.98); }
+#runIntelBtn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+.intel-disclaimer {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: rgba(240,165,53,0.08);
+  border: 1px solid rgba(240,165,53,0.2);
+  border-radius: var(--radius-sm); padding: 12px 14px;
+  font-size: 12px; color: var(--dim); line-height: 1.5;
+}
+
+.intel-result {
+  margin-top: 20px; border-top: 1px solid var(--border);
+  padding-top: 20px; line-height: 1.7;
+}
+
+.intel-timestamp {
+  font-size: 11px; color: var(--muted); margin-bottom: 20px;
+  padding: 8px 12px; background: var(--surface);
+  border-radius: 6px; border: 1px solid var(--border);
+}
+
+.intel-result h2.intel-h2 {
+  font-size: 14px; font-weight: 700; color: var(--blue);
+  text-transform: uppercase; letter-spacing: 0.8px;
+  margin: 24px 0 12px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.intel-result h3.intel-h3 {
+  font-size: 13px; font-weight: 600; color: var(--gold);
+  margin: 16px 0 8px;
+}
+.intel-result p { font-size: 13.5px; color: var(--text); margin: 6px 0; }
+.intel-result p.intel-bold { font-weight: 600; color: var(--text); }
+.intel-result ul { padding-left: 20px; margin: 8px 0; }
+.intel-result li { font-size: 13.5px; color: var(--text); margin: 5px 0; line-height: 1.6; }
+.intel-result strong { color: var(--text); font-weight: 600; }
+.intel-error { color: var(--red); font-size: 13px; }
+
+@media (max-width: 768px) {
+  .intel-header { flex-direction: column; }
+  #runIntelBtn { width: 100%; text-align: center; }
+}
