@@ -512,18 +512,52 @@ console.log("MF NAV update failed",e)
 }
 
 }
-async function fetchPrice(ticker){
+function resolveTicker(asset){
+
+let t = asset.ticker
+
+if(!t) return null
+
+/* Crypto */
+if(t.includes("-USD")) return t
+
+/* Mutual funds handled separately */
+if(asset.type==="MutualFund") return null
+
+/* US stocks */
+const us = ["AMZN","GOOGL","MU","ISRG","GE"]
+if(us.includes(t)) return t
+
+/* LSE ETFs */
+const lse = ["IWDA","EIMI","WTAI","SSLV","DFNS","SEMI"]
+if(lse.includes(t)) return t + ".L"
+
+/* EU ETC */
+if(t==="EWG2") return "EWG2.DE"
+
+/* Default → assume NSE */
+return t + ".NS"
+
+}
+async function fetchPrice(asset){
 
 try{
 
-let r=await fetch("/api/price?ticker="+ticker)
-let data=await r.json()
+let symbol = resolveTicker(asset)
 
-return Number(data.price)||null
+if(!symbol) return null
+
+let r = await fetch("/api/price?ticker=" + symbol)
+
+if(!r.ok) return null
+
+let data = await r.json()
+
+return Number(data.price) || null
 
 }catch(e){
 
-console.log("Price fetch failed",ticker)
+console.log("Price fetch failed",asset.ticker)
 return null
 
 }
@@ -544,7 +578,7 @@ if(a.type==="MutualFund") continue
 
 if(!a.ticker) continue
 
-let price=await fetchPrice(a.ticker)
+let price=await fetchPrice(a)
 
 if(price!==null){
 
