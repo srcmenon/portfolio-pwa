@@ -904,11 +904,12 @@ const worstEl = document.getElementById("worstPerformer")
 const worstNm = document.getElementById("worstPerformerName")
 
 if(best && bestEl){
-  bestEl.textContent = "+"+best.growth.toFixed(2)+"%"
+  const bSign = best.profitEUR >= 0 ? "+" : ""
+  bestEl.innerHTML = `+${best.growth.toFixed(2)}% <span class="abs-val">+€${best.profitEUR.toFixed(0)}</span>`
   if(bestNm) bestNm.textContent = resolveDisplayName(best)
 }
 if(worst && worstEl){
-  worstEl.textContent = worst.growth.toFixed(2)+"%"
+  worstEl.innerHTML = `${worst.growth.toFixed(2)}% <span class="abs-val">€${worst.profitEUR.toFixed(0)}</span>`
   if(worstNm) worstNm.textContent = resolveDisplayName(worst)
 }
 }
@@ -925,14 +926,112 @@ const lEl = document.getElementById("topLosers")
 if(gEl) gEl.innerHTML = gainers.map(p=>`
   <div class="mover-item">
     <span class="mover-name">${resolveDisplayName(p)}</span>
-    <span class="mover-pct profit">+${p.growth.toFixed(2)}%</span>
+    <span class="mover-vals">
+      <span class="mover-pct profit">+${p.growth.toFixed(2)}%</span>
+      <span class="mover-abs profit">+€${p.profitEUR.toFixed(0)}</span>
+    </span>
   </div>`).join("")
 
 if(lEl) lEl.innerHTML = losers.map(p=>`
   <div class="mover-item">
     <span class="mover-name">${resolveDisplayName(p)}</span>
-    <span class="mover-pct loss">${p.growth.toFixed(2)}%</span>
+    <span class="mover-vals">
+      <span class="mover-pct loss">${p.growth.toFixed(2)}%</span>
+      <span class="mover-abs loss">€${p.profitEUR.toFixed(0)}</span>
+    </span>
   </div>`).join("")
+}
+
+
+/* =========================
+AI MARKET INTELLIGENCE
+========================= */
+
+function simpleMarkdown(text){
+  return text
+    .replace(/## (.+)/g, '<h2 class="intel-h2">$1</h2>')
+    .replace(/### (.+)/g, '<h3 class="intel-h3">$1</h3>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/^- (.+)/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/gs, m => '<ul>'+m+'</ul>')
+    .replace(/\n{2,}/g, '</p><p>')
+    .replace(/^(?!<[hul])/gm, '')
+    .replace(/(<p><\/p>)/g, '')
+    || text
+}
+
+async function runMarketIntelligence(){
+  if(!lastPortfolio || !lastPortfolio.length){
+    alert("Load your portfolio first.")
+    return
+  }
+
+  const btn     = document.getElementById("runIntelBtn")
+  const btnText = document.getElementById("intelBtnText")
+  const result  = document.getElementById("intelResult")
+  const disc    = document.getElementById("intelDisclaimer")
+
+  btnText.textContent = "⏳ Analysing…"
+  btn.disabled = true
+  result.style.display = "none"
+
+  /* Build summary metrics */
+  let invested=0, current=0
+  lastPortfolio.forEach(p=>{ invested+=p.totalBuyEUR; current+=p.totalCurrentEUR })
+  const totalReturn = invested>0 ? ((current-invested)/invested)*100 : 0
+
+  const payload = {
+    portfolio: lastPortfolio.map(p=>({
+      name: resolveDisplayName(p),
+      type: p.type,
+      currency: p.currency,
+      totalBuyEUR: p.totalBuyEUR,
+      totalCurrentEUR: p.totalCurrentEUR,
+      growth: p.growth,
+      profitEUR: p.profitEUR
+    })),
+    totalValue: current,
+    totalReturn
+  }
+
+  try{
+    const res = await fetch("/api/insights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    })
+
+    const data = await res.json()
+
+    if(data.error){
+      result.innerHTML = `<p class="intel-error">Error: ${data.error}</p>`
+    } else {
+      const html = data.analysis
+        .split("\n")
+        .map(line => {
+          if(line.startsWith("## ")) return `<h2 class="intel-h2">${line.slice(3)}</h2>`
+          if(line.startsWith("### ")) return `<h3 class="intel-h3">${line.slice(4)}</h3>`
+          if(line.startsWith("**") && line.endsWith("**")) return `<p class="intel-bold">${line.slice(2,-2)}</p>`
+          if(line.startsWith("- ")) return `<li>${line.slice(2)}</li>`
+          if(line.trim()==="") return "<br>"
+          return `<p>${line.replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")}</p>`
+        })
+        .join("")
+        .replace(/(<li>.*?<\/li>\s*)+/gs, m=>`<ul>${m}</ul>`)
+
+      disc.style.display = "none"
+      result.innerHTML = `<div class="intel-timestamp">Analysis generated ${new Date().toLocaleString()} · Powered by Claude with live web search</div>${html}`
+    }
+
+    result.style.display = "block"
+
+  } catch(e){
+    result.innerHTML = `<p class="intel-error">Failed to fetch analysis. Check your connection or API key.</p>`
+    result.style.display = "block"
+  } finally {
+    btnText.textContent = "⚡ Analyse Portfolio"
+    btn.disabled = false
+  }
 }
 
 /* =========================
