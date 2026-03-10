@@ -571,8 +571,8 @@ if(us.includes(t)) return t
 const lse = ["IWDA","EIMI","WTAI","SSLV","DFNS"]
 if(lse.includes(t)) return t + ".L"
 
-/* SEMI trades as SEMG on LSE */
-if(t === "SEMI") return "SEMG.L"
+/* SEMI = Amundi Semiconductors, use CHIP.PA (EUR-denominated on Paris) */
+if(t === "SEMI") return "CHIP.PA"
 
 /* EU ETC */
 /* EWG2 trades on Stuttgart exchange */
