@@ -479,14 +479,11 @@ const isExcluded =
 schemeName.includes("idcw") ||
 schemeName.includes("dividend") ||
 schemeName.includes("payout") ||
-schemeName.includes("bonus") ||
-schemeName.includes("regular")
+schemeName.includes("bonus")
 
-const isDirectGrowth =
-schemeName.includes("direct") &&
-schemeName.includes("growth")
+const isGrowth = schemeName.includes("growth")
 
-if(!isExcluded && isDirectGrowth && !navMap[schemeCode]){
+if(!isExcluded && isGrowth && !navMap[schemeCode]){
 navMap[schemeCode] = nav
 }
 
@@ -538,8 +535,11 @@ const us = ["AMZN","GOOGL","MU","ISRG","GE"]
 if(us.includes(t)) return t
 
 /* LSE ETFs */
-const lse = ["IWDA","EIMI","WTAI","SSLV","DFNS","SEMI"]
+const lse = ["IWDA","EIMI","WTAI","SSLV","DFNS"]
 if(lse.includes(t)) return t + ".L"
+
+/*Handle SEMI separately
+if(t === "SEMI") return "SEMG.L"
 
 /* EU ETC */
 if(t==="EWG2") return "EWG2.DE"
