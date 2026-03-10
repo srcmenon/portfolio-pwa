@@ -1,163 +1,188 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Global Investor Dashboard</title>
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="style.css">
-<link rel="icon" href="logo.png">
+<link rel="icon" href="icons/icon-192.png">
 </head>
 <body>
+
 <div id="tabs">
-<button class="tabBtn active" data-tab="portfolioTab">Portfolio</button>
-<button class="tabBtn" data-tab="insightsTab">Insights</button>
+  <button class="tabBtn active" data-tab="portfolioTab">Portfolio</button>
+  <button class="tabBtn" data-tab="insightsTab">Insights</button>
 </div>
+
+<!-- ══════════════════════════════════════
+     PORTFOLIO TAB
+══════════════════════════════════════ -->
 <div id="portfolioTab" class="tabContent active">
 
+  <header>
+    <h1>Global Portfolio</h1>
+  </header>
 
-<header>
-<h1>Global Portfolio</h1>
-</header>
+  <section id="summary">
+    <div class="card">
+      <h3>Portfolio Value</h3>
+      <p id="totalValue">€0</p>
+    </div>
+    <div class="card">
+      <h3>Total Assets</h3>
+      <p id="assetCount">0</p>
+    </div>
+  </section>
 
-<section id="summary">
+  <div class="card alloc-card">
+    <h3>Allocation by Type</h3>
+    <canvas id="portfolioAllocationChart"></canvas>
+  </div>
 
-<div class="card">
-<h3>Total Portfolio</h3>
-<p id="totalValue">€0</p>
-</div>
+  <div id="assetForm" class="card">
+    <h3>Import CSV</h3>
+    <input type="file" id="csvFile" accept=".csv" style="grid-column:1/-1">
+    <button id="importCSV" style="grid-column:1/-1">Import Portfolio CSV</button>
+    <p style="grid-column:1/-1;font-size:11px;color:var(--muted)">
+      Format: Date, Name, Ticker, Broker, Type, Quantity, Price, Currency
+    </p>
 
-<div class="card">
-<h3>Total Assets</h3>
-<p id="assetCount">0</p>
-</div>
+    <hr>
 
-</section>
-<div class="card">
-<h3>Portfolio Allocation</h3>
-<canvas id="portfolioAllocationChart"></canvas>
-</div>
-<div id="assetForm" class="card">
+    <h3>Add Asset Manually</h3>
+    <input id="assetName" placeholder="Asset Name" required>
+    <input id="assetTicker" placeholder="Ticker (e.g. NVDA, BTC-USD)">
+    <select id="assetBroker">
+      <option value="">Broker</option>
+      <option>Kite</option><option>Scalable</option>
+      <option>TradeRepublic</option><option>eToro</option>
+    </select>
+    <select id="assetType">
+      <option value="">Asset Type</option>
+      <option>Stock</option><option>ETF</option>
+      <option>Crypto</option><option>MutualFund</option><option>Commodity</option>
+    </select>
+    <select id="assetCurrency">
+      <option value="EUR">EUR €</option>
+      <option value="USD">USD $</option>
+      <option value="INR">INR ₹</option>
+    </select>
+    <input id="assetQty" type="number" step="any" placeholder="Quantity">
+    <input id="assetPrice" type="number" step="any" placeholder="Buy Price">
+    <input id="assetDate" type="date">
+    <button id="saveAsset">Add Asset</button>
+  </div>
 
-<h3>Import CSV</h3>
+  <!-- Filter Bar -->
+  <div id="filterBar">
+    <div class="search-wrap">
+      <span class="search-icon">⌕</span>
+      <input id="filterAsset" placeholder="Search asset…" autocomplete="off">
+      <div id="searchDropdown"></div>
+    </div>
+    <select id="filterType">
+      <option value="">All Types</option>
+      <option>Stock</option><option>ETF</option>
+      <option>MutualFund</option><option>Crypto</option><option>Commodity</option>
+    </select>
+    <select id="filterGrowth">
+      <option value="">All</option>
+      <option value="positive">Profit</option>
+      <option value="negative">Loss</option>
+    </select>
+    <select id="sortAssets">
+      <option value="name">Sort: Name</option>
+      <option value="growth">Sort: Growth %</option>
+      <option value="profit">Sort: P/L</option>
+      <option value="value">Sort: Value</option>
+    </select>
+  </div>
 
-<input type="file" id="csvFile" accept=".csv">
-<button id="importCSV">Import Portfolio CSV</button>
-
-<p style="font-size:12px;color:gray">
-Expected format:
-Date,Name,Ticker,Broker,Type,Quantity,Price,Currency
-</p>
-
-<hr>
-
-<h3>Add Asset</h3>
-
-<input id="assetName" placeholder="Asset Name" required>
-
-<input id="assetTicker" placeholder="Ticker (example: NVDA or BTC-USD)">
-
-<select id="assetBroker">
-<option value="">Broker</option>
-<option>Kite</option>
-<option>Scalable</option>
-<option>TradeRepublic</option>
-<option>eToro</option>
-</select>
-
-<select id="assetType">
-<option value="">Asset Type</option>
-<option>Stock</option>
-<option>ETF</option>
-<option>Crypto</option>
-<option>Mutual Fund</option>
-</select>
-
-<select id="assetCurrency">
-<option value="EUR">EUR</option>
-<option value="USD">USD</option>
-<option value="INR">INR</option>
-</select>
-
-<input id="assetQty" type="number" step="any" placeholder="Quantity" required>
-
-<input id="assetPrice" type="number" step="any" placeholder="Buy Price">
-
-<input id="assetDate" type="date" value="">
-
-<button id="saveAsset">Add Asset</button>
-
-</div>
-<section>
-<div style="margin-bottom:10px">
-<select id="sortAssets">
-<option value="name">Sort by Name</option>
-<option value="profit">Sort by Profit</option>
-<option value="growth">Sort by Growth %</option>
-<option value="value">Sort by Total Value</option>
-<option value="qty">Sort by Quantity</option>
-</select>
-</div>
-<div id="filters">
-
-<input id="filterAsset" placeholder="Filter Asset">
-
-<select id="filterType">
-<option value="">All Types</option>
-<option>Stock</option>
-<option>ETF</option>
-<option>MutualFund</option>
-<option>Crypto</option>
-</select>
-
-<select id="filterGrowth">
-<option value="">All Growth</option>
-<option value="positive">Profit</option>
-<option value="negative">Loss</option>
-</select>
+  <div class="table-wrap">
+    <table id="assetTable">
+      <thead>
+        <tr>
+          <th>Asset</th>
+          <th>Qty</th>
+          <th>Avg Buy</th>
+          <th>Current</th>
+          <th>Invested</th>
+          <th>Value</th>
+          <th>P / L</th>
+          <th>Growth</th>
+          <th>Type</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
 
 </div>
-<table id="assetTable">
-<thead>
-<tr>
-<th>Asset</th>
-<th>Qty</th>
-<th>Buy</th>
-<th>Current</th>
-<th>Total Buy</th>
-<th>Total Current</th>
-<th>P/L</th>
-<th>% Growth</th>
-<th>Type</th>
-<th>Last Added</th>
-</tr>
-</thead>
 
-<tbody></tbody>
-</table>
-
-</section>
-</div>
+<!-- ══════════════════════════════════════
+     INSIGHTS TAB
+══════════════════════════════════════ -->
 <div id="insightsTab" class="tabContent">
+  <div class="insights-wrap">
 
-<div class="card">
-<h3>Asset Allocation</h3>
-<canvas id="allocationChart"></canvas>
+    <!-- Hero metrics -->
+    <div class="insight-hero">
+      <div class="card">
+        <h3>Total Return</h3>
+        <p id="portfolioReturn" class="neutral">–</p>
+        <span class="hero-sub">Weighted return across all holdings</span>
+      </div>
+      <div class="card">
+        <h3>Best Performer</h3>
+        <p id="bestPerformer" class="profit">–</p>
+        <span class="hero-name" id="bestPerformerName">–</span>
+      </div>
+      <div class="card">
+        <h3>Worst Performer</h3>
+        <p id="worstPerformer" class="loss">–</p>
+        <span class="hero-name" id="worstPerformerName">–</span>
+      </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="charts-row">
+      <div class="card">
+        <h3>Asset Allocation</h3>
+        <div class="chart-box">
+          <canvas id="allocationChart"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Currency Exposure</h3>
+        <div class="chart-box">
+          <canvas id="currencyChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top Movers -->
+    <div class="movers-row">
+      <div class="card">
+        <h3>Top Gainers</h3>
+        <div id="topGainers"></div>
+      </div>
+      <div class="card">
+        <h3>Top Losers</h3>
+        <div id="topLosers"></div>
+      </div>
+    </div>
+
+    <!-- Growth chart -->
+    <div class="card growth-card">
+      <h3>Portfolio Growth Over Time</h3>
+      <canvas id="growthChart"></canvas>
+    </div>
+
+  </div>
 </div>
 
-<div class="card">
-<h3>Currency Exposure</h3>
-<canvas id="currencyChart"></canvas>
-</div>
-<div class="card">
-<h3>Portfolio Return</h3>
-<p id="portfolioReturn">Calculating...</p>
-</div>
-<div class="card">
-<h3>Portfolio Growth</h3>
-<canvas id="growthChart"></canvas>
-</div>  
-</div>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="db.js"></script>
 <script src="app.js"></script>
