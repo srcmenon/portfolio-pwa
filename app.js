@@ -453,26 +453,34 @@ try{
 let r = await fetch("/api/mfnav")
 let text = await r.text()
 
-let navMap = {}
+let assets = await getAssets()
 let lines = text.split("\n")
 
-lines.forEach(line=>{
+let navMap = {}
 
-let parts=line.split(";")
+lines.forEach(line => {
 
-if(parts.length>4){
+let parts = line.split(";")
+
+if(parts.length < 5) return
 
 let schemeCode = parts[0]?.trim()
 let schemeName = parts[3]?.toLowerCase()
 let nav = parseFloat(parts[4])
 
-/* ONLY accept Direct Plan Growth */
+if(!schemeCode || !schemeName || !nav) return
 
+assets.forEach(asset => {
+
+if(asset.type !== "MutualFund") return
+
+if(asset.ticker !== schemeCode) return
+
+let assetName = asset.name.toLowerCase()
+
+/* match scheme name to asset name */
 if(
-schemeCode &&
-nav &&
-schemeName &&
-schemeName.includes("direct") &&
+schemeName.includes(assetName.split(" ")[0]) &&
 schemeName.includes("growth") &&
 !schemeName.includes("idcw") &&
 !schemeName.includes("dividend")
@@ -480,11 +488,9 @@ schemeName.includes("growth") &&
 navMap[schemeCode] = nav
 }
 
-}
-
 })
 
-let assets = await getAssets()
+})
 
 for(let a of assets){
 
@@ -498,7 +504,7 @@ let tx = db.transaction("assets","readwrite")
 
 tx.objectStore("assets").put({
 ...a,
-currentPrice:nav
+currentPrice: nav
 })
 
 }
