@@ -482,8 +482,11 @@ schemeName.includes("payout") ||
 schemeName.includes("bonus")
 
 const isGrowth = schemeName.includes("growth")
+const isDirect = schemeName.includes("direct")
 
-if(!isExcluded && isGrowth && !navMap[schemeCode]){
+/* Accept growth plans, OR direct plans without IDCW
+   (catches funds like HDFC Gold ETF FOF - Direct Plan with no "growth" in name) */
+if(!isExcluded && (isGrowth || isDirect) && !navMap[schemeCode]){
 navMap[schemeCode] = nav
 }
 
@@ -572,7 +575,8 @@ if(lse.includes(t)) return t + ".L"
 if(t === "SEMI") return "SEMG.L"
 
 /* EU ETC */
-if(t==="EWG2") return "EWG2.DE"
+/* EWG2 trades on Stuttgart exchange */
+if(t==="EWG2") return "EWG2.SG"
 
 /* Default → assume NSE */
 return t + ".NS"
