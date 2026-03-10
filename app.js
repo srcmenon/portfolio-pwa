@@ -491,6 +491,36 @@ navMap[schemeCode] = nav
 
 const assets = await getAssets()
 
+/* ── DEBUG: log all MF matches and misses ── */
+console.group("🔍 Mutual Fund NAV Debug")
+const mfAssets = assets.filter(a => a.type === "MutualFund")
+console.log(`Total MF assets in DB: ${mfAssets.length}`)
+console.log(`Total scheme codes in NAV map: ${Object.keys(navMap).length}`)
+console.groupCollapsed("✅ Matched (scheme code found in AMFI)")
+mfAssets.forEach(a => {
+  const nav = navMap[a.ticker]
+  if(nav) console.log(`${a.name} | code: ${a.ticker} | NAV: ₹${nav}`)
+})
+console.groupEnd()
+console.groupCollapsed("❌ Missed (scheme code NOT found in AMFI)")
+mfAssets.forEach(a => {
+  if(!navMap[a.ticker]) console.log(`${a.name} | code: ${a.ticker}`)
+})
+console.groupEnd()
+console.groupCollapsed("🔎 Nearby AMFI entries for missed funds (first 3 chars match)")
+mfAssets.forEach(a => {
+  if(!navMap[a.ticker]){
+    const prefix = String(a.ticker).slice(0,3)
+    const nearby = Object.keys(navMap).filter(k => k.startsWith(prefix))
+    if(nearby.length){
+      console.log(`${a.name} (${a.ticker}) → nearby codes:`, nearby)
+    }
+  }
+})
+console.groupEnd()
+console.groupEnd()
+/* ── END DEBUG ── */
+
 const tx = db.transaction("assets","readwrite")
 const store = tx.objectStore("assets")
 
@@ -538,7 +568,7 @@ if(us.includes(t)) return t
 const lse = ["IWDA","EIMI","WTAI","SSLV","DFNS"]
 if(lse.includes(t)) return t + ".L"
 
-/*Handle SEMI separately
+/* SEMI trades as SEMG on LSE */
 if(t === "SEMI") return "SEMG.L"
 
 /* EU ETC */
