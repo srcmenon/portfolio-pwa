@@ -463,23 +463,15 @@ if(!line || !line.includes(";")) continue
 
 const parts = line.split(";")
 
-/* must contain exactly NAV structure */
 if(parts.length < 6) continue
 
 const schemeCode = parts[0].trim()
 const schemeName = parts[3].toLowerCase()
 const nav = parseFloat(parts[4])
 
-if(
-!schemeCode ||
-isNaN(nav) ||
-nav <= 0
-) continue
+if(!schemeCode || isNaN(nav) || nav <= 0) continue
 
-/* accept only growth NAVs */
 if(
-schemeCode &&
-nav &&
 schemeName.includes("growth") &&
 !schemeName.includes("idcw") &&
 !schemeName.includes("dividend") &&
@@ -488,6 +480,8 @@ schemeName.includes("growth") &&
 ){
 navMap[schemeCode] = nav
 }
+
+}   // ✅ THIS BRACE WAS MISSING (closing the for loop)
 
 const assets = await getAssets()
 
