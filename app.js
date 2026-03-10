@@ -616,6 +616,7 @@ console.log("MF NAV update failed",e)
 function resolveTicker(asset){
 
 let t = asset.ticker
+const cur = asset.currency || "INR"
 
 if(!t) return null
 
@@ -625,22 +626,20 @@ if(t.includes("-USD")) return t
 /* Mutual funds handled separately */
 if(asset.type==="MutualFund") return null
 
-/* US stocks */
-const us = ["AMZN","GOOGL","MU","ISRG","GE"]
-if(us.includes(t)) return t
+/* Explicit exchange suffixes — already fully qualified */
+if(t.includes(".")) return t
 
-/* LSE ETFs */
-const lse = ["IWDA","EIMI","WTAI","SSLV","DFNS"]
-if(lse.includes(t)) return t + ".L"
+/* Special overrides for ambiguous tickers */
+if(t === "SEMI") return "CHIP.PA"   /* Amundi Semiconductors — Paris, EUR */
+if(t === "EWG2") return "EWG2.SG"   /* EUWAX Gold II — Stuttgart */
 
-/* SEMI = Amundi Semiconductors, use CHIP.PA (EUR-denominated on Paris) */
-if(t === "SEMI") return "CHIP.PA"
-
-/* EU ETC */
-/* EWG2 trades on Stuttgart exchange */
-if(t==="EWG2") return "EWG2.SG"
-
-/* Default → assume NSE */
+/* Currency-based resolution:
+   USD → US exchange (no suffix needed for Yahoo Finance)
+   EUR → try LSE (.L) as default European exchange
+   INR → NSE (.NS)
+*/
+if(cur === "USD") return t
+if(cur === "EUR") return t + ".L"
 return t + ".NS"
 
 }
