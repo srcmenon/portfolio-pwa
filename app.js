@@ -864,17 +864,19 @@ let buy=parseMoney(cols[6])
 let qty=parseMoney(cols[5])
 let cur=cols[7]||"EUR"
 
+let hasDate = cols.length === 8
+
 let asset={
-name:cols[1],
-ticker:cols[2],
-broker:cols[3]||"",
-type:cols[4]||"Other",
-quantity:qty,
-buyPrice:buy,
-currency:cur,
-buyPriceEUR:convertToEUR(buy,cur),
-currentPrice:buy,
-buyDate:cols[0]||""
+name: hasDate ? cols[1] : cols[0],
+ticker: hasDate ? cols[2] : cols[1],
+broker: hasDate ? cols[3] : cols[2] || "",
+type: hasDate ? cols[4] : cols[3] || "Other",
+quantity: qty,
+buyPrice: buy,
+currency: cur,
+buyPriceEUR: convertToEUR(buy,cur),
+currentPrice: buy,
+buyDate: hasDate ? cols[0] : new Date().toISOString().split("T")[0]
 }
 
 saveAsset(asset)
