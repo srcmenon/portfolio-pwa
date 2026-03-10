@@ -7,6 +7,7 @@ let currencyChartInstance = null
 let growthChartInstance = null
 let priceUpdateRunning = false
 let allocationBarChartInstance=null
+let lastPortfolio = []
 window.addEventListener("DOMContentLoaded",()=>{
 
 let d=document.getElementById("assetDate")
@@ -238,6 +239,9 @@ let groups = groupAssets(assets)
 /* Use unified portfolio engine */
 
 let portfolio = calculatePortfolio(groups)
+
+/* Cache for tab reuse */
+lastPortfolio = portfolio
 
 /* Render UI */
 
@@ -471,13 +475,18 @@ const nav = parseFloat(parts[4])
 
 if(!schemeCode || isNaN(nav) || nav <= 0) continue
 
-if(
-schemeName.includes("growth") &&
-!schemeName.includes("idcw") &&
-!schemeName.includes("dividend") &&
-!schemeName.includes("payout") &&
-!schemeName.includes("bonus")
-){
+const isExcluded =
+schemeName.includes("idcw") ||
+schemeName.includes("dividend") ||
+schemeName.includes("payout") ||
+schemeName.includes("bonus") ||
+schemeName.includes("regular")
+
+const isDirectGrowth =
+schemeName.includes("direct") &&
+schemeName.includes("growth")
+
+if(!isExcluded && isDirectGrowth && !navMap[schemeCode]){
 navMap[schemeCode] = nav
 }
 
@@ -902,7 +911,7 @@ let tab=document.getElementById(tabId)
 if(tab) tab.classList.add("active")
 
 if(tabId==="insightsTab"){
-drawCharts()
+drawCharts(lastPortfolio)
 drawGrowthChart()
 }
 
