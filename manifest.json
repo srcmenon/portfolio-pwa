@@ -1,20 +1,14 @@
 {
-"name": "Global Investor Dashboard",
-"short_name": "Portfolio",
-"start_url": "/index.html",
-"display": "standalone",
-"background_color": "#111111",
-"theme_color": "#111111",
-"icons": [
-{
-"src": "icons/icon-192.png",
-"sizes": "192x192",
-"type": "image/png"
-},
-{
-"src": "icons/icon-512.png",
-"sizes": "512x512",
-"type": "image/png"
-}
-]
+  "name": "Foliowise",
+  "short_name": "Foliowise",
+  "description": "Personal portfolio tracker with live prices and AI market intelligence",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070c18",
+  "theme_color": "#070c18",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
 }
