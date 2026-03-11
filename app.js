@@ -804,92 +804,187 @@ function drawCharts(portfolio){
   makeDonut("currencyChart",   Object.keys(currencies), Object.values(currencies), "currencyChartInstance")
 }
 function drawPortfolioAllocation(portfolio){
-
-let allocation={}
-
-portfolio.forEach(p=>{
-
-let type=p.type || "Other"
-
-allocation[type]=(allocation[type]||0)+p.totalCurrentEUR
-
-})
-
-let labels=Object.keys(allocation)
-let values=Object.values(allocation)
-
-if(allocationBarChartInstance)
-allocationBarChartInstance.destroy()
-
-allocationBarChartInstance=new Chart(
-document.getElementById("portfolioAllocationChart"),
-{
-type:"bar",
-data:{
-labels,
-datasets:[{
-label:"Portfolio Allocation (€)",
-data:values
-}]
-}
-}
-)
-
-}
-function drawGrowthChart(){
-if(!db) return
-let tx=db.transaction("portfolioHistory","readonly")
-let store=tx.objectStore("portfolioHistory")
-store.getAll().onsuccess=(e)=>{
-  let history=e.target.result
-  if(!history.length) return
-  history.sort((a,b)=>a.timestamp-b.timestamp)
-  const labels = history.map(h=>{
-    const d = new Date(h.timestamp)
-    return d.toLocaleDateString(undefined,{month:"short",day:"numeric"}) + " " +
-           d.toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})
+  if(!portfolio||!portfolio.length) return
+  const allocation={}
+  portfolio.forEach(p=>{
+    const type=p.type||"Other"
+    allocation[type]=(allocation[type]||0)+p.totalCurrentEUR
   })
-  const values = history.map(h=>h.value)
+  makeDonut("portfolioAllocationChart", Object.keys(allocation), Object.values(allocation), "allocationBarChartInstance")
+}
+let portfolioGrowthChartInstance = null
+let currentPeriod = "1W"
+let currentCat = "ALL"
+let allPortfolioHistory = []
+
+const CAT_DEFS = {
+  "ALL":           { label:"All Portfolio", color:"#5b9cf6" },
+  "MutualFund_INR":{ label:"India MF",      color:"#f0a535" },
+  "Stock_INR":     { label:"India Stocks",  color:"#22d17a" },
+  "Stock_EUR":     { label:"EUR Stocks",    color:"#7b5cf0" },
+  "Stock_USD":     { label:"USD Stocks",    color:"#00cfff" },
+  "ETF_EUR":       { label:"EUR ETFs",      color:"#f4506a" },
+  "Commodity":     { label:"Commodity",     color:"#e8c84a" }
+}
+
+function matchCat(asset, cat){
+  if(cat==="ALL") return true
+  if(cat==="Commodity") return asset.type==="Commodity"
+  const [type, cur] = cat.split("_")
+  return asset.type===type && asset.currency===cur
+}
+
+function getCatValues(history, cat){
+  if(cat==="ALL") return history.map(h=>h.value)
+  if(!lastPortfolio||!lastPortfolio.length) return history.map(h=>h.value)
+  const catAssets = lastPortfolio.filter(a=>matchCat(a,cat))
+  const catTotal  = catAssets.reduce((s,a)=>s+a.totalCurrentEUR,0)
+  const allTotal  = lastPortfolio.reduce((s,a)=>s+a.totalCurrentEUR,0)
+  const fraction  = allTotal>0 ? catTotal/allTotal : 0
+  return history.map(h=>h.value * fraction)
+}
+
+function periodMs(period){
+  const now = Date.now()
+  const map = { "1D":86400000,"1W":604800000,"1M":2592000000,
+                "3M":7776000000,"1Y":31536000000,"5Y":157680000000,"ALL":Infinity }
+  return now - (map[period]||map["1W"])
+}
+
+function formatLabel(ts, period){
+  const d = new Date(ts)
+  if(period==="1D") return d.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})
+  if(period==="1W"||period==="1M"||period==="3M"||period==="1Y")
+    return d.toLocaleDateString([],{month:"short",day:"numeric"})
+  return d.toLocaleDateString([],{year:"2-digit",month:"short"})
+}
+
+function drawGrowthChart(){
+  if(!db) return
+  db.transaction("portfolioHistory","readonly")
+    .objectStore("portfolioHistory")
+    .getAll().onsuccess = e => {
+      allPortfolioHistory = e.target.result || []
+      renderGrowthChart(currentPeriod, currentCat)
+      bindPeriodButtons()
+      bindCatButtons()
+    }
+}
+
+function bindPeriodButtons(){
+  document.querySelectorAll(".period-btn").forEach(btn=>{
+    btn.onclick = ()=>{
+      document.querySelectorAll(".period-btn").forEach(b=>b.classList.remove("active"))
+      btn.classList.add("active")
+      currentPeriod = btn.dataset.period
+      renderGrowthChart(currentPeriod, currentCat)
+    }
+  })
+}
+
+function bindCatButtons(){
+  document.querySelectorAll(".cat-btn").forEach(btn=>{
+    btn.onclick = ()=>{
+      document.querySelectorAll(".cat-btn").forEach(b=>b.classList.remove("active"))
+      btn.classList.add("active")
+      currentCat = btn.dataset.cat
+      const lbl = document.getElementById("growthStatLabel")
+      if(lbl) lbl.textContent = CAT_DEFS[currentCat]?.label||"Portfolio"
+      renderGrowthChart(currentPeriod, currentCat)
+    }
+  })
+}
+
+function renderGrowthChart(period, cat){
+  cat = cat || currentCat || "ALL"
+  const cutoff = periodMs(period)
+  let history = allPortfolioHistory
+    .filter(h=>h.timestamp>=cutoff)
+    .sort((a,b)=>a.timestamp-b.timestamp)
+  if(!history.length) history = [...allPortfolioHistory].sort((a,b)=>a.timestamp-b.timestamp)
+  if(!history.length) return
+
+  const values = getCatValues(history, cat)
+  const labels  = history.map(h=>formatLabel(h.timestamp, period))
+  const first   = values[0]||0
+  const last    = values[values.length-1]||0
+  const change  = last - first
+  const pct     = first>0 ? (change/first)*100 : 0
+  const isUp    = change >= 0
+
+  const sv = document.getElementById("growthStatValue")
+  const sc = document.getElementById("growthStatChange")
+  const sp = document.getElementById("growthStatPct")
+  if(sv) sv.textContent = "\u20ac"+last.toFixed(2)
+  if(sc){ sc.textContent=(isUp?"+":"-")+"\u20ac"+Math.abs(change).toFixed(2); sc.className="growth-stat-chg "+(isUp?"profit":"loss") }
+  if(sp){ sp.textContent=(isUp?"+":"")+pct.toFixed(2)+"%"; sp.className="growth-stat-pct "+(isUp?"profit":"loss") }
+
+  const catColor  = CAT_DEFS[cat]?.color || "#5b9cf6"
+  const lineColor = isUp ? catColor : "#f4506a"
+  // Update dot colour to match category
+  const dotEl = document.getElementById("growthDot")
+  if(dotEl) dotEl.style.background = catColor
+  const lblEl = document.getElementById("growthStatLabel")
+  if(lblEl) lblEl.textContent = CAT_DEFS[cat]?.label || "All Portfolio"
+  function hexToRgb(h){ const n=parseInt(h.replace("#",""),16); return `${(n>>16)&255},${(n>>8)&255},${n&255}` }
+  const rgb     = hexToRgb(lineColor)
+  const gradTop = `rgba(${rgb},0.35)`
+  const gradBot = `rgba(${rgb},0.03)`
   const min = Math.min(...values)
   const max = Math.max(...values)
-  if(growthChartInstance) growthChartInstance.destroy()
-  growthChartInstance = new Chart(document.getElementById("growthChart"),{
+
+  if(portfolioGrowthChartInstance) portfolioGrowthChartInstance.destroy()
+
+  portfolioGrowthChartInstance = new Chart(document.getElementById("portfolioGrowthChart"),{
     type:"line",
     data:{
       labels,
       datasets:[{
-        label:"Portfolio Value (€)",
+        label: CAT_DEFS[cat]?.label||"Portfolio",
         data: values,
-        borderColor:"#5b9cf6",
-        borderWidth: 2,
-        pointRadius: values.length > 30 ? 0 : 4,
-        pointHoverRadius: 6,
-        pointBackgroundColor:"#5b9cf6",
-        fill: true,
-        backgroundColor: (ctx)=>{
-          const g = ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height)
-          g.addColorStop(0,"rgba(91,156,246,0.25)")
-          g.addColorStop(1,"rgba(91,156,246,0)")
-          return g
+        borderColor: lineColor,
+        borderWidth: 2.5,
+        pointRadius: values.length>50?0:3,
+        pointHoverRadius:6,
+        pointBackgroundColor:lineColor,
+        pointBorderColor:"#070c18",
+        pointBorderWidth:1.5,
+        fill:true,
+        backgroundColor:(ctx)=>{
+          const g=ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height)
+          g.addColorStop(0,gradTop); g.addColorStop(1,gradBot); return g
         },
-        tension: 0.3
+        tension:0.35
       }]
     },
     options:{
-      responsive:true, maintainAspectRatio:true,
+      responsive:true, maintainAspectRatio:false,
+      interaction:{mode:"index",intersect:false},
       scales:{
-        x:{ ticks:{color:"#4a5c80",font:{size:10},maxTicksLimit:8}, grid:{color:"rgba(26,45,80,0.4)"} },
-        y:{ ticks:{color:"#4a5c80",font:{size:10},callback:v=>"€"+v.toFixed(0)}, grid:{color:"rgba(26,45,80,0.4)"}, suggestedMin: min*0.97, suggestedMax: max*1.03 }
+        x:{ ticks:{color:"#4a5c80",font:{size:10},maxTicksLimit:7}, grid:{color:"rgba(26,45,80,0.3)"}, border:{display:false} },
+        y:{ ticks:{color:"#4a5c80",font:{size:10},callback:v=>"\u20ac"+v.toFixed(0)},
+            grid:{color:"rgba(26,45,80,0.3)"}, border:{display:false},
+            suggestedMin:min*0.985, suggestedMax:max*1.015 }
       },
       plugins:{
-        legend:{ labels:{color:"#8899bb",font:{family:"Outfit",size:12}} },
-        tooltip:{ callbacks:{ label: ctx=>" €"+ctx.raw.toFixed(2) } }
+        legend:{display:false},
+        tooltip:{
+          backgroundColor:"rgba(10,20,50,0.92)",
+          titleColor:"#8899bb", bodyColor:"#e0e8ff",
+          borderColor:`rgba(${rgb},0.4)`, borderWidth:1, padding:10,
+          callbacks:{
+            title:items=>items[0].label,
+            label:ctx=>{
+              const v=ctx.raw, diff=v-first
+              const dp=first>0?((diff/first)*100):0, sign=diff>=0?"+":""
+              return ["  \u20ac"+v.toFixed(2), "  "+sign+"\u20ac"+diff.toFixed(2)+" ("+sign+dp.toFixed(2)+"%)"]
+            }
+          }
+        }
       }
     }
   })
 }
-}
-
 
 /* =========================
 INSIGHTS ENGINE
