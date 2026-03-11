@@ -135,14 +135,24 @@
         <span class="hero-sub">Weighted return across all holdings</span>
       </div>
       <div class="card">
-        <h3>Best Performer</h3>
+        <h3>Best % Return</h3>
         <p id="bestPerformer" class="profit">–</p>
         <span class="hero-name" id="bestPerformerName">–</span>
       </div>
       <div class="card">
-        <h3>Worst Performer</h3>
+        <h3>Worst % Return</h3>
         <p id="worstPerformer" class="loss">–</p>
         <span class="hero-name" id="worstPerformerName">–</span>
+      </div>
+      <div class="card">
+        <h3>Best Absolute Profit</h3>
+        <p id="bestAbsolute" class="profit">–</p>
+        <span class="hero-name" id="bestAbsoluteName">–</span>
+      </div>
+      <div class="card">
+        <h3>Worst Absolute Loss</h3>
+        <p id="worstAbsolute" class="loss">–</p>
+        <span class="hero-name" id="worstAbsoluteName">–</span>
       </div>
     </div>
 
@@ -162,15 +172,27 @@
       </div>
     </div>
 
-    <!-- Top Movers -->
+    <!-- Top Movers by % -->
     <div class="movers-row">
       <div class="card">
-        <h3>Top Gainers</h3>
+        <h3>Top Gainers by %</h3>
         <div id="topGainers"></div>
       </div>
       <div class="card">
-        <h3>Top Losers</h3>
+        <h3>Top Losers by %</h3>
         <div id="topLosers"></div>
+      </div>
+    </div>
+
+    <!-- Top Movers by Absolute EUR -->
+    <div class="movers-row">
+      <div class="card">
+        <h3>Top Absolute Profit <span class="hero-sub" style="display:inline;text-transform:none;letter-spacing:0">(€ value)</span></h3>
+        <div id="topAbsGainers"></div>
+      </div>
+      <div class="card">
+        <h3>Top Absolute Loss <span class="hero-sub" style="display:inline;text-transform:none;letter-spacing:0">(€ value)</span></h3>
+        <div id="topAbsLosers"></div>
       </div>
     </div>
 
