@@ -904,13 +904,31 @@ const worstEl = document.getElementById("worstPerformer")
 const worstNm = document.getElementById("worstPerformerName")
 
 if(best && bestEl){
-  const bSign = best.profitEUR >= 0 ? "+" : ""
   bestEl.innerHTML = `+${best.growth.toFixed(2)}% <span class="abs-val">+€${best.profitEUR.toFixed(0)}</span>`
   if(bestNm) bestNm.textContent = resolveDisplayName(best)
 }
 if(worst && worstEl){
   worstEl.innerHTML = `${worst.growth.toFixed(2)}% <span class="abs-val">€${worst.profitEUR.toFixed(0)}</span>`
   if(worstNm) worstNm.textContent = resolveDisplayName(worst)
+}
+
+/* Absolute best/worst by EUR profit */
+const sortedAbs = [...portfolio].sort((a,b) => b.profitEUR - a.profitEUR)
+const bestAbs  = sortedAbs[0]
+const worstAbs = sortedAbs[sortedAbs.length - 1]
+
+const bestAbsEl  = document.getElementById("bestAbsolute")
+const bestAbsNm  = document.getElementById("bestAbsoluteName")
+const worstAbsEl = document.getElementById("worstAbsolute")
+const worstAbsNm = document.getElementById("worstAbsoluteName")
+
+if(bestAbs && bestAbsEl){
+  bestAbsEl.innerHTML = `+€${bestAbs.profitEUR.toFixed(0)} <span class="abs-val">+${bestAbs.growth.toFixed(1)}%</span>`
+  if(bestAbsNm) bestAbsNm.textContent = resolveDisplayName(bestAbs)
+}
+if(worstAbs && worstAbsEl){
+  worstAbsEl.innerHTML = `€${worstAbs.profitEUR.toFixed(0)} <span class="abs-val">${worstAbs.growth.toFixed(1)}%</span>`
+  if(worstAbsNm) worstAbsNm.textContent = resolveDisplayName(worstAbs)
 }
 }
 
@@ -938,6 +956,32 @@ if(lEl) lEl.innerHTML = losers.map(p=>`
     <span class="mover-vals">
       <span class="mover-pct loss">${p.growth.toFixed(2)}%</span>
       <span class="mover-abs loss">€${p.profitEUR.toFixed(0)}</span>
+    </span>
+  </div>`).join("")
+
+/* Absolute EUR movers */
+const sortedByAbs = [...portfolio].sort((a,b) => b.profitEUR - a.profitEUR)
+const absGainers  = sortedByAbs.filter(p => p.profitEUR > 0).slice(0,5)
+const absLosers   = sortedByAbs.filter(p => p.profitEUR < 0).slice(-5).reverse()
+
+const agEl = document.getElementById("topAbsGainers")
+const alEl = document.getElementById("topAbsLosers")
+
+if(agEl) agEl.innerHTML = absGainers.map(p=>`
+  <div class="mover-item">
+    <span class="mover-name">${resolveDisplayName(p)}</span>
+    <span class="mover-vals">
+      <span class="mover-pct profit">+€${p.profitEUR.toFixed(0)}</span>
+      <span class="mover-abs profit">+${p.growth.toFixed(1)}%</span>
+    </span>
+  </div>`).join("")
+
+if(alEl) alEl.innerHTML = absLosers.map(p=>`
+  <div class="mover-item">
+    <span class="mover-name">${resolveDisplayName(p)}</span>
+    <span class="mover-vals">
+      <span class="mover-pct loss">€${p.profitEUR.toFixed(0)}</span>
+      <span class="mover-abs loss">${p.growth.toFixed(1)}%</span>
     </span>
   </div>`).join("")
 }
