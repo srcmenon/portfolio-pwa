@@ -1032,11 +1032,12 @@ async function runMarketIntelligence(){
 
   btn.disabled = true
   result.style.display = "none"
+
   const steps = [
     "🔍 Searching live market data…",
     "📊 Fetching P/E ratios & fundamentals…",
-    "📈 Analysing technical indicators…",
-    "🌍 Reading geopolitical & macro news…",
+    "📈 Gathering technical indicators…",
+    "🌍 Reading macro & geopolitical news…",
     "🧠 Running deep portfolio analysis…",
     "⚖️ Applying tax-aware optimisation…"
   ]
@@ -1045,9 +1046,8 @@ async function runMarketIntelligence(){
   const stepTimer = setInterval(()=>{
     stepIdx = (stepIdx + 1) % steps.length
     btnText.textContent = steps[stepIdx]
-  }, 8000)
+  }, 7000)
 
-  /* Build summary metrics */
   let invested=0, current=0
   lastPortfolio.forEach(p=>{ invested+=p.totalBuyEUR; current+=p.totalCurrentEUR })
   const totalReturn = invested>0 ? ((current-invested)/invested)*100 : 0
@@ -1055,6 +1055,7 @@ async function runMarketIntelligence(){
   const payload = {
     portfolio: lastPortfolio.map(p=>({
       name: resolveDisplayName(p),
+      key: p.key,
       type: p.type,
       currency: p.currency,
       totalBuyEUR: p.totalBuyEUR,
@@ -1067,43 +1068,70 @@ async function runMarketIntelligence(){
   }
 
   try{
-    const res = await fetch("/api/insights", {
+    /* ── Step 1: Market Search (~20-25s) ── */
+    result.innerHTML = `<div class="intel-step">🔍 Step 1 of 2 — Gathering live market data, technicals & fundamentals…</div>`
+    result.style.display = "block"
+
+    const searchRes = await fetch("/api/market-search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     })
 
-    const data = await res.json()
+    const searchData = await searchRes.json()
 
-    if(data.error){
-      result.innerHTML = `<p class="intel-error">Error: ${data.error}</p>`
-    } else {
-      const html = data.analysis
-        .split("\n")
-        .map(line => {
-          if(line.startsWith("## ")) return `<h2 class="intel-h2">${line.slice(3)}</h2>`
-          if(line.startsWith("### ")) return `<h3 class="intel-h3">${line.slice(4)}</h3>`
-          if(line.startsWith("**") && line.endsWith("**")) return `<p class="intel-bold">${line.slice(2,-2)}</p>`
-          if(line.startsWith("- ")) return `<li>${line.slice(2)}</li>`
-          if(line.trim()==="") return "<br>"
-          return `<p>${line.replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")}</p>`
-        })
-        .join("")
-        .replace(/(<li>.*?<\/li>\s*)+/gs, m=>`<ul>${m}</ul>`)
-
-      disc.style.display = "none"
-      result.innerHTML = `<div class="intel-timestamp">Analysis generated ${new Date().toLocaleString()} · Powered by Claude with live web search</div>${html}`
+    if(!searchRes.ok || searchData.error){
+      throw new Error("Market search failed: " + (searchData.detail || searchData.error))
     }
 
-    result.style.display = "block"
+    const { marketData } = searchData
+
+    /* ── Step 2: Deep Analysis (~25-30s) ── */
+    stepIdx = 4
+    btnText.textContent = steps[4]
+    result.innerHTML = `<div class="intel-step">🧠 Step 2 of 2 — Running deep fundamental + technical analysis…</div>`
+
+    const analyseRes = await fetch("/api/analyse", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, marketData })
+    })
+
+    const analyseData = await analyseRes.json()
+
+    if(!analyseRes.ok || analyseData.error){
+      throw new Error("Analysis failed: " + (analyseData.detail || analyseData.error))
+    }
+
+    const html = analyseData.analysis
+      .split("\n")
+      .map(line => {
+        if(line.startsWith("## ")) return `<h2 class="intel-h2">${line.slice(3)}</h2>`
+        if(line.startsWith("### ")) return `<h3 class="intel-h3">${line.slice(4)}</h3>`
+        if(line.startsWith("**") && line.endsWith("**")) return `<p class="intel-bold">${line.slice(2,-2)}</p>`
+        if(line.startsWith("- ")) return `<li>${line.slice(2).replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")}</li>`
+        if(line.startsWith("| ") || line.startsWith("|--")) return `<p class="intel-table-row">${line}</p>`
+        if(line.trim()==="") return "<br>"
+        return `<p>${line.replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>")}</p>`
+      })
+      .join("")
+      .replace(/(<li>.*?<\/li>\s*<br>\s*)+/gs, m=>`<ul>${m.replace(/<br>/g,"")}</ul>`)
+      .replace(/(<li>.*?<\/li>\n?)+/gs, m=>`<ul>${m}</ul>`)
+
+    disc.style.display = "none"
+    result.innerHTML = `
+      <div class="intel-timestamp">
+        Analysis generated ${new Date().toLocaleString()} · Powered by Claude with live web search + extended thinking
+      </div>
+      ${html}`
 
   } catch(e){
-    result.innerHTML = `<p class="intel-error">Failed to fetch analysis. Check your connection or API key.</p>`
-    result.style.display = "block"
+    result.innerHTML = `<p class="intel-error">❌ ${e.message}</p><p class="intel-error" style="font-size:12px;margin-top:8px">Check Vercel logs for details.</p>`
   } finally {
     clearInterval(stepTimer)
     btnText.textContent = "⚡ Analyse Portfolio"
     btn.disabled = false
+    result.style.display = "block"
   }
 }
 
