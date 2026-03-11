@@ -6,7 +6,6 @@ let allocationChartInstance = null
 let currencyChartInstance = null
 let growthChartInstance = null
 let priceUpdateRunning = false
-let allocationBarChartInstance=null
 let lastPortfolio = []
 window.addEventListener("DOMContentLoaded",()=>{
 
@@ -713,7 +712,12 @@ currentPrice:price
 }
 
 priceUpdateRunning=false
+await recordPortfolioSnapshot()
 loadAssets()
+/* Redraw growth chart so latest point matches live portfolio value */
+if(document.getElementById("portfolioGrowthChart")){
+  drawGrowthChart()
+}
 
 }
 
@@ -725,14 +729,17 @@ async function recordPortfolioSnapshot(){
 
 if(!db) return
 
-let assets=await getAssets()
-
-let total=0
-
-assets.forEach(a=>{
-let value=(a.currentPrice||0)*(a.quantity||0)
-total+=convertToEUR(value,a.currency)
-})
+/* Use already-computed lastPortfolio if available (faster, avoids stale DB read lag) */
+let total = 0
+if(lastPortfolio && lastPortfolio.length){
+  lastPortfolio.forEach(p=>{ total += p.totalCurrentEUR })
+} else {
+  let assets = await getAssets()
+  assets.forEach(a=>{
+    let value=(a.currentPrice||0)*(a.quantity||0)
+    total+=convertToEUR(value,a.currency)
+  })
+}
 
 let tx=db.transaction("portfolioHistory","readwrite")
 
@@ -803,17 +810,10 @@ function drawCharts(portfolio){
   makeDonut("allocationChart", Object.keys(allocation), Object.values(allocation), "allocationChartInstance")
   makeDonut("currencyChart",   Object.keys(currencies), Object.values(currencies), "currencyChartInstance")
 }
-function drawPortfolioAllocation(portfolio){
-  if(!portfolio||!portfolio.length) return
-  const allocation={}
-  portfolio.forEach(p=>{
-    const type=p.type||"Other"
-    allocation[type]=(allocation[type]||0)+p.totalCurrentEUR
-  })
-  makeDonut("portfolioAllocationChart", Object.keys(allocation), Object.values(allocation), "allocationBarChartInstance")
-}
+/* drawPortfolioAllocation removed — was duplicate of Asset Allocation donut.
+   Canvas #portfolioAllocationChart no longer exists in index.html. */
 let portfolioGrowthChartInstance = null
-let currentPeriod = "1W"
+let currentPeriod = "1D"
 let currentCat = "ALL"
 let allPortfolioHistory = []
 
@@ -974,7 +974,10 @@ function renderGrowthChart(period, cat){
           ticks:{
             color:"#8fa3c4",
             font:{size:10, family:"'Outfit', sans-serif"},
-            callback:v=>"€"+v.toFixed(0),
+            callback:v=>{
+              if(v>=1000) return "€"+(v/1000).toFixed(0)+"k"
+              return "€"+v.toFixed(0)
+            },
             padding:10, maxTicksLimit:5
           },
           grid:{color:"rgba(91,156,246,0.07)", drawTicks:false},
@@ -985,15 +988,22 @@ function renderGrowthChart(period, cat){
       plugins:{
         legend:{display:false},
         tooltip:{
-          backgroundColor:"rgba(10,20,50,0.92)",
+          backgroundColor:"rgba(8,16,40,0.96)",
           titleColor:"#8899bb", bodyColor:"#e0e8ff",
-          borderColor:`rgba(${rgb},0.4)`, borderWidth:1, padding:10,
+          borderColor:`rgba(${rgb},0.4)`, borderWidth:1,
+          padding:{top:8,bottom:8,left:12,right:12},
+          caretSize:5,
+          displayColors:false,
           callbacks:{
             title:items=>items[0].label,
             label:ctx=>{
               const v=ctx.raw, diff=v-first
               const dp=first>0?((diff/first)*100):0, sign=diff>=0?"+":""
-              return ["  \u20ac"+v.toFixed(2), "  "+sign+"\u20ac"+diff.toFixed(2)+" ("+sign+dp.toFixed(2)+"%)"]
+              const fmtV = v>=1000 ? "€"+(v/1000).toFixed(2)+"k" : "€"+v.toFixed(2)
+              const fmtD = Math.abs(diff)>=1000
+                ? sign+(diff<0?"-":"")+"€"+(Math.abs(diff)/1000).toFixed(2)+"k"
+                : sign+"€"+diff.toFixed(2)
+              return [fmtV, fmtD+" ("+sign+dp.toFixed(2)+"%)"]
             }
           }
         }
@@ -1059,7 +1069,7 @@ async function renderDailyProgress(cat){
       pctEl.textContent = sign + pct.toFixed(2) + "%"
       pctEl.className = "daily-pct " + cls
     } else {
-      valEl.textContent = "No snap"
+      valEl.textContent = "–"
       valEl.className = "daily-val neutral"
       pctEl.textContent = "–"
       pctEl.className = "daily-pct neutral"
@@ -1108,7 +1118,7 @@ async function fetchMarketTicker(){
   wrap.innerHTML = results.map(r => {
     if(!r.data || r.data.price == null) return ""
     const pct = r.data.changePercent
-    const isUp = pct >= 0
+    const isUp = pct != null ? pct >= 0 : true
     const sign = isUp ? "+" : ""
     const cls  = isUp ? "mkt-up" : "mkt-dn"
     const arrow = isUp ? "▲" : "▼"
@@ -1284,7 +1294,6 @@ async function runMoversAnalysis(){
   const absGainers = sortedAbs.filter(p=>p.profitEUR>0).slice(0,5)
   const absLosers  = sortedAbs.filter(p=>p.profitEUR<0).slice(-5).reverse()
 
-  const moverKeys = new Set([...gainers,...losers,...absGainers,...absLosers].map(p=>p.key))
   const moversPayload = {
     gainers:    gainers.map(p=>({name:resolveDisplayName(p),key:p.key,type:p.type,currency:p.currency,totalBuyEUR:p.totalBuyEUR,totalCurrentEUR:p.totalCurrentEUR,growth:p.growth,profitEUR:p.profitEUR})),
     losers:     losers.map(p=>({name:resolveDisplayName(p),key:p.key,type:p.type,currency:p.currency,totalBuyEUR:p.totalBuyEUR,totalCurrentEUR:p.totalCurrentEUR,growth:p.growth,profitEUR:p.profitEUR})),
@@ -1531,14 +1540,16 @@ APP STARTUP
 
 function startApp(){
 
-loadAssets()
+loadAssets().then(()=>{
+  /* Refresh market ticker AFTER portfolio loads so "My Portfolio" chip has data */
+  if(navigator.onLine) fetchMarketTicker()
+})
 
 if(navigator.onLine){
 
 updatePrices()
 updateMutualFundNAV()
 recordPortfolioSnapshot()
-fetchMarketTicker()
 
 }
 
