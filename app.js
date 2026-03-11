@@ -686,6 +686,16 @@ let price=await fetchPrice(a)
 
 if(price!==null){
 
+/* Currency conversion:
+   Yahoo Finance always returns USD prices for US-listed tickers.
+   If the asset is stored in EUR (e.g. bought via Scalable/TR),
+   convert the USD price to EUR using the live FX rate. */
+const symbol = resolveTicker(a)
+const isUSTicker = symbol && !symbol.includes(".") && !symbol.includes("-USD")
+if(isUSTicker && a.currency === "EUR" && FX.USD){
+  price = price / FX.USD
+}
+
 let tx=db.transaction("assets","readwrite")
 
 tx.objectStore("assets").put({
