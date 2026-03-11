@@ -1030,9 +1030,22 @@ async function runMarketIntelligence(){
   const result  = document.getElementById("intelResult")
   const disc    = document.getElementById("intelDisclaimer")
 
-  btnText.textContent = "⏳ Analysing…"
   btn.disabled = true
   result.style.display = "none"
+  const steps = [
+    "🔍 Searching live market data…",
+    "📊 Fetching P/E ratios & fundamentals…",
+    "📈 Analysing technical indicators…",
+    "🌍 Reading geopolitical & macro news…",
+    "🧠 Running deep portfolio analysis…",
+    "⚖️ Applying tax-aware optimisation…"
+  ]
+  let stepIdx = 0
+  btnText.textContent = steps[0]
+  const stepTimer = setInterval(()=>{
+    stepIdx = (stepIdx + 1) % steps.length
+    btnText.textContent = steps[stepIdx]
+  }, 8000)
 
   /* Build summary metrics */
   let invested=0, current=0
@@ -1088,6 +1101,7 @@ async function runMarketIntelligence(){
     result.innerHTML = `<p class="intel-error">Failed to fetch analysis. Check your connection or API key.</p>`
     result.style.display = "block"
   } finally {
+    clearInterval(stepTimer)
     btnText.textContent = "⚡ Analyse Portfolio"
     btn.disabled = false
   }
