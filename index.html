@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -24,6 +25,11 @@
     <div class="app-brand">
       <img src="/icons/icon-192.png" alt="CapIntel" class="brand-logo">
       <span class="brand-name">CapIntel</span>
+    </div>
+    <div class="header-market" id="headerMarket">
+      <div class="mkt-item mkt-loading">
+        <span class="mkt-dot"></span><span class="mkt-name">Loading markets…</span>
+      </div>
     </div>
   </header>
 
@@ -72,6 +78,29 @@
       </div>
     </div>
     <canvas id="portfolioGrowthChart"></canvas>
+    <!-- Daily Progress Strip -->
+    <div class="daily-progress-bar" id="dailyProgressBar">
+      <div class="daily-seg">
+        <span class="daily-label">TODAY</span>
+        <span id="dailyChangeVal" class="daily-val neutral">–</span>
+        <span id="dailyChangePct" class="daily-pct neutral">–</span>
+      </div>
+      <div class="daily-divider"></div>
+      <div class="daily-seg">
+        <span class="daily-label">vs S&P 500</span>
+        <span id="dailyVsSP" class="daily-bench neutral">–</span>
+      </div>
+      <div class="daily-divider"></div>
+      <div class="daily-seg">
+        <span class="daily-label">vs Nifty 50</span>
+        <span id="dailyVsNifty" class="daily-bench neutral">–</span>
+      </div>
+      <div class="daily-divider"></div>
+      <div class="daily-seg">
+        <span class="daily-label">vs DAX</span>
+        <span id="dailyVsDAX" class="daily-bench neutral">–</span>
+      </div>
+    </div>
   </div>
 
   <div id="assetForm" class="card">
@@ -205,12 +234,6 @@
           <canvas id="currencyChart"></canvas>
         </div>
       </div>
-      <div class="card">
-        <h3>Allocation by Type</h3>
-        <div class="chart-box">
-          <canvas id="portfolioAllocationChart"></canvas>
-        </div>
-      </div>
     </div>
 
     <!-- Top Movers by % -->
@@ -235,6 +258,24 @@
         <h3>Top Absolute Loss <span class="hero-sub" style="display:inline;text-transform:none;letter-spacing:0">(€ value)</span></h3>
         <div id="topAbsLosers"></div>
       </div>
+    </div>
+
+    <!-- Smart Picks for Top Movers -->
+    <div class="card intel-card" id="picksCard">
+      <div class="intel-header">
+        <div>
+          <h3>Smart Picks — Your Top Movers</h3>
+          <p class="intel-sub">Tax-aware Buy · Hold · Sell · Trim for your best &amp; worst performers · No web search · Uses Claude's built-in knowledge</p>
+        </div>
+        <button id="runPicksBtn" onclick="runMoversAnalysis()">
+          <span id="picksBtnText">🎯 Analyse My Picks</span>
+        </button>
+      </div>
+      <div id="picksDisclaimer" class="intel-disclaimer">
+        <span>⚠️</span>
+        <span>Recommendations are for informational purposes only and not financial advice. Based on training data — not live market data. Always do your own research before acting.</span>
+      </div>
+      <div id="picksResult" class="picks-result" style="display:none"></div>
     </div>
 
     <!-- AI Market Intelligence -->
