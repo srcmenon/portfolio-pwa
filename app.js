@@ -633,13 +633,18 @@ if(t.includes(".")) return t
 if(t === "SEMI") return "CHIP.PA"   /* Amundi Semiconductors — Paris, EUR */
 if(t === "EWG2") return "EWG2.SG"   /* EUWAX Gold II — Stuttgart */
 
-/* Currency-based resolution:
-   USD → US exchange (no suffix needed for Yahoo Finance)
-   EUR → try LSE (.L) as default European exchange
+/* Currency + type based resolution:
+   USD → US exchange (no suffix)
+   EUR + ETF/Commodity → LSE (.L) — e.g. IWDA, EIMI, SSLV, DFNS
+   EUR + Stock → US exchange (no suffix) — e.g. GOOGL, AMZN, MU bought via Scalable/TR
    INR → NSE (.NS)
 */
 if(cur === "USD") return t
-if(cur === "EUR") return t + ".L"
+if(cur === "EUR"){
+  const type = (asset.type || "").toLowerCase()
+  if(type === "etf" || type === "commodity") return t + ".L"
+  return t  /* Stock in EUR = US-listed, no suffix */
+}
 return t + ".NS"
 
 }
