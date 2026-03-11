@@ -1078,10 +1078,13 @@ async function runMarketIntelligence(){
       body: JSON.stringify(payload)
     })
 
-    const searchData = await searchRes.json()
+    const searchRaw = await searchRes.text()
+    let searchData
+    try { searchData = JSON.parse(searchRaw) }
+    catch(e) { throw new Error("Market search bad response: " + searchRaw.slice(0,200)) }
 
     if(!searchRes.ok || searchData.error){
-      throw new Error("Market search failed: " + (searchData.detail || searchData.error))
+      throw new Error("Market search failed: " + JSON.stringify(searchData.error || searchData.detail))
     }
 
     const { marketData } = searchData
@@ -1097,10 +1100,13 @@ async function runMarketIntelligence(){
       body: JSON.stringify({ ...payload, marketData })
     })
 
-    const analyseData = await analyseRes.json()
+    const analyseRaw = await analyseRes.text()
+    let analyseData
+    try { analyseData = JSON.parse(analyseRaw) }
+    catch(e) { throw new Error("Analysis bad response: " + analyseRaw.slice(0,200)) }
 
     if(!analyseRes.ok || analyseData.error){
-      throw new Error("Analysis failed: " + (analyseData.detail || analyseData.error))
+      throw new Error("Analysis failed: " + JSON.stringify(analyseData.error || analyseData.detail))
     }
 
     const html = analyseData.analysis
