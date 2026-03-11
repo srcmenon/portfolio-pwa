@@ -12,56 +12,36 @@ export default async function handler(req, res) {
   const { portfolio, totalValue, totalReturn } = req.body || {}
   if(!portfolio || !portfolio.length) return res.status(400).json({error:"Portfolio required"})
 
-  const topStocks = portfolio
-    .filter(p => p.type === "Stock" || p.type === "ETF")
+  const snap = portfolio
     .sort((a,b) => b.totalCurrentEUR - a.totalCurrentEUR)
     .slice(0, 8)
-    .map(p => p.name)
-    .join(", ")
+    .map(p => `${p.name} (${p.type}): €${p.totalCurrentEUR.toFixed(0)}, ${p.growth.toFixed(1)}%`)
+    .join("\n")
 
-  const hasPSU    = portfolio.some(p => ["ONGC","OIL","COALINDIA","NLCINDIA","PFC","RECLTD","BEL","SAIL"].includes(p.key))
-  const hasGold   = portfolio.some(p => p.name.toLowerCase().includes("gold"))
-  const hasSilver = portfolio.some(p => p.name.toLowerCase().includes("silver"))
+  const prompt = `You are a concise investment analyst. Search for current data and reply in SHORT bullet points only — no paragraphs, no explanations. Max 400 words total.
 
-  const searchPrompt = `Search the web and gather precise, current market data. Return all numbers you find exactly as found.
+Portfolio top holdings:
+${snap}
+Total: €${(totalValue||0).toFixed(0)}, Return: ${(totalReturn||0).toFixed(2)}%
 
-Search for ALL of the following:
+Search and return ONLY these data points:
+- Nifty 50: level, RSI, above/below 200MA?
+- S&P 500: level, RSI, trend
+- DAX: level, trend
+- VIX: current reading
+- Gold: price, trend (up/down)
+- Brent oil: price, trend
+- EUR/INR: rate, 30d change
+- USD/INR: rate
+- RBI rate: current, stance
+- ECB rate: current, stance
+- FII India flows: last 2 weeks net buy/sell
+- Indian small/mid cap P/E: cheap or expensive vs history?
+- Top 1 geopolitical risk for India markets
+- Top 1 geopolitical risk for Europe markets
+- Best investment opportunity right now in 1 sentence
 
-1. INDEX LEVELS & TECHNICALS:
-- Nifty 50: current level, 50-day MA, 200-day MA, RSI (14-day), MACD
-- Sensex: current level and recent trend
-- S&P 500: current level, 50-day MA, 200-day MA, RSI
-- DAX Germany: current level and momentum
-- VIX: current reading and what it signals
-
-2. FUNDAMENTALS for these stocks: ${topStocks}
-For each find: P/E ratio, forward P/E, EPS (TTM), EPS growth YoY, PEG ratio, D/E ratio, ROE, 52-week high and low
-
-3. COMMODITIES & CURRENCIES:
-- Gold spot price USD/oz, 50-day MA, 200-day MA, RSI
-${hasSilver ? "- Silver spot price and trend" : ""}
-- Brent crude oil price and OPEC+ latest decision
-- EUR/INR current rate and 30-day change
-- USD/INR current rate and trend
-- EUR/USD current rate
-- US 10-year Treasury yield
-- India 10-year bond yield
-
-4. MACRO & POLICY:
-- RBI latest interest rate decision and stance
-- ECB latest interest rate decision and stance
-- FII net flows in Indian markets last 2 weeks
-- DII net flows in Indian markets last 2 weeks
-- Any major upcoming events: Fed meeting, RBI policy, key earnings
-
-5. SECTOR OUTLOOK:
-- Indian small cap / mid cap: current valuations, P/E vs historical average, overbought or cheap?
-${hasPSU ? "- Indian PSU sector: current momentum and government capex pipeline" : ""}
-- Global semiconductor sector: supply/demand, cycle position
-- Indian defense sector: order book and budget allocation update
-- Any major geopolitical events affecting India or Europe markets
-
-Return all data in clear structured format with numbers wherever available.`
+Be extremely brief. Numbers only where possible.`
 
   try {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -72,29 +52,25 @@ Return all data in clear structured format with numbers wherever available.`
         "anthropic-version": "2023-06-01"
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5",
-        max_tokens: 5000,
-        tools: [{ type: "web_search_20250305", name: "web_search" }],
-        messages: [{ role: "user", content: searchPrompt }]
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 1000,
+        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }],
+        messages: [{ role: "user", content: prompt }]
       })
     })
 
-    if(!r.ok){
-      const err = await r.text()
-      console.error("market-search failed:", err)
-      return res.status(500).json({error:"Market search failed", detail: err})
-    }
+    const raw = await r.text()
+    if(!r.ok) return res.status(500).json({error:"Search API error", detail: raw.slice(0,300)})
 
-    const data = await r.json()
+    const data = JSON.parse(raw)
     const marketData = (data.content || [])
       .filter(b => b.type === "text")
       .map(b => b.text)
-      .join("\n\n")
+      .join("\n")
 
     return res.status(200).json({ marketData })
 
   } catch(e) {
-    console.error("market-search error:", e)
     return res.status(500).json({error:"Market search error", detail: e.message})
   }
 }
