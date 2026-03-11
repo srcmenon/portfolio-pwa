@@ -6,9 +6,6 @@
     "api/analyse.js": {
       "maxDuration": 55
     },
-    "api/insights.js": {
-      "maxDuration": 55
-    },
     "api/price.js": {
       "maxDuration": 10
     },
