@@ -10,27 +10,29 @@
 </head>
 <body>
 
+<!-- ══ ROW 1: Tab bar with brand on right ══ -->
 <div id="tabs">
   <button class="tabBtn active" data-tab="portfolioTab">Portfolio</button>
   <button class="tabBtn" data-tab="insightsTab">Insights</button>
+  <div class="tab-brand">
+    <img src="/icons/icon-192.png" alt="CapIntel" class="brand-logo">
+    <span class="brand-name">CapIntel</span>
+  </div>
+</div>
+
+<!-- ══ ROW 2: Market ticker bar (always visible, outside tab content) ══ -->
+<div id="marketBar">
+  <div class="header-market" id="headerMarket">
+    <div class="mkt-item mkt-loading">
+      <span class="mkt-name">Loading markets…</span>
+    </div>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════
      PORTFOLIO TAB
 ══════════════════════════════════════ -->
 <div id="portfolioTab" class="tabContent active">
-
-  <header>
-    <div class="app-brand">
-      <img src="/icons/icon-192.png" alt="CapIntel" class="brand-logo">
-      <span class="brand-name">CapIntel</span>
-    </div>
-    <div class="header-market" id="headerMarket">
-      <div class="mkt-item mkt-loading">
-        <span class="mkt-dot"></span><span class="mkt-name">Loading markets…</span>
-      </div>
-    </div>
-  </header>
 
   <section id="summary">
     <div class="card">
