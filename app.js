@@ -1141,6 +1141,45 @@ async function runMarketIntelligence(){
   }
 }
 
+
+/* =========================
+EXPORT CSV
+========================= */
+
+async function exportPortfolioCSV(){
+  if(!db) return
+  const assets = await getAssets()
+  if(!assets.length){ alert("No assets to export."); return }
+
+  const rows = [["Date","Name","Ticker","Broker","Type","Quantity","Price","Currency"]]
+
+  assets.forEach(a => {
+    /* Each asset may have multiple buy transactions */
+    const txns = a.transactions || [{ date: a.date, qty: a.quantity, price: a.buyPrice }]
+    txns.forEach(t => {
+      rows.push([
+        t.date || a.date || "",
+        a.name || "",
+        a.ticker || "",
+        a.broker || "",
+        a.type || "",
+        t.qty ?? a.quantity ?? "",
+        t.price ?? a.buyPrice ?? "",
+        a.currency || "EUR"
+      ])
+    })
+  })
+
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(",")).join("\n")
+  const blob = new Blob([csv], { type: "text/csv" })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement("a")
+  a.href     = url
+  a.download = `portfolio_export_${new Date().toISOString().slice(0,10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 /* =========================
 APP STARTUP
 ========================= */
@@ -1235,6 +1274,8 @@ function bindCSVImport(){
 
 let btn=document.getElementById("importCSV")
 let fileInput=document.getElementById("csvFile")
+let exportBtn=document.getElementById("exportCSV")
+if(exportBtn) exportBtn.onclick = exportPortfolioCSV
 
 if(!btn || !fileInput) return
 
