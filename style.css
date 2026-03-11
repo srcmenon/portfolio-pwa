@@ -404,3 +404,101 @@ header {
   font-family: var(--mono); font-size: 12px;
   color: var(--dim); margin: 2px 0;
 }
+
+/* ── PORTFOLIO GROWTH CHART ── */
+.growth-portfolio-card { padding: 20px 24px 16px; }
+
+.growth-header {
+  display: flex; justify-content: space-between;
+  align-items: center; margin-bottom: 10px; gap: 12px;
+  flex-wrap: wrap;
+}
+.growth-header h3 { margin: 0; }
+
+.period-tabs {
+  display: flex; gap: 3px;
+  background: var(--bg); border-radius: 8px; padding: 3px;
+}
+.period-btn {
+  padding: 5px 11px; border: none; border-radius: 6px;
+  background: transparent; color: var(--dim);
+  font-family: var(--font); font-size: 12px; font-weight: 500;
+  cursor: pointer; transition: all 0.15s;
+}
+.period-btn:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+.period-btn.active {
+  background: var(--blue); color: #fff;
+  box-shadow: 0 2px 8px rgba(91,156,246,0.4);
+}
+
+/* Category tabs */
+.category-tabs {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  margin-bottom: 14px; padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.cat-btn {
+  padding: 5px 12px; border: 1px solid var(--border);
+  border-radius: 20px; background: transparent;
+  color: var(--dim); font-family: var(--font);
+  font-size: 12px; font-weight: 500; cursor: pointer;
+  transition: all 0.18s; white-space: nowrap;
+}
+.cat-btn:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
+.cat-btn.active {
+  background: rgba(91,156,246,0.15);
+  border-color: var(--blue); color: var(--blue);
+  font-weight: 600;
+}
+/* Each category gets its own active accent colour via JS-set CSS var */
+.cat-btn[data-cat="MutualFund_INR"].active { border-color:#f0a535; color:#f0a535; background:rgba(240,165,53,0.12); }
+.cat-btn[data-cat="Stock_INR"].active      { border-color:#22d17a; color:#22d17a; background:rgba(34,209,122,0.12); }
+.cat-btn[data-cat="Stock_EUR"].active      { border-color:#7b5cf0; color:#7b5cf0; background:rgba(123,92,240,0.12); }
+.cat-btn[data-cat="Stock_USD"].active      { border-color:#00cfff; color:#00cfff; background:rgba(0,207,255,0.12); }
+.cat-btn[data-cat="ETF_EUR"].active        { border-color:#f4506a; color:#f4506a; background:rgba(244,80,106,0.12); }
+.cat-btn[data-cat="Commodity"].active      { border-color:#e8c84a; color:#e8c84a; background:rgba(232,200,74,0.12); }
+
+/* Stats row */
+.growth-stats-row { margin-bottom: 14px; }
+.growth-stat-label-row {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+}
+.growth-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #5b9cf6;
+  box-shadow: 0 0 6px currentColor;
+  flex-shrink: 0;
+}
+.growth-stat-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.8px;
+  text-transform: uppercase; color: var(--dim);
+}
+.growth-stat-nums {
+  display: flex; align-items: baseline; gap: 12px;
+}
+.growth-stat-val {
+  font-family: var(--mono); font-size: 28px; font-weight: 700;
+  color: var(--text); letter-spacing: -1px;
+}
+.growth-stat-chg, .growth-stat-pct {
+  font-family: var(--mono); font-size: 14px; font-weight: 600;
+}
+
+#portfolioGrowthChart {
+  height: 240px !important;
+  width: 100% !important;
+}
+
+/* Make Insights charts-row support 3 cards */
+.charts-row {
+  grid-template-columns: repeat(3, 1fr) !important;
+}
+@media (max-width: 960px) {
+  .charts-row { grid-template-columns: repeat(2, 1fr) !important; }
+}
+@media (max-width: 640px) {
+  .charts-row { grid-template-columns: 1fr !important; }
+  .period-tabs { flex-wrap: wrap; }
+  .growth-header { flex-direction: column; align-items: flex-start; }
+  .growth-stat-val { font-size: 22px; }
+}
