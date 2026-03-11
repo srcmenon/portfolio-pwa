@@ -294,7 +294,7 @@ renderPortfolioSummary(portfolio)
 renderPortfolioReturn(portfolio)
 
 /* Charts */
-drawPortfolioAllocation(portfolio)
+// drawPortfolioAllocation removed — was duplicate of Asset Allocation donut
 
 if(document.getElementById("insightsTab")?.classList.contains("active")){
   drawCharts(lastPortfolio)
@@ -935,8 +935,7 @@ function renderGrowthChart(period, cat){
 
   if(portfolioGrowthChartInstance) portfolioGrowthChartInstance.destroy()
 
-  portfolioGrowthChartInstance = new Chart(document.getElementById("portfolioGrowthChart"),{
-    type:"line",
+  portfolioGrowthChartInstance = new Chart(document.getElementById("portfolioGrowthChart"),{    type:"line",
     data:{
       labels,
       datasets:[{
@@ -961,10 +960,27 @@ function renderGrowthChart(period, cat){
       responsive:true, maintainAspectRatio:false,
       interaction:{mode:"index",intersect:false},
       scales:{
-        x:{ ticks:{color:"#4a5c80",font:{size:10},maxTicksLimit:7}, grid:{color:"rgba(26,45,80,0.3)"}, border:{display:false} },
-        y:{ ticks:{color:"#4a5c80",font:{size:10},callback:v=>"\u20ac"+v.toFixed(0)},
-            grid:{color:"rgba(26,45,80,0.3)"}, border:{display:false},
-            suggestedMin:min*0.985, suggestedMax:max*1.015 }
+        x:{
+          ticks:{
+            color:"#8fa3c4",
+            font:{size:10, family:"'Outfit', sans-serif"},
+            maxTicksLimit:6, maxRotation:0, padding:6
+          },
+          grid:{color:"rgba(91,156,246,0.07)", drawTicks:false},
+          border:{display:false}
+        },
+        y:{
+          position:"right",
+          ticks:{
+            color:"#8fa3c4",
+            font:{size:10, family:"'Outfit', sans-serif"},
+            callback:v=>"€"+v.toFixed(0),
+            padding:10, maxTicksLimit:5
+          },
+          grid:{color:"rgba(91,156,246,0.07)", drawTicks:false},
+          border:{display:false},
+          suggestedMin:min*0.985, suggestedMax:max*1.015
+        }
       },
       plugins:{
         legend:{display:false},
@@ -984,11 +1000,142 @@ function renderGrowthChart(period, cat){
       }
     }
   })
+  /* Update daily progress strip for this category */
+  renderDailyProgress(cat)
 }
 
 /* =========================
-INSIGHTS ENGINE
+DAILY PROGRESS & MARKET TICKER
 ========================= */
+
+/* Cache for index prices fetched once per session */
+let indexCache = {}
+
+async function fetchIndexPrice(ticker){
+  if(indexCache[ticker]) return indexCache[ticker]
+  try{
+    const r = await fetch("/api/price?ticker=" + ticker)
+    if(!r.ok) return null
+    const d = await r.json()
+    indexCache[ticker] = d
+    return d
+  }catch(e){ return null }
+}
+
+/* Render Today's Change strip beneath the growth chart */
+async function renderDailyProgress(cat){
+  const bar = document.getElementById("dailyProgressBar")
+  if(!bar) return
+
+  /* ── Today vs yesterday from local portfolio history ── */
+  const now = new Date()
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const startOfYesterday = startOfToday - 86400000
+
+  const ySnaps = allPortfolioHistory.filter(h => h.timestamp >= startOfYesterday && h.timestamp < startOfToday)
+  const tSnaps = allPortfolioHistory.filter(h => h.timestamp >= startOfToday)
+
+  const fraction = (cat === "ALL") ? 1 : (() => {
+    if(!lastPortfolio.length) return 1
+    const catTotal = lastPortfolio.filter(a => matchCat(a, cat)).reduce((s,a)=>s+a.totalCurrentEUR,0)
+    const allTotal = lastPortfolio.reduce((s,a)=>s+a.totalCurrentEUR,0)
+    return allTotal > 0 ? catTotal/allTotal : 1
+  })()
+
+  const yVal = ySnaps.length ? ySnaps[ySnaps.length-1].value * fraction : null
+  const tVal = tSnaps.length ? tSnaps[tSnaps.length-1].value * fraction : null
+
+  const valEl = document.getElementById("dailyChangeVal")
+  const pctEl = document.getElementById("dailyChangePct")
+
+  if(valEl && pctEl){
+    if(yVal !== null && tVal !== null){
+      const chg = tVal - yVal
+      const pct = yVal > 0 ? (chg/yVal)*100 : 0
+      const cls = chg >= 0 ? "profit" : "loss"
+      const sign = chg >= 0 ? "+" : ""
+      valEl.textContent = sign + "€" + Math.abs(chg).toFixed(0)
+      valEl.className = "daily-val " + cls
+      pctEl.textContent = sign + pct.toFixed(2) + "%"
+      pctEl.className = "daily-pct " + cls
+    } else {
+      valEl.textContent = "No snap"
+      valEl.className = "daily-val neutral"
+      pctEl.textContent = "–"
+      pctEl.className = "daily-pct neutral"
+    }
+  }
+
+  /* ── Index comparisons (fetch in parallel) ── */
+  const [sp, nifty, dax] = await Promise.all([
+    fetchIndexPrice("%5EGSPC"),
+    fetchIndexPrice("%5ENSEI"),
+    fetchIndexPrice("%5EGDAXI")
+  ])
+
+  const setComp = (elId, data) => {
+    const el = document.getElementById(elId)
+    if(!el) return
+    if(!data || data.changePercent == null){ el.textContent = "–"; el.className="daily-bench neutral"; return }
+    const pct = data.changePercent
+    const sign = pct >= 0 ? "+" : ""
+    el.textContent = sign + pct.toFixed(2) + "%"
+    el.className = "daily-bench " + (pct >= 0 ? "profit" : "loss")
+  }
+
+  setComp("dailyVsSP",    sp)
+  setComp("dailyVsNifty", nifty)
+  setComp("dailyVsDAX",   dax)
+}
+
+/* ── Header Market Ticker ── */
+async function fetchMarketTicker(){
+  const wrap = document.getElementById("headerMarket")
+  if(!wrap) return
+
+  const indices = [
+    { ticker: "%5ENSEI",  label: "Nifty 50",    color: "#22d17a" },
+    { ticker: "%5EGSPC",  label: "S&P 500",     color: "#5b9cf6" },
+    { ticker: "%5EGDAXI", label: "DAX",          color: "#a78bfa" },
+    { ticker: "%5ESTOXX50E", label:"EU Stoxx",  color: "#f0a535" }
+  ]
+
+  const results = await Promise.all(indices.map(async idx => {
+    const d = await fetchIndexPrice(idx.ticker)
+    return { ...idx, data: d }
+  }))
+
+  wrap.innerHTML = results.map(r => {
+    if(!r.data || r.data.price == null) return ""
+    const pct = r.data.changePercent
+    const isUp = pct >= 0
+    const sign = isUp ? "+" : ""
+    const cls  = isUp ? "mkt-up" : "mkt-dn"
+    const arrow = isUp ? "▲" : "▼"
+    const pctStr = pct != null ? sign+pct.toFixed(2)+"%" : "–"
+    return `<div class="mkt-item">
+      <span class="mkt-name" style="color:${r.color}">${r.label}</span>
+      <span class="mkt-price">${Number(r.data.price).toLocaleString(undefined,{maximumFractionDigits:0})}</span>
+      <span class="mkt-chg ${cls}">${arrow} ${pctStr}</span>
+    </div>`
+  }).join("")
+
+  /* Append portfolio vs benchmarks */
+  if(lastPortfolio.length){
+    let invested=0, current=0
+    lastPortfolio.forEach(p=>{ invested+=p.totalBuyEUR; current+=p.totalCurrentEUR })
+    const portRet = invested>0 ? ((current-invested)/invested)*100 : 0
+    const sign = portRet>=0 ? "+" : ""
+    const cls  = portRet>=0 ? "mkt-up" : "mkt-dn"
+    wrap.insertAdjacentHTML("beforeend",
+      `<div class="mkt-item mkt-portfolio">
+        <span class="mkt-name" style="color:#e8c84a">My Portfolio</span>
+        <span class="mkt-chg ${cls}">${sign}${portRet.toFixed(2)}% total</span>
+      </div>`)
+  }
+}
+
+
 
 function renderInsightsSummary(portfolio){
 if(!portfolio || !portfolio.length) return
@@ -1112,6 +1259,109 @@ function simpleMarkdown(text){
     .replace(/^(?!<[hul])/gm, '')
     .replace(/(<p><\/p>)/g, '')
     || text
+}
+
+async function runMoversAnalysis(){
+  if(!lastPortfolio || !lastPortfolio.length){
+    alert("Load your portfolio first.")
+    return
+  }
+
+  const btn     = document.getElementById("runPicksBtn")
+  const btnText = document.getElementById("picksBtnText")
+  const result  = document.getElementById("picksResult")
+  const disc    = document.getElementById("picksDisclaimer")
+
+  btn.disabled = true
+  btnText.textContent = "🧠 Analysing your picks…"
+  result.style.display = "none"
+
+  /* Collect movers data */
+  const sorted = [...lastPortfolio].sort((a,b)=>b.growth-a.growth)
+  const gainers    = sorted.slice(0,5)
+  const losers     = sorted.slice(-5).reverse()
+  const sortedAbs  = [...lastPortfolio].sort((a,b)=>b.profitEUR-a.profitEUR)
+  const absGainers = sortedAbs.filter(p=>p.profitEUR>0).slice(0,5)
+  const absLosers  = sortedAbs.filter(p=>p.profitEUR<0).slice(-5).reverse()
+
+  const moverKeys = new Set([...gainers,...losers,...absGainers,...absLosers].map(p=>p.key))
+  const moversPayload = {
+    gainers:    gainers.map(p=>({name:resolveDisplayName(p),key:p.key,type:p.type,currency:p.currency,totalBuyEUR:p.totalBuyEUR,totalCurrentEUR:p.totalCurrentEUR,growth:p.growth,profitEUR:p.profitEUR})),
+    losers:     losers.map(p=>({name:resolveDisplayName(p),key:p.key,type:p.type,currency:p.currency,totalBuyEUR:p.totalBuyEUR,totalCurrentEUR:p.totalCurrentEUR,growth:p.growth,profitEUR:p.profitEUR})),
+    absGainers: absGainers.map(p=>({name:resolveDisplayName(p),key:p.key,type:p.type,currency:p.currency,totalBuyEUR:p.totalBuyEUR,totalCurrentEUR:p.totalCurrentEUR,growth:p.growth,profitEUR:p.profitEUR})),
+    absLosers:  absLosers.map(p=>({name:resolveDisplayName(p),key:p.key,type:p.type,currency:p.currency,totalBuyEUR:p.totalBuyEUR,totalCurrentEUR:p.totalCurrentEUR,growth:p.growth,profitEUR:p.profitEUR}))
+  }
+
+  try{
+    const res = await fetch("/api/recommend",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({movers:moversPayload})
+    })
+    const raw = await res.json()
+    if(!res.ok || raw.error) throw new Error(raw.error || "API error")
+
+    const recs = raw.recommendations || []
+    /* Build a lookup map for quick render */
+    const recMap = {}
+    recs.forEach(r=>{ recMap[r.name.toLowerCase()] = r })
+
+    /* Helper to render a mover item with rec badge */
+    const renderMoverWithRec = (p, isGainer) => {
+      const dn = resolveDisplayName(p)
+      const rec = recMap[dn.toLowerCase()]
+      const sign = isGainer ? "+" : ""
+      const cls  = isGainer ? "profit" : "loss"
+      let badge = ""
+      if(rec){
+        const verdictCls = {BUY:"rec-buy",HOLD:"rec-hold",SELL:"rec-sell",TRIM:"rec-trim"}[rec.verdict] || "rec-hold"
+        badge = `<span class="rec-badge ${verdictCls}">${rec.verdict}</span>`
+      }
+      const reason   = rec ? `<div class="rec-reason">${rec.reason}</div>` : ""
+      const taxNote  = rec ? `<div class="rec-tax">🧾 ${rec.taxNote}</div>` : ""
+      const urgency  = rec ? `<span class="rec-urgency">⏱ ${rec.urgency}</span>` : ""
+      const confCls  = rec ? `conf-${rec.confidence?.toLowerCase()}` : ""
+      return `<div class="pick-item">
+        <div class="pick-top">
+          <span class="mover-name">${dn}</span>
+          <div class="pick-right">
+            <span class="mover-pct ${cls}">${sign}${p.growth.toFixed(2)}%</span>
+            <span class="mover-abs ${cls}">${sign}€${Math.abs(p.profitEUR).toFixed(0)}</span>
+            ${badge}
+          </div>
+        </div>
+        ${reason}${taxNote}
+        ${urgency ? `<div class="rec-meta">${urgency}${rec?.confidence ? `<span class="rec-conf ${confCls}">${rec.confidence} confidence</span>`:"" }</div>` : ""}
+      </div>`
+    }
+
+    /* Deduplicate across sections for display */
+    const sections = [
+      { title:"📈 Top % Gainers", items:gainers, isGainer:true },
+      { title:"📉 Top % Losers",  items:losers,  isGainer:false },
+      { title:"💰 Top Absolute Profit", items:absGainers, isGainer:true },
+      { title:"🔻 Top Absolute Loss",   items:absLosers,  isGainer:false }
+    ]
+
+    disc.style.display = "none"
+    result.innerHTML = `
+      <div class="picks-timestamp">Recommendations generated ${new Date().toLocaleString()} · Knowledge-based · No live web search</div>
+      <div class="picks-grid">
+        ${sections.map(s => `
+          <div class="picks-section">
+            <div class="picks-section-title">${s.title}</div>
+            ${s.items.map(p=>renderMoverWithRec(p,s.isGainer)).join("")}
+          </div>`).join("")}
+      </div>`
+    result.style.display = "block"
+
+  }catch(e){
+    result.innerHTML = `<p class="intel-error">❌ ${e.message}</p>`
+    result.style.display = "block"
+  }finally{
+    btnText.textContent = "🎯 Analyse My Picks"
+    btn.disabled = false
+  }
 }
 
 async function runMarketIntelligence(){
@@ -1288,6 +1538,7 @@ if(navigator.onLine){
 updatePrices()
 updateMutualFundNAV()
 recordPortfolioSnapshot()
+fetchMarketTicker()
 
 }
 
@@ -1301,6 +1552,9 @@ recordPortfolioSnapshot()
 }
 
 },300000)
+
+/* Refresh market ticker every 5 minutes */
+setInterval(()=>{ if(navigator.onLine) fetchMarketTicker() }, 300000)
 
 /* Mutual funds once per day */
 setInterval(updateMutualFundNAV,86400000)
