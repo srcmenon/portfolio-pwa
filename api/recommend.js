@@ -78,7 +78,7 @@ Rules:
         "anthropic-version": "2023-06-01"
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
+        model: "claude-sonnet-4-5",
         max_tokens: 2500,
         messages: [{ role: "user", content: prompt }]
       })
@@ -94,12 +94,17 @@ Rules:
       .join("\n")
       .trim()
 
-    /* Strip possible markdown fences */
-    const clean = text.replace(/^```json\s*/i,"").replace(/^```\s*/,"").replace(/\s*```$/,"").trim()
+    /* Robustly extract the JSON array — find first [ and matching last ] */
+    const start = text.indexOf("[")
+    const end   = text.lastIndexOf("]")
+    if(start === -1 || end === -1 || end <= start){
+      return res.status(500).json({error:"No JSON array found in response", raw: text.slice(0,400)})
+    }
+    const clean = text.slice(start, end + 1)
 
     let recommendations
     try { recommendations = JSON.parse(clean) }
-    catch(e) { return res.status(500).json({error:"JSON parse failed", raw: clean.slice(0,400)}) }
+    catch(e) { return res.status(500).json({error:"JSON parse failed", detail: e.message, raw: clean.slice(0,400)}) }
 
     return res.status(200).json({ recommendations })
 
