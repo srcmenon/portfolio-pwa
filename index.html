@@ -46,9 +46,16 @@
       <span class="time-value" id="clockNY">--:--</span>
     </div>
     <div class="time-divider"></div>
-    <div class="time-clock time-market-status" id="marketStatus">
-      <span class="time-dot" id="marketDot"></span>
-      <span id="marketStatusText">–</span>
+    <div class="time-markets" id="marketStatusRow">
+      <div class="mkt-status-chip" id="mktNSE">
+        <span class="mkt-status-dot"></span><span class="mkt-status-name">NSE</span>
+      </div>
+      <div class="mkt-status-chip" id="mktXETRA">
+        <span class="mkt-status-dot"></span><span class="mkt-status-name">XETRA</span>
+      </div>
+      <div class="mkt-status-chip" id="mktNYSE">
+        <span class="mkt-status-dot"></span><span class="mkt-status-name">NYSE</span>
+      </div>
     </div>
   </div>
 </div>
@@ -99,8 +106,16 @@
       </div>
       <div class="growth-stat-nums">
         <span id="growthStatValue" class="growth-stat-val">–</span>
-        <span id="growthStatChange" class="growth-stat-chg">–</span>
-        <span id="growthStatPct" class="growth-stat-pct">–</span>
+        <div class="growth-stat-period-group">
+          <span class="growth-stat-period-label" id="growthStatPeriodLabel">period</span>
+          <span id="growthStatChange" class="growth-stat-chg">–</span>
+          <span id="growthStatPct" class="growth-stat-pct">–</span>
+        </div>
+        <div class="growth-stat-today-group" id="growthTodayGroup">
+          <span class="growth-stat-today-label">today</span>
+          <span id="growthTodayVal" class="growth-today-val">–</span>
+          <span id="growthTodayPct" class="growth-today-pct">–</span>
+        </div>
       </div>
     </div>
     <canvas id="portfolioGrowthChart"></canvas>
@@ -131,11 +146,59 @@
 
   <div id="assetForm" class="card">
     <h3>Import CSV</h3>
+
+    <!-- CSV Format Guide -->
+    <details class="csv-guide" style="grid-column:1/-1">
+      <summary class="csv-guide-summary">📋 CSV format guide — click to expand</summary>
+      <div class="csv-guide-body">
+        <p class="csv-guide-intro">Your file must be a plain <code>.csv</code> with <strong>one row per purchase lot</strong>. Columns can be in either of these two orders:</p>
+        <div class="csv-format-table">
+          <div class="csv-fmt-row csv-fmt-header">
+            <span>#</span><span>Column</span><span>Required?</span><span>Example</span>
+          </div>
+          <div class="csv-fmt-row">
+            <span>1</span><span>Date</span><span class="csv-opt">optional</span><span>2024-03-15</span>
+          </div>
+          <div class="csv-fmt-row">
+            <span>2</span><span>Name</span><span class="csv-req">required</span><span>Apple Inc</span>
+          </div>
+          <div class="csv-fmt-row">
+            <span>3</span><span>Ticker</span><span class="csv-req">required</span><span>AAPL</span>
+          </div>
+          <div class="csv-fmt-row">
+            <span>4</span><span>Broker</span><span class="csv-opt">optional</span><span>Scalable</span>
+          </div>
+          <div class="csv-fmt-row">
+            <span>5</span><span>Type</span><span class="csv-opt">optional</span><span>Stock · ETF · MutualFund · Commodity</span>
+          </div>
+          <div class="csv-fmt-row">
+            <span>6</span><span>Quantity</span><span class="csv-req">required</span><span>10</span>
+          </div>
+          <div class="csv-fmt-row">
+            <span>7</span><span>Price</span><span class="csv-req">required</span><span>178.50</span>
+          </div>
+          <div class="csv-fmt-row">
+            <span>8</span><span>Currency</span><span class="csv-opt">optional</span><span>EUR · USD · INR</span>
+          </div>
+        </div>
+        <p class="csv-guide-example"><strong>Example row (with date):</strong><br>
+          <code>2024-03-15,Apple Inc,AAPL,Scalable,Stock,10,178.50,EUR</code>
+        </p>
+        <p class="csv-guide-example"><strong>Example row (without date — 7 columns):</strong><br>
+          <code>Apple Inc,AAPL,Scalable,Stock,10,178.50,EUR</code>
+        </p>
+        <ul class="csv-guide-tips">
+          <li>Each row = one <em>purchase lot</em>. Add multiple rows for the same stock if you bought at different times/prices.</li>
+          <li>Ticker must match Yahoo Finance (e.g. <code>^NSEI</code> for Nifty, <code>BTC-USD</code> for Bitcoin).</li>
+          <li>Currency defaults to <strong>EUR</strong> if omitted. Prices are converted to EUR using live FX rates.</li>
+          <li>No header row needed — the app detects columns automatically.</li>
+          <li>Use the <em>Export Portfolio as CSV</em> button below to download a template from your existing data.</li>
+        </ul>
+      </div>
+    </details>
+
     <input type="file" id="csvFile" accept=".csv" style="grid-column:1/-1">
     <button id="importCSV" style="grid-column:1/-1">Import Portfolio CSV</button>
-    <p style="grid-column:1/-1;font-size:11px;color:var(--muted)">
-      Format: Date, Name, Ticker, Broker, Type, Quantity, Price, Currency
-    </p>
     <button id="exportCSV" style="grid-column:1/-1;background:var(--surface);border:1px solid var(--border);color:var(--dim)">⬇ Export Portfolio as CSV</button>
 
     <hr>
