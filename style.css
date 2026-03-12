@@ -100,7 +100,7 @@ body {
   z-index: 99;
   background: rgba(10,16,34,0.97);
   border-bottom: 1px solid var(--border);
-  padding: 5px 24px;
+  padding: 7px 24px;
 }
 .time-clocks {
   display: flex;
@@ -113,17 +113,19 @@ body {
   gap: 7px;
   padding: 2px 16px 2px 0;
 }
-.time-flag { font-size: 14px; }
+.time-flag { font-size: 14px; line-height: normal; }
 .time-label {
-  font-size: 10px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.8px;
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.6px;
   color: var(--dim);
+  line-height: normal;
 }
 .time-value {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 15px; font-weight: 700;
+  font-size: 14px; font-weight: 700;
   color: var(--text);
   letter-spacing: 0.3px;
+  line-height: normal;
 }
 .time-divider {
   width: 1px; height: 20px;
@@ -552,6 +554,7 @@ header { display: none; }
 .growth-stat-val {
   font-family: var(--mono); font-size: 30px; font-weight: 700;
   color: var(--text); letter-spacing: -1px;
+  line-height: 1.1;
 }
 /* Period group (theme-colored) */
 .growth-stat-period-group {
@@ -925,8 +928,12 @@ header { display: none; }
 .conf-medium { color: var(--gold);  background: rgba(240,165,53,0.1); }
 .conf-low    { color: var(--muted); background: rgba(100,120,160,0.1); }
 
-/* Growth chart height bump for breathing room */
+/* Growth chart — height set on wrapper, not canvas, so Chart.js controls its own buffer */
+.growth-chart-wrap {
+  position: relative;
+  height: 320px;
+  width: 100%;
+}
 #portfolioGrowthChart {
-  height: 320px !important;
   width: 100% !important;
 }
