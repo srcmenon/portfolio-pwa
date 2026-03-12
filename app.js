@@ -7,6 +7,7 @@ let currencyChartInstance = null
 let growthChartInstance = null
 let priceUpdateRunning = false
 let lastPortfolio = []
+
 window.addEventListener("DOMContentLoaded",()=>{
 
 let d=document.getElementById("assetDate")
@@ -824,6 +825,7 @@ function makeDonut(canvasId, labels, values, instanceVar){
       }]
     },
     options: {
+      devicePixelRatio: window.devicePixelRatio || 2,
       responsive: true,
       maintainAspectRatio: true,
       cutout: "62%",
@@ -1058,6 +1060,7 @@ function renderGrowthChart(period, cat){
       }]
     },
     options:{
+      devicePixelRatio: window.devicePixelRatio || 2,
       responsive:true, maintainAspectRatio:false,
       interaction:{mode:"index",intersect:false},
       scales:{
