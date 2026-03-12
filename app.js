@@ -2017,14 +2017,13 @@ if(tab) tab.classList.add("active")
 
 if(tabId==="insightsTab"){
   drawCharts(lastPortfolio)
-  drawGrowthChart()
   renderInsightsSummary(lastPortfolio)
   renderTopMovers(lastPortfolio)
   fetchDailyInsights(lastPortfolio, false)
 }
 
 if(tabId==="portfolioTab"){
-  drawGrowthChart()
+  /* Chart persists — do not recreate on tab switch */
 }
 
 }
