@@ -897,7 +897,12 @@ function getCatValues(history, cat){
 
 function periodMs(period){
   const now = Date.now()
-  const map = { "1D":86400000,"1W":604800000,"1M":2592000000,
+  if(period === "1D"){
+    /* 1D = from today's midnight, so chart "first" matches the TODAY strip */
+    const midnight = new Date(); midnight.setHours(0,0,0,0)
+    return midnight.getTime()
+  }
+  const map = { "1W":604800000,"1M":2592000000,
                 "3M":7776000000,"1Y":31536000000,"5Y":157680000000,"ALL":Infinity }
   return now - (map[period]||map["1W"])
 }
@@ -993,7 +998,7 @@ function renderGrowthChart(period, cat){
     if(todayRef !== null && todayNow !== null){
       const dChg = todayNow - todayRef
       const dPct = todayRef > 0 ? (dChg/todayRef)*100 : 0
-      const dSign = dChg >= 0 ? "+" : ""
+      const dSign = dChg >= 0 ? "+" : "-"
       const dCls  = dChg >= 0 ? "up" : "dn"
       todayValEl.textContent = dSign+"€"+Math.abs(dChg).toFixed(2)
       todayValEl.className = "growth-today-val today-"+dCls
@@ -1019,7 +1024,14 @@ function renderGrowthChart(period, cat){
   const min = Math.min(...values)
   const max = Math.max(...values)
   const range = max - min || max * 0.02
-  const pad   = range * 0.18
+
+  /* Pick a "nice" step that gives 5-6 evenly spaced gridlines */
+  const rawStep = range / 5
+  const magnitude = Math.pow(10, Math.floor(Math.log10(rawStep)))
+  const niceStep = Math.ceil(rawStep / magnitude) * magnitude
+  /* Snap min/max to step multiples so grid lines are perfectly even */
+  const yMin = Math.floor((min - niceStep * 0.5) / niceStep) * niceStep
+  const yMax = Math.ceil((max  + niceStep * 0.5) / niceStep) * niceStep
 
   if(portfolioGrowthChartInstance) portfolioGrowthChartInstance.destroy()
 
@@ -1064,22 +1076,21 @@ function renderGrowthChart(period, cat){
           ticks:{
             color:"#8fa3c4",
             font:{size:11, family:"Outfit, sans-serif", weight:"500"},
+            stepSize: niceStep,
             callback: v => {
-              /* Smart format: avoid all-same labels when values cluster near 1k */
               if(range > 50000) return "€"+(v/1000).toFixed(0)+"k"
               if(range > 5000)  return "€"+(v/1000).toFixed(1)+"k"
               if(v >= 1000000)  return "€"+(v/1000000).toFixed(1)+"M"
               if(v >= 10000)    return "€"+(v/1000).toFixed(1)+"k"
-              /* Small range within 4-digit territory: show full value */
               if(v >= 1000)     return "€"+Math.round(v).toLocaleString("de-DE")
               return "€"+v.toFixed(0)
             },
-            padding:10, maxTicksLimit:6
+            padding:10, maxTicksLimit:7
           },
           grid:{color:"rgba(91,156,246,0.07)", drawTicks:false},
           border:{display:false},
-          min: min - pad,
-          max: max + pad
+          min: yMin,
+          max: yMax
         }
       },
       plugins:{
@@ -1155,7 +1166,7 @@ async function renderDailyProgress(cat, todayRef, todayNow){
       const chg  = todayNow - todayRef
       const pct  = todayRef > 0 ? (chg/todayRef)*100 : 0
       const cls  = chg >= 0 ? "profit" : "loss"
-      const sign = chg >= 0 ? "+" : ""
+      const sign = chg >= 0 ? "+" : "-"
       valEl.textContent = sign + "€" + Math.abs(chg).toFixed(2)
       valEl.className   = "daily-val " + cls
       pctEl.textContent = sign + pct.toFixed(2) + "%"
@@ -1664,22 +1675,25 @@ function startClock(){
 
     /* ── IST = UTC+5:30 (no DST) ── */
     const ist = new Date(now.getTime() + (5*60+30)*60000)
-    elIST.textContent = ist.toISOString().slice(11,16)
+    const istH = String(ist.getUTCHours()).padStart(2,"0")
+    const istM = String(ist.getUTCMinutes()).padStart(2,"0")
+    const istS = String(ist.getUTCSeconds()).padStart(2,"0")
+    elIST.textContent = istH+":"+istM+":"+istS
 
     /* ── Frankfurt (DST-aware) ── */
     elDE.textContent = new Intl.DateTimeFormat("en-GB",{
-      timeZone:"Europe/Berlin", hour:"2-digit", minute:"2-digit", hour12:false
+      timeZone:"Europe/Berlin", hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false
     }).format(now)
 
     /* ── New York (DST-aware) ── */
     if(elNY) elNY.textContent = new Intl.DateTimeFormat("en-GB",{
-      timeZone:"America/New_York", hour:"2-digit", minute:"2-digit", hour12:false
+      timeZone:"America/New_York", hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false
     }).format(now)
 
     /* ── NSE: 09:15–15:30 IST Mon–Fri ── */
-    const istM   = ist.getUTCHours()*60 + ist.getUTCMinutes()
+    const nseMinutes = ist.getUTCHours()*60 + ist.getUTCMinutes()
     const istDay = ist.getUTCDay()   /* 0=Sun 6=Sat */
-    const nseOpen = istDay>=1 && istDay<=5 && istM >= 9*60+15 && istM < 15*60+30
+    const nseOpen = istDay>=1 && istDay<=5 && nseMinutes >= 9*60+15 && nseMinutes < 15*60+30
 
     /* ── XETRA: 09:00–17:30 Frankfurt Mon–Fri ── */
     const de = tzInfo("Europe/Berlin")
