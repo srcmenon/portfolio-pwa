@@ -1042,105 +1042,146 @@ function renderGrowthChart(period, cat){
   const yMin = Math.floor((min - niceStep * 0.5) / niceStep) * niceStep
   const yMax = Math.ceil((max  + niceStep * 0.5) / niceStep) * niceStep
 
-  if(portfolioGrowthChartInstance) portfolioGrowthChartInstance.destroy()
+  /* ── Update existing chart in-place, or create it the first time ── */
+  const applyChart = () => {
+    const canvas = document.getElementById("portfolioGrowthChart")
+    if(!canvas) return
 
-  const buildChart = () => {
-  const canvas = document.getElementById("portfolioGrowthChart")
-  if(!canvas) return
-  Chart.defaults.devicePixelRatio = window.devicePixelRatio || 2
-  portfolioGrowthChartInstance = new Chart(canvas, {    type:"line",
-    data:{
-      labels,
-      datasets:[{
-        label: CAT_DEFS[cat]?.label||"Portfolio",
-        data: values,
-        borderColor: lineColor,
-        borderWidth: 2.5,
-        pointRadius: values.length>50?0:3,
-        pointHoverRadius:6,
-        pointBackgroundColor:lineColor,
-        pointBorderColor:"#070c18",
-        pointBorderWidth:1.5,
-        fill:true,
-        backgroundColor:(ctx)=>{
-          const g=ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height)
-          g.addColorStop(0,gradTop); g.addColorStop(1,gradBot); return g
-        },
-        tension:0.35
-      }]
-    },
-    options:{
-      responsive: false,
-      maintainAspectRatio: false,
-      interaction:{mode:"index",intersect:false},
-      scales:{
-        x:{
-          ticks:{
-            color:"#8fa3c4",
-            font:{size:11, family:"Outfit, sans-serif", weight:"500"},
-            maxTicksLimit: period==="1D" ? 12 : 7,
-            maxRotation:0, padding:6
+    if(portfolioGrowthChartInstance){
+      /* UPDATE in-place — no destroy, no resize loop */
+      const ch = portfolioGrowthChartInstance
+      ch.data.labels = labels
+      ch.data.datasets[0].label = CAT_DEFS[cat]?.label||"Portfolio"
+      ch.data.datasets[0].data  = values
+      ch.data.datasets[0].borderColor = lineColor
+      ch.data.datasets[0].pointBackgroundColor = lineColor
+      ch.data.datasets[0].pointRadius = values.length>50?0:3
+      ch.data.datasets[0].backgroundColor = (ctx) => {
+        const g = ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height)
+        g.addColorStop(0,gradTop); g.addColorStop(1,gradBot); return g
+      }
+      ch.options.scales.x.ticks.maxTicksLimit = period==="1D" ? 12 : 7
+      ch.options.scales.y.min = yMin
+      ch.options.scales.y.max = yMax
+      ch.options.scales.y.ticks.stepSize = niceStep
+      ch.options.scales.y.ticks.callback = v => {
+        if(range > 50000) return "€"+(v/1000).toFixed(0)+"k"
+        if(range > 5000)  return "€"+(v/1000).toFixed(1)+"k"
+        if(v >= 1000000)  return "€"+(v/1000000).toFixed(1)+"M"
+        if(v >= 10000)    return "€"+(v/1000).toFixed(1)+"k"
+        if(v >= 1000)     return "€"+Math.round(v).toLocaleString("de-DE")
+        return "€"+v.toFixed(0)
+      }
+      ch.options.plugins.tooltip.borderColor = `rgba(${rgb},0.45)`
+      ch.options.plugins.tooltip.callbacks.label = ctx => {
+        const v=ctx.raw, diff=v-first
+        const dp=first>0?((diff/first)*100):0, sign=diff>=0?"+":""
+        const fmtV = v>=1000 ? "€"+(v/1000).toFixed(2)+"k" : "€"+v.toFixed(2)
+        const fmtD = Math.abs(diff)>=1000
+          ? sign+(diff<0?"-":"")+"€"+(Math.abs(diff)/1000).toFixed(2)+"k"
+          : sign+"€"+diff.toFixed(2)
+        return fmtV + "   " + fmtD + " (" + sign + dp.toFixed(2) + "%)"
+      }
+      ch.update("none")  /* "none" = no animation, instant */
+      return
+    }
+
+    /* First-time creation only */
+    Chart.defaults.devicePixelRatio = window.devicePixelRatio || 2
+    portfolioGrowthChartInstance = new Chart(canvas, {
+      type:"line",
+      data:{
+        labels,
+        datasets:[{
+          label: CAT_DEFS[cat]?.label||"Portfolio",
+          data: values,
+          borderColor: lineColor,
+          borderWidth: 2.5,
+          pointRadius: values.length>50?0:3,
+          pointHoverRadius:6,
+          pointBackgroundColor:lineColor,
+          pointBorderColor:"#070c18",
+          pointBorderWidth:1.5,
+          fill:true,
+          backgroundColor:(ctx)=>{
+            const g=ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height)
+            g.addColorStop(0,gradTop); g.addColorStop(1,gradBot); return g
           },
-          grid:{color:"rgba(91,156,246,0.07)", drawTicks:false},
-          border:{display:false}
-        },
-        y:{
-          position:"left",
-          ticks:{
-            color:"#8fa3c4",
-            font:{size:11, family:"Outfit, sans-serif", weight:"500"},
-            stepSize: niceStep,
-            callback: v => {
-              if(range > 50000) return "€"+(v/1000).toFixed(0)+"k"
-              if(range > 5000)  return "€"+(v/1000).toFixed(1)+"k"
-              if(v >= 1000000)  return "€"+(v/1000000).toFixed(1)+"M"
-              if(v >= 10000)    return "€"+(v/1000).toFixed(1)+"k"
-              if(v >= 1000)     return "€"+Math.round(v).toLocaleString("de-DE")
-              return "€"+v.toFixed(0)
-            },
-            padding:10, maxTicksLimit:7
-          },
-          grid:{color:"rgba(91,156,246,0.07)", drawTicks:false},
-          border:{display:false},
-          min: yMin,
-          max: yMax
-        }
+          tension:0.35
+        }]
       },
-      plugins:{
-        legend:{display:false},
-        tooltip:{
-          backgroundColor:"rgba(8,16,40,0.97)",
-          titleColor:"#8faac8",
-          bodyColor:"#dce8ff",
-          borderColor:`rgba(${rgb},0.45)`,
-          borderWidth:1,
-          padding:14,
-          caretSize:5,
-          caretPadding:8,
-          displayColors:false,
-          titleFont:{ family:"Outfit, sans-serif", size:12, weight:"500" },
-          bodyFont:{ family:"ui-monospace, 'SF Mono', Menlo, Consolas, monospace", size:14, weight:"700" },
-          callbacks:{
-            title:items=>items[0].label,
-            label:ctx=>{
-              const v=ctx.raw, diff=v-first
-              const dp=first>0?((diff/first)*100):0, sign=diff>=0?"+":""
-              const fmtV = v>=1000 ? "€"+(v/1000).toFixed(2)+"k" : "€"+v.toFixed(2)
-              const fmtD = Math.abs(diff)>=1000
-                ? sign+(diff<0?"-":"")+"€"+(Math.abs(diff)/1000).toFixed(2)+"k"
-                : sign+"€"+diff.toFixed(2)
-              return fmtV + "   " + fmtD + " (" + sign + dp.toFixed(2) + "%)"
+      options:{
+        responsive: false,
+        maintainAspectRatio: false,
+        interaction:{mode:"index",intersect:false},
+        scales:{
+          x:{
+            ticks:{
+              color:"#8fa3c4",
+              font:{size:11, family:"Outfit, sans-serif", weight:"500"},
+              maxTicksLimit: period==="1D" ? 12 : 7,
+              maxRotation:0, padding:6
+            },
+            grid:{color:"rgba(91,156,246,0.07)", drawTicks:false},
+            border:{display:false}
+          },
+          y:{
+            position:"left",
+            ticks:{
+              color:"#8fa3c4",
+              font:{size:11, family:"Outfit, sans-serif", weight:"500"},
+              stepSize: niceStep,
+              callback: v => {
+                if(range > 50000) return "€"+(v/1000).toFixed(0)+"k"
+                if(range > 5000)  return "€"+(v/1000).toFixed(1)+"k"
+                if(v >= 1000000)  return "€"+(v/1000000).toFixed(1)+"M"
+                if(v >= 10000)    return "€"+(v/1000).toFixed(1)+"k"
+                if(v >= 1000)     return "€"+Math.round(v).toLocaleString("de-DE")
+                return "€"+v.toFixed(0)
+              },
+              padding:10, maxTicksLimit:7
+            },
+            grid:{color:"rgba(91,156,246,0.07)", drawTicks:false},
+            border:{display:false},
+            min: yMin,
+            max: yMax
+          }
+        },
+        plugins:{
+          legend:{display:false},
+          tooltip:{
+            backgroundColor:"rgba(8,16,40,0.97)",
+            titleColor:"#8faac8",
+            bodyColor:"#dce8ff",
+            borderColor:`rgba(${rgb},0.45)`,
+            borderWidth:1,
+            padding:14,
+            caretSize:5,
+            caretPadding:8,
+            displayColors:false,
+            titleFont:{ family:"Outfit, sans-serif", size:12, weight:"500" },
+            bodyFont:{ family:"ui-monospace, 'SF Mono', Menlo, Consolas, monospace", size:14, weight:"700" },
+            callbacks:{
+              title:items=>items[0].label,
+              label:ctx=>{
+                const v=ctx.raw, diff=v-first
+                const dp=first>0?((diff/first)*100):0, sign=diff>=0?"+":""
+                const fmtV = v>=1000 ? "€"+(v/1000).toFixed(2)+"k" : "€"+v.toFixed(2)
+                const fmtD = Math.abs(diff)>=1000
+                  ? sign+(diff<0?"-":"")+"€"+(Math.abs(diff)/1000).toFixed(2)+"k"
+                  : sign+"€"+diff.toFixed(2)
+                return fmtV + "   " + fmtD + " (" + sign + dp.toFixed(2) + "%)"
+              }
             }
           }
         }
       }
-    }
-  })
+    })
   }
   if(document.fonts && document.fonts.ready){
-    document.fonts.ready.then(buildChart)
+    document.fonts.ready.then(applyChart)
   } else {
-    buildChart()
+    applyChart()
   }
   /* Pass unified today values to bottom strip */
   renderDailyProgress(cat, todayRef, todayNow)
@@ -1400,31 +1441,88 @@ async function fetchDailyInsights(portfolio, force){
   el.innerHTML = `<div class="insights-loading"><span class="insights-spinner"></span>Fetching today's news for your holdings…</div>`
   if(btn) btn.textContent = "⏳ Loading…"
 
+  /* Top 6 holdings by EUR value */
+  const top = [...portfolio]
+    .sort((a,b) => (b.totalCurrentEUR||0) - (a.totalCurrentEUR||0))
+    .slice(0, 6)
+
+  const queries = top.map(h => {
+    const clean = (h.ticker||"").replace(/[\^]|\.NS|\.BO|-USD|-EUR|-INR/g,"").trim()
+    return { name: h.name, ticker: h.ticker||"", query: clean || h.name.split(" ")[0] }
+  })
+
+  /* Fetch RSS via allorigins.win — free public CORS proxy, no key needed */
+  async function fetchRSS(q){
+    const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(q.query+" stock")}&hl=en-US&gl=US&ceid=US:en`
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`
+    try{
+      const r = await fetch(proxyUrl)
+      if(!r.ok) return []
+      const json = await r.json()
+      const xml = json.contents || ""
+      if(!xml.includes("<item>")) return []
+      return parseRSSClient(xml, q.name, q.ticker).slice(0, 2)
+    }catch(e){ return [] }
+  }
+
   try{
-    const holdings = portfolio.map(p => ({
-      name: p.name, ticker: p.ticker || "",
-      type: p.type, totalCurrentEUR: p.totalCurrentEUR || 0
-    }))
+    const results = await Promise.all(queries.map(q => fetchRSS(q)))
+    const all = results.flat()
 
-    const r = await fetch("/api/daily-insights", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ holdings })
+    /* Deduplicate */
+    const seen = new Set()
+    const deduped = all.filter(a => {
+      const key = a.title.toLowerCase().slice(0,45)
+      if(seen.has(key)) return false
+      seen.add(key); return true
     })
+    deduped.sort((a,b) => b.pubMs - a.pubMs)
+    const articles = deduped.slice(0,10)
 
-    const data = await r.json()
-    if(!r.ok || !data.articles){
-      el.innerHTML = `<p class="intel-empty">Could not load news: ${data.error || "unknown error"}</p>`
-      return
-    }
-
-    try{ localStorage.setItem(cacheKey, JSON.stringify(data.articles)) }catch(e){}
-    renderInsightCards(data.articles, el)
+    try{ localStorage.setItem(cacheKey, JSON.stringify(articles)) }catch(e){}
+    renderInsightCards(articles, el)
   }catch(e){
-    el.innerHTML = `<p class="intel-empty">Network error: ${e.message}</p>`
+    el.innerHTML = `<p class="intel-empty">Could not load news. Try refreshing.</p>`
   }finally{
     if(btn) btn.textContent = "🔄 Refresh"
   }
+}
+
+function parseRSSClient(xml, holdingName, ticker){
+  const items = []
+  const rx = /<item>([\s\S]*?)<\/item>/g
+  let m
+  while((m = rx.exec(xml)) !== null){
+    const b = m[1]
+    const title   = stripHTML(exTag(b,"title"))
+    const link    = exTag(b,"link") || exTag(b,"guid")
+    const pubDate = exTag(b,"pubDate")
+    const source  = exTag(b,"source") || "News"
+    const desc    = stripHTML(exTag(b,"description")).slice(0,200)
+    if(!title || title.length < 5) continue
+    const pubMs = pubDate ? new Date(pubDate).getTime() : Date.now()
+    if(Date.now() - pubMs > 172800000) continue
+    items.push({ title, link: cleanNewsLink(link), source, desc, pubMs, holding: holdingName, ticker })
+  }
+  return items
+}
+
+function exTag(str, tag){
+  const cd = str.match(new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]>`, "i"))
+  if(cd) return cd[1].trim()
+  const pl = str.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\/${tag}>`, "i"))
+  return pl ? pl[1].trim() : ""
+}
+
+function stripHTML(s){
+  return s.replace(/<[^>]+>/g,"")
+    .replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">")
+    .replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&nbsp;/g," ").trim()
+}
+
+function cleanNewsLink(url){
+  try{ const m = decodeURIComponent(url).match(/url=([^&]+)/); return m?m[1]:url }
+  catch(e){ return url }
 }
 
 function renderInsightCards(articles, el){
