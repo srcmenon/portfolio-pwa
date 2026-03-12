@@ -928,17 +928,13 @@ header { display: none; }
 .conf-medium { color: var(--gold);  background: rgba(240,165,53,0.1); }
 .conf-low    { color: var(--muted); background: rgba(100,120,160,0.1); }
 
-/* Growth chart — wrapper locks the height; canvas is absolute so its
-   height attribute changes (from devicePixelRatio) never reflow the parent */
+/* Growth chart — responsive:false in JS means Chart.js never attaches a ResizeObserver.
+   Canvas has a fixed px height so nothing can grow. */
 .growth-chart-wrap {
-  position: relative;
   width: 100%;
-  height: 320px;
-  flex-shrink: 0;
 }
 #portfolioGrowthChart {
-  position: absolute !important;
-  top: 0; left: 0;
+  display: block !important;
   width: 100% !important;
-  height: 100% !important;
+  height: 320px !important;
 }
