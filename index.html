@@ -283,6 +283,20 @@
 <div id="insightsTab" class="tabContent">
   <div class="insights-wrap">
 
+    <!-- Daily Market Insights — TOP of page -->
+    <div class="card intel-card" id="dailyInsightsCard">
+      <div class="intel-header">
+        <div>
+          <h3>Daily Market Insights</h3>
+          <p class="intel-sub">Top news stories affecting your holdings today · refreshes daily</p>
+        </div>
+        <button id="refreshInsightsBtn" onclick="fetchDailyInsights(lastPortfolio, true)">
+          <span id="insightsBtnText">🔄 Refresh</span>
+        </button>
+      </div>
+      <div id="dailyInsightsResult"></div>
+    </div>
+
     <!-- Hero metrics -->
     <div class="insight-hero">
       <div class="card">
@@ -350,20 +364,6 @@
         <h3>Top Absolute Loss <span class="hero-sub" style="display:inline;text-transform:none;letter-spacing:0">(€ value)</span></h3>
         <div id="topAbsLosers"></div>
       </div>
-    </div>
-
-    <!-- Daily Market Insights -->
-    <div class="card intel-card" id="dailyInsightsCard">
-      <div class="intel-header">
-        <div>
-          <h3>Daily Market Insights</h3>
-          <p class="intel-sub">Top 5 news stories affecting your holdings today · refreshes daily</p>
-        </div>
-        <button id="refreshInsightsBtn" onclick="fetchDailyInsights(lastPortfolio, true)">
-          <span id="insightsBtnText">🔄 Refresh</span>
-        </button>
-      </div>
-      <div id="dailyInsightsResult"></div>
     </div>
 
     <!-- Smart Picks for Top Movers -->
