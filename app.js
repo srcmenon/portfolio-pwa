@@ -929,6 +929,13 @@ function drawGrowthChart(){
     }
 }
 
+/* Redraw on window resize so chart fills new width (responsive:false requires manual redraw) */
+let _resizeTimer = null
+window.addEventListener("resize", () => {
+  clearTimeout(_resizeTimer)
+  _resizeTimer = setTimeout(() => renderGrowthChart(currentPeriod, currentCat), 200)
+})
+
 function bindPeriodButtons(){
   document.querySelectorAll(".period-btn").forEach(btn=>{
     btn.onclick = ()=>{
@@ -1063,7 +1070,7 @@ function renderGrowthChart(period, cat){
       }]
     },
     options:{
-      responsive: true,
+      responsive: false,
       maintainAspectRatio: false,
       interaction:{mode:"index",intersect:false},
       scales:{
