@@ -972,24 +972,30 @@ function renderGrowthChart(period, cat){
   if(sp){ sp.textContent=(isUp?"+":"")+pct.toFixed(2)+"%"; sp.className="growth-stat-pct "+(isUp?"profit":"loss") }
   if(spl) spl.textContent = period==="ALL"?"all time": period==="1D"?"today":period.toLowerCase()
 
-  /* ── TODAY's change (always from midnight snapshot regardless of period) ── */
+  /* ── TODAY's change with category fraction applied (same reference both top pill and bottom strip) ── */
+  const fraction = cat === "ALL" ? 1 : (() => {
+    if(!lastPortfolio.length) return 1
+    const catTotal = lastPortfolio.filter(a=>matchCat(a,cat)).reduce((s,a)=>s+a.totalCurrentEUR,0)
+    const allTotal = lastPortfolio.reduce((s,a)=>s+a.totalCurrentEUR,0)
+    return allTotal > 0 ? catTotal/allTotal : 1
+  })()
   const todayStart = new Date(); todayStart.setHours(0,0,0,0)
-  const ySnapsRT = allPortfolioHistory.filter(h=>h.timestamp < todayStart.getTime()).sort((a,b)=>b.timestamp-a.timestamp)
-  const tSnapsRT = allPortfolioHistory.filter(h=>h.timestamp >= todayStart.getTime()).sort((a,b)=>b.timestamp-a.timestamp)
-  const yValRT = ySnapsRT.length ? ySnapsRT[0].value : null
-  const tValRT = tSnapsRT.length ? tSnapsRT[0].value : null
+  const ySnapsRT = [...allPortfolioHistory].filter(h=>h.timestamp < todayStart.getTime()).sort((a,b)=>b.timestamp-a.timestamp)
+  const tSnapsRT = [...allPortfolioHistory].filter(h=>h.timestamp >= todayStart.getTime()).sort((a,b)=>b.timestamp-a.timestamp)
+  const todayRef = ySnapsRT.length ? ySnapsRT[0].value * fraction : null
+  const todayNow = tSnapsRT.length ? tSnapsRT[0].value * fraction : null
+
   const todayGroup = document.getElementById("growthTodayGroup")
   const todayValEl = document.getElementById("growthTodayVal")
   const todayPctEl = document.getElementById("growthTodayPct")
-  /* Hide today pill when period IS 1D (already shown as period change) */
   if(todayGroup) todayGroup.style.display = period==="1D" ? "none" : "flex"
   if(todayValEl && todayPctEl){
-    if(yValRT !== null && tValRT !== null){
-      const dChg = tValRT - yValRT
-      const dPct = yValRT > 0 ? (dChg/yValRT)*100 : 0
+    if(todayRef !== null && todayNow !== null){
+      const dChg = todayNow - todayRef
+      const dPct = todayRef > 0 ? (dChg/todayRef)*100 : 0
       const dSign = dChg >= 0 ? "+" : ""
       const dCls  = dChg >= 0 ? "up" : "dn"
-      todayValEl.textContent = dSign+"€"+Math.abs(dChg).toFixed(0)
+      todayValEl.textContent = dSign+"€"+Math.abs(dChg).toFixed(2)
       todayValEl.className = "growth-today-val today-"+dCls
       todayPctEl.textContent = dSign+dPct.toFixed(2)+"%"
       todayPctEl.className = "growth-today-pct today-"+dCls
@@ -1013,7 +1019,7 @@ function renderGrowthChart(period, cat){
   const min = Math.min(...values)
   const max = Math.max(...values)
   const range = max - min || max * 0.02
-  const pad   = range * 0.18          /* 18 % padding top and bottom → chart fills height nicely */
+  const pad   = range * 0.18
 
   if(portfolioGrowthChartInstance) portfolioGrowthChartInstance.destroy()
 
@@ -1046,22 +1052,29 @@ function renderGrowthChart(period, cat){
         x:{
           ticks:{
             color:"#8fa3c4",
-            font:{size:10, family:"Outfit, sans-serif"},
-            maxTicksLimit:6, maxRotation:0, padding:6
+            font:{size:11, family:"Outfit, sans-serif", weight:"500"},
+            maxTicksLimit: period==="1D" ? 12 : 7,
+            maxRotation:0, padding:6
           },
           grid:{color:"rgba(91,156,246,0.07)", drawTicks:false},
           border:{display:false}
         },
         y:{
-          position:"right",
+          position:"left",
           ticks:{
             color:"#8fa3c4",
-            font:{size:10, family:"Outfit, sans-serif"},
-            callback:v=>{
-              if(v>=1000) return "€"+(v/1000).toFixed(0)+"k"
+            font:{size:11, family:"Outfit, sans-serif", weight:"500"},
+            callback: v => {
+              /* Smart format: avoid all-same labels when values cluster near 1k */
+              if(range > 50000) return "€"+(v/1000).toFixed(0)+"k"
+              if(range > 5000)  return "€"+(v/1000).toFixed(1)+"k"
+              if(v >= 1000000)  return "€"+(v/1000000).toFixed(1)+"M"
+              if(v >= 10000)    return "€"+(v/1000).toFixed(1)+"k"
+              /* Small range within 4-digit territory: show full value */
+              if(v >= 1000)     return "€"+Math.round(v).toLocaleString("de-DE")
               return "€"+v.toFixed(0)
             },
-            padding:10, maxTicksLimit:5
+            padding:10, maxTicksLimit:6
           },
           grid:{color:"rgba(91,156,246,0.07)", drawTicks:false},
           border:{display:false},
@@ -1077,12 +1090,12 @@ function renderGrowthChart(period, cat){
           bodyColor:"#dce8ff",
           borderColor:`rgba(${rgb},0.45)`,
           borderWidth:1,
-          padding:12,
+          padding:14,
           caretSize:5,
           caretPadding:8,
           displayColors:false,
-          titleFont:{ family:"Outfit, sans-serif", size:11, weight:"500" },
-          bodyFont:{ family:"ui-monospace, Menlo, Monaco, Consolas, monospace", size:13, weight:"700" },
+          titleFont:{ family:"Outfit, sans-serif", size:12, weight:"500" },
+          bodyFont:{ family:"ui-monospace, 'SF Mono', Menlo, Consolas, monospace", size:14, weight:"700" },
           callbacks:{
             title:items=>items[0].label,
             label:ctx=>{
@@ -1100,14 +1113,13 @@ function renderGrowthChart(period, cat){
     }
   })
   }
-  /* Ensure web fonts are loaded before drawing into canvas */
   if(document.fonts && document.fonts.ready){
     document.fonts.ready.then(buildChart)
   } else {
     buildChart()
   }
-  /* Update daily progress strip for this category */
-  renderDailyProgress(cat)
+  /* Pass unified today values to bottom strip */
+  renderDailyProgress(cat, todayRef, todayNow)
 }
 
 /* =========================
@@ -1128,47 +1140,29 @@ async function fetchIndexPrice(ticker){
   }catch(e){ return null }
 }
 
-/* Render Today's Change strip beneath the growth chart */
-async function renderDailyProgress(cat){
+/* Render Today's Change strip beneath the growth chart.
+   todayRef and todayNow are pre-computed with cat fraction applied,
+   ensuring they match the top TODAY pill exactly. */
+async function renderDailyProgress(cat, todayRef, todayNow){
   const bar = document.getElementById("dailyProgressBar")
   if(!bar) return
-
-  /* ── Today vs yesterday from local portfolio history ── */
-  const now = new Date()
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
-  const startOfYesterday = startOfToday - 86400000
-
-  const ySnaps = allPortfolioHistory.filter(h => h.timestamp >= startOfYesterday && h.timestamp < startOfToday)
-  const tSnaps = allPortfolioHistory.filter(h => h.timestamp >= startOfToday)
-
-  const fraction = (cat === "ALL") ? 1 : (() => {
-    if(!lastPortfolio.length) return 1
-    const catTotal = lastPortfolio.filter(a => matchCat(a, cat)).reduce((s,a)=>s+a.totalCurrentEUR,0)
-    const allTotal = lastPortfolio.reduce((s,a)=>s+a.totalCurrentEUR,0)
-    return allTotal > 0 ? catTotal/allTotal : 1
-  })()
-
-  const yVal = ySnaps.length ? ySnaps[ySnaps.length-1].value * fraction : null
-  const tVal = tSnaps.length ? tSnaps[tSnaps.length-1].value * fraction : null
 
   const valEl = document.getElementById("dailyChangeVal")
   const pctEl = document.getElementById("dailyChangePct")
 
   if(valEl && pctEl){
-    if(yVal !== null && tVal !== null){
-      const chg = tVal - yVal
-      const pct = yVal > 0 ? (chg/yVal)*100 : 0
-      const cls = chg >= 0 ? "profit" : "loss"
+    if(todayRef !== null && todayRef !== undefined && todayNow !== null && todayNow !== undefined){
+      const chg  = todayNow - todayRef
+      const pct  = todayRef > 0 ? (chg/todayRef)*100 : 0
+      const cls  = chg >= 0 ? "profit" : "loss"
       const sign = chg >= 0 ? "+" : ""
-      valEl.textContent = sign + "€" + Math.abs(chg).toFixed(0)
-      valEl.className = "daily-val " + cls
+      valEl.textContent = sign + "€" + Math.abs(chg).toFixed(2)
+      valEl.className   = "daily-val " + cls
       pctEl.textContent = sign + pct.toFixed(2) + "%"
-      pctEl.className = "daily-pct " + cls
+      pctEl.className   = "daily-pct " + cls
     } else {
-      valEl.textContent = "–"
-      valEl.className = "daily-val neutral"
-      pctEl.textContent = "–"
-      pctEl.className = "daily-pct neutral"
+      valEl.textContent = "–"; valEl.className = "daily-val neutral"
+      pctEl.textContent = "–"; pctEl.className = "daily-pct neutral"
     }
   }
 
