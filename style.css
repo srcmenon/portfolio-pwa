@@ -928,10 +928,17 @@ header { display: none; }
 .conf-medium { color: var(--gold);  background: rgba(240,165,53,0.1); }
 .conf-low    { color: var(--muted); background: rgba(100,120,160,0.1); }
 
-/* Growth chart — wrapper is the ONLY height authority; canvas has no CSS at all */
+/* Growth chart — wrapper locks the height; canvas is absolute so its
+   height attribute changes (from devicePixelRatio) never reflow the parent */
 .growth-chart-wrap {
   position: relative;
   width: 100%;
   height: 320px;
-  overflow: hidden;   /* hard clamp in case anything misbehaves */
+  flex-shrink: 0;
+}
+#portfolioGrowthChart {
+  position: absolute !important;
+  top: 0; left: 0;
+  width: 100% !important;
+  height: 100% !important;
 }
