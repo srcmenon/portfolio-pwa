@@ -120,10 +120,10 @@ body {
   color: var(--dim);
 }
 .time-value {
-  font-family: var(--mono);
-  font-size: 13px; font-weight: 600;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 15px; font-weight: 700;
   color: var(--text);
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
 }
 .time-divider {
   width: 1px; height: 20px;
