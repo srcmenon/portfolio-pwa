@@ -1063,7 +1063,6 @@ function renderGrowthChart(period, cat){
       }]
     },
     options:{
-      devicePixelRatio: window.devicePixelRatio || 2,
       responsive: true,
       maintainAspectRatio: false,
       interaction:{mode:"index",intersect:false},
