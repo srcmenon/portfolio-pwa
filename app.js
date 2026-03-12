@@ -966,9 +966,38 @@ function renderGrowthChart(period, cat){
   const sv = document.getElementById("growthStatValue")
   const sc = document.getElementById("growthStatChange")
   const sp = document.getElementById("growthStatPct")
-  if(sv) sv.textContent = "\u20ac"+last.toFixed(2)
-  if(sc){ sc.textContent=(isUp?"+":"-")+"\u20ac"+Math.abs(change).toFixed(2); sc.className="growth-stat-chg "+(isUp?"profit":"loss") }
+  const spl = document.getElementById("growthStatPeriodLabel")
+  if(sv) sv.textContent = "€"+last.toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2})
+  if(sc){ sc.textContent=(isUp?"+":"-")+"€"+Math.abs(change).toFixed(2); sc.className="growth-stat-chg "+(isUp?"profit":"loss") }
   if(sp){ sp.textContent=(isUp?"+":"")+pct.toFixed(2)+"%"; sp.className="growth-stat-pct "+(isUp?"profit":"loss") }
+  if(spl) spl.textContent = period==="ALL"?"all time": period==="1D"?"today":period.toLowerCase()
+
+  /* ── TODAY's change (always from midnight snapshot regardless of period) ── */
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0)
+  const ySnapsRT = allPortfolioHistory.filter(h=>h.timestamp < todayStart.getTime()).sort((a,b)=>b.timestamp-a.timestamp)
+  const tSnapsRT = allPortfolioHistory.filter(h=>h.timestamp >= todayStart.getTime()).sort((a,b)=>b.timestamp-a.timestamp)
+  const yValRT = ySnapsRT.length ? ySnapsRT[0].value : null
+  const tValRT = tSnapsRT.length ? tSnapsRT[0].value : null
+  const todayGroup = document.getElementById("growthTodayGroup")
+  const todayValEl = document.getElementById("growthTodayVal")
+  const todayPctEl = document.getElementById("growthTodayPct")
+  /* Hide today pill when period IS 1D (already shown as period change) */
+  if(todayGroup) todayGroup.style.display = period==="1D" ? "none" : "flex"
+  if(todayValEl && todayPctEl){
+    if(yValRT !== null && tValRT !== null){
+      const dChg = tValRT - yValRT
+      const dPct = yValRT > 0 ? (dChg/yValRT)*100 : 0
+      const dSign = dChg >= 0 ? "+" : ""
+      const dCls  = dChg >= 0 ? "up" : "dn"
+      todayValEl.textContent = dSign+"€"+Math.abs(dChg).toFixed(0)
+      todayValEl.className = "growth-today-val today-"+dCls
+      todayPctEl.textContent = dSign+dPct.toFixed(2)+"%"
+      todayPctEl.className = "growth-today-pct today-"+dCls
+    } else {
+      todayValEl.textContent = "–"; todayValEl.className = "growth-today-val"
+      todayPctEl.textContent = "–"; todayPctEl.className = "growth-today-pct"
+    }
+  }
 
   const catColor  = CAT_DEFS[cat]?.color || "#5b9cf6"
   const lineColor = isUp ? catColor : "#f4506a"
@@ -983,9 +1012,12 @@ function renderGrowthChart(period, cat){
   const gradBot = `rgba(${rgb},0.03)`
   const min = Math.min(...values)
   const max = Math.max(...values)
+  const range = max - min || max * 0.02
+  const pad   = range * 0.18          /* 18 % padding top and bottom → chart fills height nicely */
 
   if(portfolioGrowthChartInstance) portfolioGrowthChartInstance.destroy()
 
+  const buildChart = () => {
   portfolioGrowthChartInstance = new Chart(document.getElementById("portfolioGrowthChart"),{    type:"line",
     data:{
       labels,
@@ -1014,7 +1046,7 @@ function renderGrowthChart(period, cat){
         x:{
           ticks:{
             color:"#8fa3c4",
-            font:{size:10, family:"'Outfit', sans-serif"},
+            font:{size:10, family:"Outfit, sans-serif"},
             maxTicksLimit:6, maxRotation:0, padding:6
           },
           grid:{color:"rgba(91,156,246,0.07)", drawTicks:false},
@@ -1024,7 +1056,7 @@ function renderGrowthChart(period, cat){
           position:"right",
           ticks:{
             color:"#8fa3c4",
-            font:{size:10, family:"'Outfit', sans-serif"},
+            font:{size:10, family:"Outfit, sans-serif"},
             callback:v=>{
               if(v>=1000) return "€"+(v/1000).toFixed(0)+"k"
               return "€"+v.toFixed(0)
@@ -1033,7 +1065,8 @@ function renderGrowthChart(period, cat){
           },
           grid:{color:"rgba(91,156,246,0.07)", drawTicks:false},
           border:{display:false},
-          suggestedMin:min*0.985, suggestedMax:max*1.015
+          min: min - pad,
+          max: max + pad
         }
       },
       plugins:{
@@ -1048,8 +1081,8 @@ function renderGrowthChart(period, cat){
           caretSize:5,
           caretPadding:8,
           displayColors:false,
-          titleFont:{ family:"'Outfit', sans-serif", size:11, weight:"500" },
-          bodyFont:{ family:"'JetBrains Mono', monospace", size:12, weight:"600" },
+          titleFont:{ family:"Outfit, sans-serif", size:11, weight:"500" },
+          bodyFont:{ family:"ui-monospace, Menlo, Monaco, Consolas, monospace", size:13, weight:"700" },
           callbacks:{
             title:items=>items[0].label,
             label:ctx=>{
@@ -1059,13 +1092,20 @@ function renderGrowthChart(period, cat){
               const fmtD = Math.abs(diff)>=1000
                 ? sign+(diff<0?"-":"")+"€"+(Math.abs(diff)/1000).toFixed(2)+"k"
                 : sign+"€"+diff.toFixed(2)
-              return fmtV+"  "+fmtD+" ("+sign+dp.toFixed(2)+"%)"
+              return fmtV + "   " + fmtD + " (" + sign + dp.toFixed(2) + "%)"
             }
           }
         }
       }
     }
   })
+  }
+  /* Ensure web fonts are loaded before drawing into canvas */
+  if(document.fonts && document.fonts.ready){
+    document.fonts.ready.then(buildChart)
+  } else {
+    buildChart()
+  }
   /* Update daily progress strip for this category */
   renderDailyProgress(cat)
 }
@@ -1598,16 +1638,31 @@ function startClock(){
   const elIST  = document.getElementById("clockIST")
   const elDE   = document.getElementById("clockDE")
   const elNY   = document.getElementById("clockNY")
-  const elDot  = document.getElementById("marketDot")
-  const elStat = document.getElementById("marketStatusText")
   if(!elIST || !elDE) return
 
-  /* Helper: get time parts in a given IANA timezone */
-  function tzParts(tz){
-    return new Intl.DateTimeFormat("en-GB",{
-      timeZone: tz,
-      weekday:"short", hour:"2-digit", minute:"2-digit", hour12:false
+  /* Helper: get {minutes, day} in a given IANA timezone */
+  function tzInfo(tz){
+    const parts = new Intl.DateTimeFormat("en-US",{
+      timeZone:tz, weekday:"short", hour:"2-digit", minute:"2-digit", hour12:false
     }).formatToParts(new Date())
+    const h = parseInt(parts.find(p=>p.type==="hour").value)
+    const m = parseInt(parts.find(p=>p.type==="minute").value)
+    const d = parts.find(p=>p.type==="weekday").value
+    return { minutes: h*60+m, day: d }
+  }
+
+  /* Set a market chip open/closed */
+  function setChip(id, open){
+    const el = document.getElementById(id)
+    if(!el) return
+    const dot = el.querySelector(".mkt-status-dot")
+    if(open){
+      el.classList.add("mkt-open"); el.classList.remove("mkt-closed")
+      if(dot){ dot.style.background="var(--green)"; dot.style.boxShadow="0 0 5px var(--green)" }
+    } else {
+      el.classList.remove("mkt-open"); el.classList.add("mkt-closed")
+      if(dot){ dot.style.background="var(--muted)"; dot.style.boxShadow="none" }
+    }
   }
 
   function tick(){
@@ -1617,48 +1672,32 @@ function startClock(){
     const ist = new Date(now.getTime() + (5*60+30)*60000)
     elIST.textContent = ist.toISOString().slice(11,16)
 
-    /* ── Frankfurt / XETRA — DST-aware via Intl ── */
+    /* ── Frankfurt (DST-aware) ── */
     elDE.textContent = new Intl.DateTimeFormat("en-GB",{
       timeZone:"Europe/Berlin", hour:"2-digit", minute:"2-digit", hour12:false
     }).format(now)
 
-    /* ── New York (ET) — DST-aware via Intl ── */
+    /* ── New York (DST-aware) ── */
     if(elNY) elNY.textContent = new Intl.DateTimeFormat("en-GB",{
       timeZone:"America/New_York", hour:"2-digit", minute:"2-digit", hour12:false
     }).format(now)
 
-    /* ── Market open checks ── */
-
-    /* NSE: 09:15–15:30 IST Mon–Fri */
-    const istM = ist.getUTCHours()*60 + ist.getUTCMinutes()
-    const istDay = ist.getUTCDay()
+    /* ── NSE: 09:15–15:30 IST Mon–Fri ── */
+    const istM   = ist.getUTCHours()*60 + ist.getUTCMinutes()
+    const istDay = ist.getUTCDay()   /* 0=Sun 6=Sat */
     const nseOpen = istDay>=1 && istDay<=5 && istM >= 9*60+15 && istM < 15*60+30
 
-    /* XETRA: 09:00–17:30 Frankfurt Mon–Fri */
-    const dep = tzParts("Europe/Berlin")
-    const deMin = parseInt(dep.find(p=>p.type==="hour").value)*60 + parseInt(dep.find(p=>p.type==="minute").value)
-    const deDay = dep.find(p=>p.type==="weekday").value
-    const xetraOpen = !["Sat","Sun"].includes(deDay) && deMin >= 9*60 && deMin < 17*60+30
+    /* ── XETRA: 09:00–17:30 Frankfurt Mon–Fri ── */
+    const de = tzInfo("Europe/Berlin")
+    const xetraOpen = !["Sat","Sun"].includes(de.day) && de.minutes >= 9*60 && de.minutes < 17*60+30
 
-    /* NYSE/NASDAQ: 09:30–16:00 ET Mon–Fri */
-    const nyp = tzParts("America/New_York")
-    const nyMin = parseInt(nyp.find(p=>p.type==="hour").value)*60 + parseInt(nyp.find(p=>p.type==="minute").value)
-    const nyDay = nyp.find(p=>p.type==="weekday").value
-    const nyseOpen = !["Sat","Sun"].includes(nyDay) && nyMin >= 9*60+30 && nyMin < 16*60
+    /* ── NYSE/NASDAQ: 09:30–16:00 ET Mon–Fri ── */
+    const ny = tzInfo("America/New_York")
+    const nyseOpen = !["Sat","Sun"].includes(ny.day) && ny.minutes >= 9*60+30 && ny.minutes < 16*60
 
-    /* Build status label from whichever markets are open */
-    const open = []
-    if(nseOpen)   open.push("NSE")
-    if(xetraOpen) open.push("XETRA")
-    if(nyseOpen)  open.push("NYSE")
-
-    if(open.length){
-      elDot.className = "time-dot open"
-      elStat.textContent = open.join(" · ") + " open"
-    } else {
-      elDot.className = "time-dot closed"
-      elStat.textContent = "All markets closed"
-    }
+    setChip("mktNSE",   nseOpen)
+    setChip("mktXETRA", xetraOpen)
+    setChip("mktNYSE",  nyseOpen)
   }
 
   tick()
