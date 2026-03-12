@@ -1,6 +1,6 @@
 /* CapIntel — Daily Insights via Google News RSS
    100% free: no API key, no AI calls, no charges.
-   Acts as a CORS proxy: fetches Google News RSS for each holding and returns parsed articles. */
+   Vercel function acts as CORS proxy for Google News RSS. */
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*")
@@ -9,7 +9,10 @@ export default async function handler(req, res) {
   if(req.method === "OPTIONS") return res.status(200).end()
   if(req.method !== "POST") return res.status(405).json({ error: "POST only" })
 
-  const { holdings } = req.body || {}
+  let body = {}
+  try { body = req.body || {} } catch(e) {}
+
+  const { holdings } = body
   if(!holdings || !holdings.length) return res.status(400).json({ error: "holdings required" })
 
   /* Top 8 holdings by EUR value */
@@ -17,42 +20,50 @@ export default async function handler(req, res) {
     .sort((a, b) => (b.totalCurrentEUR || 0) - (a.totalCurrentEUR || 0))
     .slice(0, 8)
 
-  /* Build search queries: prefer ticker, fall back to first word of name */
-  const queries = top.map(h => ({
-    name: h.name,
-    ticker: h.ticker || "",
-    query: h.ticker ? h.ticker.replace(/[\^]|-USD|-EUR|-INR/g, "") : h.name.split(" ")[0]
-  }))
+  const queries = top.map(h => {
+    /* Strip exchange suffixes for cleaner queries */
+    const clean = (h.ticker || "").replace(/\^|\.NS|\.BO|-USD|-EUR|-INR/g, "").trim()
+    return { name: h.name, ticker: h.ticker || "", query: clean || h.name.split(" ")[0] }
+  })
 
-  /* Fetch RSS for each holding in parallel */
+  /* Manual 5s timeout — AbortSignal.timeout not reliable on all Vercel runtimes */
+  function fetchWithTimeout(url, ms) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("timeout")), ms)
+      fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; CapIntel/1.0)" } })
+        .then(r => { clearTimeout(timer); resolve(r) })
+        .catch(e => { clearTimeout(timer); reject(e) })
+    })
+  }
+
   const fetches = queries.map(async q => {
-    const url = `https://news.google.com/rss/search?q=${encodeURIComponent(q.query + " stock")}&hl=en-US&gl=US&ceid=US:en`
+    const url = `https://news.google.com/rss/search?q=${encodeURIComponent(q.query + " stock finance")}&hl=en-US&gl=US&ceid=US:en`
     try {
-      const r = await fetch(url, {
-        headers: { "User-Agent": "Mozilla/5.0" },
-        signal: AbortSignal.timeout(5000)
-      })
+      const r = await fetchWithTimeout(url, 5000)
       if(!r.ok) return []
       const xml = await r.text()
+      /* Sanity check — must be XML */
+      if(!xml.trim().startsWith("<")) return []
       return parseRSS(xml, q.name, q.ticker).slice(0, 2)
     } catch(e) {
       return []
     }
   })
 
-  const results = await Promise.all(fetches)
+  let results = []
+  try { results = await Promise.all(fetches) } catch(e) {}
+
   const allArticles = results.flat()
 
   /* Deduplicate by title prefix */
   const seen = new Set()
   const deduped = allArticles.filter(a => {
-    const key = a.title.toLowerCase().slice(0, 40)
+    const key = a.title.toLowerCase().slice(0, 45)
     if(seen.has(key)) return false
     seen.add(key)
     return true
   })
 
-  /* Sort newest first, return top 10 */
   deduped.sort((a, b) => b.pubMs - a.pubMs)
   const articles = deduped.slice(0, 10)
 
@@ -68,24 +79,30 @@ function parseRSS(xml, holdingName, ticker) {
     const title   = stripTags(extract(block, "title"))
     const link    = extract(block, "link") || extract(block, "guid")
     const pubDate = extract(block, "pubDate")
-    const source  = extract(block, "source") || extract(block, "dc:creator") || "News"
-    const desc    = stripTags(extract(block, "description")).slice(0, 220)
-    if(!title || !link) continue
-    const pubMs = pubDate ? new Date(pubDate).getTime() : 0
-    if(pubMs && Date.now() - pubMs > 172800000) continue  /* skip > 48h old */
-    items.push({ title, link: cleanLink(link), source, desc, pubMs, pubDate, holding: holdingName, ticker })
+    const source  = extract(block, "source") || "News"
+    const desc    = stripTags(extract(block, "description")).slice(0, 200)
+    if(!title || title.length < 5) continue
+    const pubMs = pubDate ? new Date(pubDate).getTime() : Date.now()
+    /* Skip articles older than 48 hours */
+    if(Date.now() - pubMs > 172800000) continue
+    items.push({ title, link: cleanLink(link), source, desc, pubMs, holding: holdingName, ticker })
   }
   return items
 }
 
 function extract(str, tag) {
-  const m = str.match(new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]><\/${tag}>`, "i"))
-            || str.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\/${tag}>`, "i"))
-  return m ? m[1].trim() : ""
+  const cdata = str.match(new RegExp(`<${tag}[^>]*><!\\[CDATA\\[([\\s\\S]*?)\\]\\]>`, "i"))
+  if(cdata) return cdata[1].trim()
+  const plain = str.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\/${tag}>`, "i"))
+  return plain ? plain[1].trim() : ""
 }
 
 function stripTags(str) {
-  return str.replace(/<[^>]+>/g,"").replace(/&amp;/g,"&").replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').trim()
+  return str
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ")
+    .trim()
 }
 
 function cleanLink(url) {
