@@ -1039,12 +1039,17 @@ function renderGrowthChart(period, cat){
       plugins:{
         legend:{display:false},
         tooltip:{
-          backgroundColor:"rgba(8,16,40,0.96)",
-          titleColor:"#8899bb", bodyColor:"#e0e8ff",
-          borderColor:`rgba(${rgb},0.4)`, borderWidth:1,
-          padding:{top:8,bottom:8,left:12,right:12},
+          backgroundColor:"rgba(8,16,40,0.97)",
+          titleColor:"#8faac8",
+          bodyColor:"#dce8ff",
+          borderColor:`rgba(${rgb},0.45)`,
+          borderWidth:1,
+          padding:12,
           caretSize:5,
+          caretPadding:8,
           displayColors:false,
+          titleFont:{ family:"'Outfit', sans-serif", size:11, weight:"500" },
+          bodyFont:{ family:"'JetBrains Mono', monospace", size:12, weight:"600" },
           callbacks:{
             title:items=>items[0].label,
             label:ctx=>{
@@ -1054,7 +1059,7 @@ function renderGrowthChart(period, cat){
               const fmtD = Math.abs(diff)>=1000
                 ? sign+(diff<0?"-":"")+"€"+(Math.abs(diff)/1000).toFixed(2)+"k"
                 : sign+"€"+diff.toFixed(2)
-              return [fmtV, fmtD+" ("+sign+dp.toFixed(2)+"%)"]
+              return fmtV+"  "+fmtD+" ("+sign+dp.toFixed(2)+"%)"
             }
           }
         }
@@ -1587,10 +1592,86 @@ async function exportPortfolioCSV(){
 }
 
 /* =========================
+TIMEZONE CLOCK
+========================= */
+function startClock(){
+  const elIST  = document.getElementById("clockIST")
+  const elDE   = document.getElementById("clockDE")
+  const elNY   = document.getElementById("clockNY")
+  const elDot  = document.getElementById("marketDot")
+  const elStat = document.getElementById("marketStatusText")
+  if(!elIST || !elDE) return
+
+  /* Helper: get time parts in a given IANA timezone */
+  function tzParts(tz){
+    return new Intl.DateTimeFormat("en-GB",{
+      timeZone: tz,
+      weekday:"short", hour:"2-digit", minute:"2-digit", hour12:false
+    }).formatToParts(new Date())
+  }
+
+  function tick(){
+    const now = new Date()
+
+    /* ── IST = UTC+5:30 (no DST) ── */
+    const ist = new Date(now.getTime() + (5*60+30)*60000)
+    elIST.textContent = ist.toISOString().slice(11,16)
+
+    /* ── Frankfurt / XETRA — DST-aware via Intl ── */
+    elDE.textContent = new Intl.DateTimeFormat("en-GB",{
+      timeZone:"Europe/Berlin", hour:"2-digit", minute:"2-digit", hour12:false
+    }).format(now)
+
+    /* ── New York (ET) — DST-aware via Intl ── */
+    if(elNY) elNY.textContent = new Intl.DateTimeFormat("en-GB",{
+      timeZone:"America/New_York", hour:"2-digit", minute:"2-digit", hour12:false
+    }).format(now)
+
+    /* ── Market open checks ── */
+
+    /* NSE: 09:15–15:30 IST Mon–Fri */
+    const istM = ist.getUTCHours()*60 + ist.getUTCMinutes()
+    const istDay = ist.getUTCDay()
+    const nseOpen = istDay>=1 && istDay<=5 && istM >= 9*60+15 && istM < 15*60+30
+
+    /* XETRA: 09:00–17:30 Frankfurt Mon–Fri */
+    const dep = tzParts("Europe/Berlin")
+    const deMin = parseInt(dep.find(p=>p.type==="hour").value)*60 + parseInt(dep.find(p=>p.type==="minute").value)
+    const deDay = dep.find(p=>p.type==="weekday").value
+    const xetraOpen = !["Sat","Sun"].includes(deDay) && deMin >= 9*60 && deMin < 17*60+30
+
+    /* NYSE/NASDAQ: 09:30–16:00 ET Mon–Fri */
+    const nyp = tzParts("America/New_York")
+    const nyMin = parseInt(nyp.find(p=>p.type==="hour").value)*60 + parseInt(nyp.find(p=>p.type==="minute").value)
+    const nyDay = nyp.find(p=>p.type==="weekday").value
+    const nyseOpen = !["Sat","Sun"].includes(nyDay) && nyMin >= 9*60+30 && nyMin < 16*60
+
+    /* Build status label from whichever markets are open */
+    const open = []
+    if(nseOpen)   open.push("NSE")
+    if(xetraOpen) open.push("XETRA")
+    if(nyseOpen)  open.push("NYSE")
+
+    if(open.length){
+      elDot.className = "time-dot open"
+      elStat.textContent = open.join(" · ") + " open"
+    } else {
+      elDot.className = "time-dot closed"
+      elStat.textContent = "All markets closed"
+    }
+  }
+
+  tick()
+  setInterval(tick, 1000)
+}
+
+/* =========================
 APP STARTUP
 ========================= */
 
 function startApp(){
+
+startClock()
 
 loadAssets().then(()=>{
   /* Refresh market ticker AFTER portfolio loads so "My Portfolio" chip has data */
