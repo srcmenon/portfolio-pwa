@@ -812,6 +812,7 @@ function makeDonut(canvasId, labels, values, instanceVar){
   if(window[instanceVar]) window[instanceVar].destroy()
   const ctx = document.getElementById(canvasId)
   if(!ctx) return
+  Chart.defaults.devicePixelRatio = window.devicePixelRatio || 2
   window[instanceVar] = new Chart(ctx, {
     type: "doughnut",
     data: {
@@ -825,7 +826,6 @@ function makeDonut(canvasId, labels, values, instanceVar){
       }]
     },
     options: {
-      devicePixelRatio: window.devicePixelRatio || 2,
       responsive: true,
       maintainAspectRatio: true,
       cutout: "62%",
@@ -1038,7 +1038,10 @@ function renderGrowthChart(period, cat){
   if(portfolioGrowthChartInstance) portfolioGrowthChartInstance.destroy()
 
   const buildChart = () => {
-  portfolioGrowthChartInstance = new Chart(document.getElementById("portfolioGrowthChart"),{    type:"line",
+  const canvas = document.getElementById("portfolioGrowthChart")
+  if(!canvas) return
+  Chart.defaults.devicePixelRatio = window.devicePixelRatio || 2
+  portfolioGrowthChartInstance = new Chart(canvas, {    type:"line",
     data:{
       labels,
       datasets:[{
@@ -1061,7 +1064,8 @@ function renderGrowthChart(period, cat){
     },
     options:{
       devicePixelRatio: window.devicePixelRatio || 2,
-      responsive:true, maintainAspectRatio:false,
+      responsive: true,
+      maintainAspectRatio: false,
       interaction:{mode:"index",intersect:false},
       scales:{
         x:{
