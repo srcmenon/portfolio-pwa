@@ -534,7 +534,7 @@ header { display: none; }
 /* Stats row */
 .growth-stats-row { margin-bottom: 14px; }
 .growth-stat-label-row {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
 }
 .growth-dot {
   width: 9px; height: 9px; border-radius: 50%;
@@ -547,19 +547,135 @@ header { display: none; }
   text-transform: uppercase; color: var(--dim);
 }
 .growth-stat-nums {
-  display: flex; align-items: baseline; gap: 12px;
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
 }
 .growth-stat-val {
-  font-family: var(--mono); font-size: 28px; font-weight: 700;
+  font-family: var(--mono); font-size: 30px; font-weight: 700;
   color: var(--text); letter-spacing: -1px;
 }
-.growth-stat-chg, .growth-stat-pct {
-  font-family: var(--mono); font-size: 14px; font-weight: 600;
+/* Period group (theme-colored) */
+.growth-stat-period-group {
+  display: flex; align-items: baseline; gap: 6px;
+  background: rgba(91,156,246,0.07);
+  border: 1px solid rgba(91,156,246,0.18);
+  border-radius: 8px; padding: 3px 10px;
 }
+.growth-stat-period-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.8px;
+  text-transform: uppercase; color: var(--dim);
+  margin-right: 2px;
+}
+.growth-stat-chg, .growth-stat-pct {
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+}
+/* Today group (amber accent to distinguish from period) */
+.growth-stat-today-group {
+  display: flex; align-items: baseline; gap: 6px;
+  background: rgba(240,165,53,0.07);
+  border: 1px solid rgba(240,165,53,0.2);
+  border-radius: 8px; padding: 3px 10px;
+}
+.growth-stat-today-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.8px;
+  text-transform: uppercase; color: var(--dim);
+  margin-right: 2px;
+}
+.growth-today-val, .growth-today-pct {
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+}
+.today-up { color: #22d17a; }
+.today-dn { color: var(--red); }
 
-/* height overridden in appended styles below */
+/* ══ Market status chips in timebar ══ */
+.time-markets {
+  display: flex; align-items: center; gap: 6px;
+  margin-left: 2px;
+}
+.mkt-status-chip {
+  display: flex; align-items: center; gap: 5px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.02);
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  transition: all 0.3s;
+}
+.mkt-status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0; transition: all 0.3s;
+}
+.mkt-status-name { color: var(--dim); }
+.mkt-open .mkt-status-name { color: var(--text); }
+.mkt-open {
+  border-color: rgba(34,209,122,0.25);
+  background: rgba(34,209,122,0.06);
+}
+.mkt-closed { opacity: 0.55; }
 
-/* Make Insights charts-row use 2 cards */
+/* ══ CSV Guide Panel ══ */
+.csv-guide {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.02);
+  overflow: hidden;
+}
+.csv-guide-summary {
+  padding: 10px 14px;
+  cursor: pointer;
+  font-size: 12px; font-weight: 600; color: var(--dim);
+  letter-spacing: 0.2px;
+  list-style: none;
+  user-select: none;
+}
+.csv-guide-summary::-webkit-details-marker { display: none; }
+.csv-guide[open] .csv-guide-summary { color: var(--text); border-bottom: 1px solid var(--border); }
+.csv-guide-body {
+  padding: 14px 16px;
+  font-size: 12px; color: var(--dim);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.csv-guide-intro { margin: 0; line-height: 1.6; }
+.csv-guide-intro code { color: var(--blue); background: rgba(91,156,246,0.1); padding: 1px 5px; border-radius: 4px; }
+.csv-format-table {
+  display: flex; flex-direction: column; gap: 2px;
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+}
+.csv-fmt-row {
+  display: grid; grid-template-columns: 24px 1fr 90px 1fr;
+  gap: 8px; padding: 6px 10px; align-items: center;
+  font-size: 11px;
+}
+.csv-fmt-header {
+  background: rgba(91,156,246,0.08);
+  font-weight: 700; font-size: 10px; letter-spacing: 0.5px;
+  text-transform: uppercase; color: var(--dim);
+}
+.csv-fmt-row:not(.csv-fmt-header) { border-top: 1px solid rgba(255,255,255,0.04); }
+.csv-fmt-row:not(.csv-fmt-header) span:first-child { color: var(--muted); }
+.csv-fmt-row:not(.csv-fmt-header) span:nth-child(2) { color: var(--text); font-weight: 500; }
+.csv-fmt-row:not(.csv-fmt-header) span:last-child { color: var(--dim); font-family: var(--mono); font-size: 10.5px; }
+.csv-req { color: #f4506a !important; font-size: 10px !important; font-weight: 600 !important; }
+.csv-opt { color: var(--muted) !important; font-size: 10px !important; }
+.csv-guide-example {
+  margin: 0; line-height: 1.7;
+  padding: 8px 12px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 7px; border: 1px solid var(--border);
+}
+.csv-guide-example code {
+  display: block; margin-top: 4px;
+  font-family: var(--mono); font-size: 11px; color: var(--green);
+  word-break: break-all;
+}
+.csv-guide-tips {
+  margin: 0; padding-left: 18px;
+  display: flex; flex-direction: column; gap: 5px;
+}
+.csv-guide-tips li { line-height: 1.5; }
+.csv-guide-tips code { color: var(--blue); background: rgba(91,156,246,0.1); padding: 1px 4px; border-radius: 3px; }
 .charts-row {
   grid-template-columns: repeat(2, 1fr) !important;
 }
@@ -811,6 +927,6 @@ header { display: none; }
 
 /* Growth chart height bump for breathing room */
 #portfolioGrowthChart {
-  height: 260px !important;
+  height: 320px !important;
   width: 100% !important;
 }
