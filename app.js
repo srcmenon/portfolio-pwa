@@ -984,7 +984,7 @@ function renderGrowthChart(period, cat){
   if(sv) sv.textContent = "€"+last.toLocaleString("de-DE",{minimumFractionDigits:2,maximumFractionDigits:2})
   if(sc){ sc.textContent=(isUp?"+":"-")+"€"+Math.abs(change).toFixed(2); sc.className="growth-stat-chg "+(isUp?"profit":"loss") }
   if(sp){ sp.textContent=(isUp?"+":"")+pct.toFixed(2)+"%"; sp.className="growth-stat-pct "+(isUp?"profit":"loss") }
-  if(spl) spl.textContent = period==="ALL"?"all time": period==="1D"?"today":period.toLowerCase()
+  if(spl) spl.textContent = period==="ALL"?"all time": period==="1D"?"24H":period.toLowerCase()
 
   /* ── TODAY's change with category fraction applied (same reference both top pill and bottom strip) ── */
   const fraction = cat === "ALL" ? 1 : (() => {
@@ -1365,6 +1365,97 @@ if(alEl) alEl.innerHTML = absLosers.map(p=>`
       <span class="mover-abs loss">${p.growth.toFixed(1)}%</span>
     </span>
   </div>`).join("")
+}
+
+
+/* =========================
+DAILY MARKET INSIGHTS
+Caches per day in localStorage — calls api/daily-insights.js (Claude + web_search)
+force=true to bypass cache (Refresh button)
+========================= */
+
+async function fetchDailyInsights(portfolio, force){
+  const el = document.getElementById("dailyInsightsResult")
+  const btn = document.getElementById("insightsBtnText")
+  if(!el) return
+
+  const today = new Date().toISOString().slice(0, 10)
+  const cacheKey = "capintel_insights_" + today
+
+  if(!force){
+    try{
+      const cached = localStorage.getItem(cacheKey)
+      if(cached){
+        renderInsightCards(JSON.parse(cached), el)
+        return
+      }
+    }catch(e){}
+  }
+
+  if(!portfolio || !portfolio.length){
+    el.innerHTML = `<p class="intel-empty">Load your portfolio first, then refresh.</p>`
+    return
+  }
+
+  el.innerHTML = `<div class="insights-loading"><span class="insights-spinner"></span>Fetching today's news for your holdings…</div>`
+  if(btn) btn.textContent = "⏳ Loading…"
+
+  try{
+    const holdings = portfolio.map(p => ({
+      name: p.name, ticker: p.ticker || "",
+      type: p.type, totalCurrentEUR: p.totalCurrentEUR || 0
+    }))
+
+    const r = await fetch("/api/daily-insights", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ holdings })
+    })
+
+    const data = await r.json()
+    if(!r.ok || !data.articles){
+      el.innerHTML = `<p class="intel-empty">Could not load news: ${data.error || "unknown error"}</p>`
+      return
+    }
+
+    try{ localStorage.setItem(cacheKey, JSON.stringify(data.articles)) }catch(e){}
+    renderInsightCards(data.articles, el)
+  }catch(e){
+    el.innerHTML = `<p class="intel-empty">Network error: ${e.message}</p>`
+  }finally{
+    if(btn) btn.textContent = "🔄 Refresh"
+  }
+}
+
+function renderInsightCards(articles, el){
+  if(!articles || !articles.length){
+    el.innerHTML = `<p class="intel-empty">No recent news found. Try refreshing.</p>`
+    return
+  }
+  el.innerHTML = articles.map((a, i) => {
+    const age = a.pubMs ? timeAgo(a.pubMs) : ""
+    return `
+    <div class="insight-item">
+      <div class="insight-item-header">
+        <span class="insight-num">${i+1}</span>
+        <a class="insight-headline" href="${a.link}" target="_blank" rel="noopener">${a.title}</a>
+      </div>
+      <div class="insight-meta">
+        <span class="ins-ticker">${a.holding}</span>
+        <span class="insight-source">${a.source}</span>
+        ${age ? `<span class="insight-age">${age}</span>` : ""}
+      </div>
+      ${a.desc ? `<p class="insight-detail">${a.desc}</p>` : ""}
+    </div>`
+  }).join("")
+}
+
+function timeAgo(ms){
+  const diff = Date.now() - ms
+  const h = Math.floor(diff / 3600000)
+  if(h < 1) return Math.floor(diff/60000) + "m ago"
+  if(h < 24) return h + "h ago"
+  return Math.floor(h/24) + "d ago"
 }
 
 
@@ -1925,10 +2016,15 @@ let tab=document.getElementById(tabId)
 if(tab) tab.classList.add("active")
 
 if(tabId==="insightsTab"){
-drawCharts(lastPortfolio)
-drawGrowthChart()
-renderInsightsSummary(lastPortfolio)
-renderTopMovers(lastPortfolio)
+  drawCharts(lastPortfolio)
+  drawGrowthChart()
+  renderInsightsSummary(lastPortfolio)
+  renderTopMovers(lastPortfolio)
+  fetchDailyInsights(lastPortfolio, false)
+}
+
+if(tabId==="portfolioTab"){
+  drawGrowthChart()
 }
 
 }
