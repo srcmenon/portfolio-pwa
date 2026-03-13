@@ -999,3 +999,25 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
 .intel-empty {
   color: var(--dim); font-size: 13px; padding: 16px 0;
 }
+
+/* ── Performance chips in asset table ── */
+.perf-cell { min-width: 220px; padding: 6px 8px; }
+.perf-loading { color: var(--muted); font-size: 11px; }
+.pf-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.pf-chip {
+  font-size: 10px; font-weight: 700; font-family: var(--mono);
+  padding: 2px 5px; border-radius: 4px; white-space: nowrap;
+}
+.pf-chip sub { font-size: 8px; opacity: 0.75; margin-left: 1px; }
+.pf-up { color: #22d17a; background: rgba(34,209,122,0.1); border: 1px solid rgba(34,209,122,0.2); }
+.pf-dn { color: var(--red); background: rgba(244,80,106,0.1); border: 1px solid rgba(244,80,106,0.2); }
+
+/* ── Outlook badge in insights ── */
+.out-badge {
+  font-size: 10px; font-weight: 700; padding: 2px 7px;
+  border-radius: 5px; flex-shrink: 0; white-space: nowrap;
+}
+.out-up      { color:#22d17a; background:rgba(34,209,122,0.1);  border:1px solid rgba(34,209,122,0.2);  }
+.out-down    { color:var(--red); background:rgba(244,80,106,0.1);border:1px solid rgba(244,80,106,0.2);  }
+.out-neutral { color:var(--gold); background:rgba(240,165,53,0.1);border:1px solid rgba(240,165,53,0.2); }
+.multi-src   { font-size:10px; color:#22d17a; font-weight:600; }
