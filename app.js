@@ -1,6 +1,4 @@
-/* =========================
-GLOBAL STATE
-========================= */
+/* GLOBAL STATE */
 
 let allocationChartInstance = null
 let currencyChartInstance = null
@@ -18,9 +16,7 @@ d.value=new Date().toISOString().split("T")[0]
 
 })
 
-/* =========================
-NSE DISPLAY NAMES
-========================= */
+/* NSE DISPLAY NAMES */
 const NSE_NAMES = {
   BAJFINANCE:"Bajaj Finance", BEL:"Bharat Electronics", BERGEPAINT:"Berger Paints",
   CDSL:"CDSL", COALINDIA:"Coal India", CRISIL:"CRISIL Ltd",
@@ -50,17 +46,13 @@ function resolveDisplayName(pos){
   return pos.name || pos.key
 }
 
-/* =========================
-SERVICE WORKER
-========================= */
+/* SERVICE WORKER */
 
 if ("serviceWorker" in navigator){
 navigator.serviceWorker.register("sw.js")
 }
 
-/* =========================
-FX ENGINE
-========================= */
+/* FX ENGINE */
 let FX = {
 EUR: 1,
 USD: 1.09,
@@ -88,9 +80,7 @@ console.log("FX update failed")
 updateFX()
 setInterval(updateFX,3600000)
 
-/* =========================
-FORMAT HELPERS
-========================= */
+/* FORMAT HELPERS */
 
 function formatCurrency(value,currency){
 
@@ -123,9 +113,7 @@ return value * FX[currency]
 
 }
 
-/* =========================
-DATABASE ENGINE
-========================= */
+/* DATABASE ENGINE */
 
 function getAssets(){
 
@@ -185,11 +173,7 @@ async function sellPartial(id, currentQty, name){
   tx.oncomplete = () => loadAssets()
 }
 
-
-
-/* =========================
-PORTFOLIO ENGINE
-========================= */
+/* PORTFOLIO ENGINE */
 
 function groupAssets(assets){
 
@@ -279,10 +263,7 @@ return results
 
 }
 
-
-/* =========================
-UI RENDER ENGINE
-========================= */
+/* UI RENDER ENGINE */
 
 async function loadAssets(){
 
@@ -359,6 +340,7 @@ let showTicker = (pos.key !== displayName)
 let typeBadge = pos.type ? `<span class="badge badge-${pos.type}">${pos.type}</span>` : ""
 
 let row=document.createElement("tr")
+row.dataset.key = pos.key
 row.innerHTML=`
 <td>
   <span class="toggleBtn" data-target="${groupId}">▶</span>
@@ -389,6 +371,9 @@ row.innerHTML=`
 <td class="${plClass}">${pos.growth.toFixed(2)}%</td>
 <td>${typeBadge}</td>
 <td class="num" style="font-size:12px;color:var(--dim)">${pos.lastDate || ""}</td>
+<td class="perf-cell" id="perf_${pos.key.replace(/[^a-zA-Z0-9]/g,'_')}">
+  <span class="perf-loading">…</span>
+</td>
 `
 table.appendChild(row)
 
@@ -416,6 +401,47 @@ pos.list.forEach(a=>{
 })
 
 setupToggleButtons()
+/* Load performance factors asynchronously so table renders immediately */
+loadGrowthFactors(portfolio)
+}
+
+/* ── Growth Factors: 1D/1W/1M/6M/1Y/5Y per asset via Yahoo Finance ── */
+async function loadGrowthFactors(portfolio){
+  const targets = portfolio.filter(p => p.ticker && p.type !== "MutualFund")
+  const RANGES = [{l:"1W",r:"5d"},{l:"1M",r:"1mo"},{l:"6M",r:"6mo"},{l:"1Y",r:"1y"},{l:"5Y",r:"5y"}]
+
+  await Promise.all(targets.map(async pos => {
+    const cellId = "perf_"+pos.key.replace(/[^a-zA-Z0-9]/g,"_")
+    const cell = document.getElementById(cellId)
+    if(!cell) return
+    try{
+      /* Fetch all ranges in parallel */
+      const [dayRes, ...rangeRes] = await Promise.all([
+        fetch(`/api/price?ticker=${encodeURIComponent(pos.ticker)}`),
+        ...RANGES.map(({r}) => fetch(`/api/price?ticker=${encodeURIComponent(pos.ticker)}&range=${r}`))
+      ])
+
+      const chips = []
+
+      if(dayRes.ok){
+        const d = await dayRes.json()
+        if(d.changePercent != null){
+          const s=d.changePercent>=0?"+":"", cls=d.changePercent>=0?"pf-up":"pf-dn"
+          chips.push(`<span class="pf-chip ${cls}">${s}${d.changePercent.toFixed(1)}%<sub>1D</sub></span>`)
+        }
+      }
+
+      await Promise.all(rangeRes.map(async (r,i) => {
+        if(!r.ok) return
+        const d = await r.json()
+        if(d.rangePct == null) return
+        const {l} = RANGES[i], s=d.rangePct>=0?"+":"", cls=d.rangePct>=0?"pf-up":"pf-dn"
+        chips.push(`<span class="pf-chip ${cls}">${s}${d.rangePct.toFixed(1)}%<sub>${l}</sub></span>`)
+      }))
+
+      cell.innerHTML = chips.length ? `<div class="pf-chips">${chips.join("")}</div>` : `<span class="perf-loading">–</span>`
+    }catch(e){ cell.innerHTML=`<span class="perf-loading">–</span>` }
+  }))
 }
 
 /* ── Search dropdown ── */
@@ -521,7 +547,6 @@ returnEl.textContent=`${sign}${change.toFixed(2)}%`
 
 }
 
-
 function setupToggleButtons(){
 
 document.querySelectorAll(".toggleBtn").forEach(btn=>{
@@ -558,9 +583,7 @@ if(table){
 
 }
 
-/* =========================
-PRICE ENGINE
-========================= */
+/* PRICE ENGINE */
 async function updateMutualFundNAV(){
 
 if(!db) return
@@ -773,38 +796,27 @@ if(document.getElementById("portfolioGrowthChart")){
 
 }
 
-/* =========================
-PORTFOLIO SNAPSHOT
-========================= */
+/* PORTFOLIO SNAPSHOT */
 
 async function recordPortfolioSnapshot(){
-
-if(!db) return
-
-/* Use already-computed lastPortfolio if available (faster, avoids stale DB read lag) */
-let total = 0
-if(lastPortfolio && lastPortfolio.length){
-  lastPortfolio.forEach(p=>{ total += p.totalCurrentEUR })
-} else {
-  let assets = await getAssets()
-  assets.forEach(a=>{
-    let value=(a.currentPrice||0)*(a.quantity||0)
-    total+=convertToEUR(value,a.currency)
-  })
+  if(!db) return
+  let total = 0
+  const cats = {}
+  if(lastPortfolio?.length){
+    lastPortfolio.forEach(p => {
+      total += p.totalCurrentEUR
+      const cat = p.type==="Commodity" ? "Commodity" : `${p.type}_${p.currency}`
+      if(CAT_DEFS[cat]) cats[cat] = (cats[cat]||0) + p.totalCurrentEUR
+    })
+  } else {
+    const assets = await getAssets()
+    assets.forEach(a => { total += convertToEUR((a.currentPrice||0)*(a.quantity||0), a.currency) })
+  }
+  db.transaction("portfolioHistory","readwrite")
+    .objectStore("portfolioHistory").put({timestamp:Date.now(), value:total, cats})
 }
 
-let tx=db.transaction("portfolioHistory","readwrite")
-
-tx.objectStore("portfolioHistory").put({
-timestamp:Date.now(),
-value:total
-})
-
-}
-
-/* =========================
-CHARTS ENGINE
-========================= */
+/* CHARTS ENGINE */
 
 const CHART_COLORS = ["#5b9cf6","#22d17a","#f0a535","#f4506a","#a855f7","#fbbf24","#34d399","#f87171"]
 
@@ -889,12 +901,11 @@ function matchCat(asset, cat){
 
 function getCatValues(history, cat){
   if(cat==="ALL") return history.map(h=>h.value)
-  if(!lastPortfolio||!lastPortfolio.length) return history.map(h=>h.value)
-  const catAssets = lastPortfolio.filter(a=>matchCat(a,cat))
-  const catTotal  = catAssets.reduce((s,a)=>s+a.totalCurrentEUR,0)
+  /* New snapshots store per-cat breakdowns — use them for accurate category charts */
+  const catTotal = lastPortfolio.filter(a=>matchCat(a,cat)).reduce((s,a)=>s+a.totalCurrentEUR,0)
   const allTotal  = lastPortfolio.reduce((s,a)=>s+a.totalCurrentEUR,0)
   const fraction  = allTotal>0 ? catTotal/allTotal : 0
-  return history.map(h=>h.value * fraction)
+  return history.map(h => h.cats?.[cat] != null ? h.cats[cat] : h.value * fraction)
 }
 
 function periodMs(period){
@@ -1187,9 +1198,7 @@ function renderGrowthChart(period, cat){
   renderDailyProgress(cat, todayRef, todayNow)
 }
 
-/* =========================
-DAILY PROGRESS & MARKET TICKER
-========================= */
+/* DAILY PROGRESS & MARKET TICKER */
 
 /* Cache for index prices fetched once per session */
 let indexCache = {}
@@ -1223,7 +1232,7 @@ async function renderDailyProgress(cat, todayRef, todayNow){
       const sign = chg >= 0 ? "+" : "-"
       valEl.textContent = sign + "€" + Math.abs(chg).toFixed(2)
       valEl.className   = "daily-val " + cls
-      pctEl.textContent = sign + pct.toFixed(2) + "%"
+      pctEl.textContent = sign + Math.abs(pct).toFixed(2) + "%"
       pctEl.className   = "daily-pct " + cls
     } else {
       valEl.textContent = "–"; valEl.className = "daily-val neutral"
@@ -1299,8 +1308,6 @@ async function fetchMarketTicker(){
       </div>`)
   }
 }
-
-
 
 function renderInsightsSummary(portfolio){
 if(!portfolio || !portfolio.length) return
@@ -1408,83 +1415,123 @@ if(alEl) alEl.innerHTML = absLosers.map(p=>`
   </div>`).join("")
 }
 
-
 /* =========================
 DAILY MARKET INSIGHTS
 Caches per day in localStorage — calls api/daily-insights.js (Claude + web_search)
 force=true to bypass cache (Refresh button)
 ========================= */
 
+/* Impact keywords for scoring article relevance */
+const IMPACT_WORDS = ["earnings","results","guidance","downgrade","upgrade","beats","misses","merger","acquisition","recall","lawsuit","investigation","FDA","tariff","ban","layoffs","buyback","dividend","quarterly","forecast","revenue","profit","loss","crash","surge","record"]
+const BULLISH_WORDS = ["beats","beat","surge","gain","profit","upgrade","raises","strong","record","deal","buyback","growth","rises","soars","jumps","bullish","outperform","positive","launches","expands"]
+const BEARISH_WORDS = ["misses","miss","falls","drops","decline","loss","downgrade","cuts","weak","warning","lawsuit","crash","inflation","tariff","ban","probe","concern","disappoints","below","recall","investigation","layoffs"]
+
+function scoreArticle(title, desc){
+  const text = (title+" "+desc).toLowerCase()
+  let score = 0
+  IMPACT_WORDS.forEach(w => { if(text.includes(w)) score += 2 })
+  return score
+}
+
+function getOutlook(title, desc){
+  const text = (title+" "+desc).toLowerCase()
+  let bull = 0, bear = 0
+  BULLISH_WORDS.forEach(w => { if(text.includes(w)) bull++ })
+  BEARISH_WORDS.forEach(w => { if(text.includes(w)) bear++ })
+  if(bull > bear) return { label:"▲ Likely Up",   cls:"out-up" }
+  if(bear > bull) return { label:"▼ Likely Down", cls:"out-down" }
+  return { label:"↔ Watch", cls:"out-neutral" }
+}
+
 async function fetchDailyInsights(portfolio, force){
   const el = document.getElementById("dailyInsightsResult")
   const btn = document.getElementById("insightsBtnText")
   if(!el) return
 
-  const today = new Date().toISOString().slice(0, 10)
-  const cacheKey = "capintel_insights_" + today
+  const today = new Date().toISOString().slice(0,10)
+  const cacheKey = "capintel_insights_"+today
 
   if(!force){
-    try{
-      const cached = localStorage.getItem(cacheKey)
-      if(cached){
-        renderInsightCards(JSON.parse(cached), el)
-        return
-      }
-    }catch(e){}
+    try{ const c = localStorage.getItem(cacheKey); if(c){ renderInsightCards(JSON.parse(c),el); return } }catch(e){}
   }
 
-  if(!portfolio || !portfolio.length){
-    el.innerHTML = `<p class="intel-empty">Load your portfolio first, then refresh.</p>`
-    return
-  }
+  if(!portfolio?.length){ el.innerHTML=`<p class="intel-empty">Load your portfolio first, then refresh.</p>`; return }
 
-  el.innerHTML = `<div class="insights-loading"><span class="insights-spinner"></span>Fetching today's news for your holdings…</div>`
-  if(btn) btn.textContent = "⏳ Loading…"
+  el.innerHTML=`<div class="insights-loading"><span class="insights-spinner"></span>Scanning news for all your holdings…</div>`
+  if(btn) btn.textContent="⏳ Loading…"
 
-  /* Top 6 holdings by EUR value */
-  const top = [...portfolio]
-    .sort((a,b) => (b.totalCurrentEUR||0) - (a.totalCurrentEUR||0))
-    .slice(0, 6)
-
-  const queries = top.map(h => {
-    const clean = (h.ticker||"").replace(/[\^]|\.NS|\.BO|-USD|-EUR|-INR/g,"").trim()
-    return { name: h.name, ticker: h.ticker||"", query: clean || h.name.split(" ")[0] }
+  /* Collect ALL unique tickers across entire portfolio, sorted by value */
+  const tickerMap = {}
+  portfolio.forEach(h => {
+    const ticker = h.ticker||""
+    const clean = ticker.replace(/[\^]|\.NS|\.BO|-USD|-EUR|-INR/g,"").trim()
+    const query = clean || h.name.split(" ")[0]
+    if(!tickerMap[query]) tickerMap[query] = { name:h.name, ticker, query, value:h.totalCurrentEUR||0 }
+    else tickerMap[query].value += h.totalCurrentEUR||0
   })
+  const allTickers = Object.values(tickerMap).sort((a,b)=>b.value-a.value)
 
-  /* Fetch RSS via allorigins.win — free public CORS proxy, no key needed */
   async function fetchRSS(q){
-    const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(q.query+" stock")}&hl=en-US&gl=US&ceid=US:en`
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`
+    const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(q.query+" stock finance")}&hl=en-US&gl=US&ceid=US:en`
+    const url = `https://api.allorigins.win/get?url=${encodeURIComponent(rssUrl)}`
     try{
-      const r = await fetch(proxyUrl)
+      const r = await fetch(url)
       if(!r.ok) return []
       const json = await r.json()
-      const xml = json.contents || ""
+      const xml = json.contents||""
       if(!xml.includes("<item>")) return []
-      return parseRSSClient(xml, q.name, q.ticker).slice(0, 2)
+      return parseRSSClient(xml, q.name, q.ticker).slice(0,3)
     }catch(e){ return [] }
   }
 
   try{
-    const results = await Promise.all(queries.map(q => fetchRSS(q)))
-    const all = results.flat()
+    /* Batch in groups of 8 to avoid rate limits */
+    const allArticles = []
+    for(let i=0; i<allTickers.length; i+=8){
+      const batch = allTickers.slice(i,i+8)
+      const res = await Promise.all(batch.map(q=>fetchRSS(q)))
+      res.flat().forEach(a=>allArticles.push(a))
+    }
 
-    /* Deduplicate */
-    const seen = new Set()
-    const deduped = all.filter(a => {
-      const key = a.title.toLowerCase().slice(0,45)
-      if(seen.has(key)) return false
-      seen.add(key); return true
+    /* Score each article by impact keywords + recency + portfolio weight */
+    const tickerWeight = {}
+    allTickers.forEach(t=>{ tickerWeight[t.name]=(t.value/portfolio.reduce((s,p)=>s+(p.totalCurrentEUR||0),0))*100 })
+
+    allArticles.forEach(a => {
+      const recencyScore = Math.max(0, 1 - (Date.now()-a.pubMs)/172800000) * 10
+      const impactScore  = scoreArticle(a.title, a.desc)
+      const weightScore  = tickerWeight[a.holding]||0
+      a.score = recencyScore + impactScore + weightScore * 0.5
     })
-    deduped.sort((a,b) => b.pubMs - a.pubMs)
-    const articles = deduped.slice(0,10)
 
+    /* Deduplicate by topic (first 55 chars of title) */
+    const seen = new Set()
+    /* Track how many sources report similar headlines for cross-source badge */
+    const topicSources = {}
+    allArticles.forEach(a => {
+      const key = a.title.toLowerCase().slice(0,55)
+      topicSources[key] = topicSources[key] || new Set()
+      topicSources[key].add(a.source)
+    })
+
+    const deduped = allArticles
+      .sort((a,b)=>b.score-a.score)
+      .filter(a => {
+        const key = a.title.toLowerCase().slice(0,55)
+        if(seen.has(key)) return false
+        seen.add(key)
+        a.multiSource = topicSources[key].size > 1
+        a.outlook = getOutlook(a.title, a.desc)
+        return true
+      })
+
+    const articles = deduped.slice(0,10)
     try{ localStorage.setItem(cacheKey, JSON.stringify(articles)) }catch(e){}
     renderInsightCards(articles, el)
   }catch(e){
-    el.innerHTML = `<p class="intel-empty">Could not load news. Try refreshing.</p>`
+    el.innerHTML=`<p class="intel-empty">Could not load news. Try refreshing.</p>`
   }finally{
-    if(btn) btn.textContent = "🔄 Refresh"
+    if(btn) btn.textContent="🔄 Refresh"
   }
 }
 
@@ -1526,24 +1573,24 @@ function cleanNewsLink(url){
 }
 
 function renderInsightCards(articles, el){
-  if(!articles || !articles.length){
-    el.innerHTML = `<p class="intel-empty">No recent news found. Try refreshing.</p>`
-    return
-  }
-  el.innerHTML = articles.map((a, i) => {
+  if(!articles?.length){ el.innerHTML=`<p class="intel-empty">No recent news found. Try refreshing.</p>`; return }
+  el.innerHTML = articles.map((a,i) => {
     const age = a.pubMs ? timeAgo(a.pubMs) : ""
+    const out = a.outlook || getOutlook(a.title||"", a.desc||"")
     return `
     <div class="insight-item">
       <div class="insight-item-header">
         <span class="insight-num">${i+1}</span>
         <a class="insight-headline" href="${a.link}" target="_blank" rel="noopener">${a.title}</a>
+        <span class="out-badge ${out.cls}">${out.label}</span>
       </div>
       <div class="insight-meta">
         <span class="ins-ticker">${a.holding}</span>
         <span class="insight-source">${a.source}</span>
-        ${age ? `<span class="insight-age">${age}</span>` : ""}
+        ${age?`<span class="insight-age">${age}</span>`:""}
+        ${a.multiSource?`<span class="multi-src">✓ confirmed</span>`:""}
       </div>
-      ${a.desc ? `<p class="insight-detail">${a.desc}</p>` : ""}
+      ${a.desc?`<p class="insight-detail">${a.desc}</p>`:""}
     </div>`
   }).join("")
 }
@@ -1556,10 +1603,7 @@ function timeAgo(ms){
   return Math.floor(h/24) + "d ago"
 }
 
-
-/* =========================
-AI MARKET INTELLIGENCE
-========================= */
+/* AI MARKET INTELLIGENCE */
 
 function simpleMarkdown(text){
   return text
@@ -1799,10 +1843,7 @@ async function runMarketIntelligence(){
   }
 }
 
-
-/* =========================
-EXPORT CSV
-========================= */
+/* EXPORT CSV */
 
 async function exportPortfolioCSV(){
   if(!db) return
@@ -1838,9 +1879,7 @@ async function exportPortfolioCSV(){
   URL.revokeObjectURL(url)
 }
 
-/* =========================
-TIMEZONE CLOCK
-========================= */
+/* TIMEZONE CLOCK */
 function startClock(){
   const elIST  = document.getElementById("clockIST")
   const elDE   = document.getElementById("clockDE")
@@ -1914,9 +1953,7 @@ function startClock(){
   setInterval(tick, 1000)
 }
 
-/* =========================
-APP STARTUP
-========================= */
+/* APP STARTUP */
 
 function startApp(){
 
@@ -1952,9 +1989,7 @@ setInterval(()=>{ if(navigator.onLine) fetchMarketTicker() }, 300000)
 /* Mutual funds once per day */
 setInterval(updateMutualFundNAV,86400000)
 }
-/* =========================
-FORM + TABS ENGINE
-========================= */
+/* FORM + TABS ENGINE */
 
 function parseNumber(value){
 return Number(value||0)
@@ -2008,9 +2043,7 @@ loadAssets()
 }
 
 }
-/* =========================
-CSV IMPORT ENGINE
-========================= */
+/* CSV IMPORT ENGINE */
 
 function bindCSVImport(){
 
