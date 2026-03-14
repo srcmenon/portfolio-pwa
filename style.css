@@ -1,3 +1,41 @@
+/* ============================================================
+   CapIntel — style.css
+   All visual styling for the Portfolio Tracker PWA.
+
+   Design system:
+   - Dark theme only. Base background: #070c18 (near-black navy).
+   - CSS custom properties (--vars) defined in :root.
+   - Fonts: Outfit (UI text) + JetBrains Mono (numbers/tickers).
+   - Colours: --green for profit/up, --red for loss/down,
+              --blue for primary accent, --gold for today/amber accents.
+
+   Layout structure (top → bottom):
+   1. #tabs          — sticky tab bar: Portfolio | Insights tabs,
+                       market ticker strip, CapIntel brand logo
+   2. #timeBar       — sticky clock bar: IST / DE / NY clocks +
+                       NSE / XETRA / NYSE open/closed chips
+   3. #portfolioTab  — main portfolio view (summary, form, filter, table)
+   4. #insightsTab   — insights view (news, hero cards, charts, movers, AI)
+
+   Section guide (search for these labels to jump to a section):
+   ROW 1: TAB BAR        line ~33
+   ROW 2: TIMEZONE CLOCK line ~96
+   SUMMARY CARDS         line ~158
+   ADD ASSET FORM        line ~191
+   FILTER BAR            line ~222
+   ASSET TABLE           line ~270
+   INSIGHTS TAB          line ~334
+   PORTFOLIO GROWTH CHART line ~483
+   MARKET STATUS CHIPS   line ~592
+   CSV IMPORT PANEL      line ~621
+   MARKET TICKER CHIPS   line ~692
+   DAILY PROGRESS BAR    line ~747
+   SMART PICKS           line ~803
+   DAILY INSIGHTS        line ~942
+   PERFORMANCE CHIPS     line ~1003
+   OUTLOOK BADGES        line ~1015
+   ============================================================ */
+
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
@@ -155,7 +193,7 @@ header { display: none; }
 /* Old marketBar no longer used */
 #marketBar { display: none; }
 
-/* SUMMARY */
+/* ══ SUMMARY CARDS — total value, total return, asset count ══ */
 #summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -182,13 +220,15 @@ header { display: none; }
   color: var(--dim); display: block; margin-top: 4px;
 }
 
-/* ALLOC CHART CARD */
+/* ══ ALLOCATION DONUT CHART — full-width card above the Add Asset form ══ */
 .alloc-card {
   margin: 0 24px 16px;
 }
 .alloc-card canvas { max-height: 180px; }
 
-/* FORM */
+/* ══ ADD ASSET FORM — manual entry form for new buy lots ══
+   Two-column grid on desktop, single column on mobile.
+   Fields: Name, Ticker, Broker, Type, Currency, Qty, Price, Date. */
 #assetForm {
   margin: 0 24px 20px;
   display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
@@ -219,7 +259,9 @@ header { display: none; }
 #assetForm button:hover { opacity: 0.88; }
 #assetForm button:active { transform: scale(0.99); }
 
-/* FILTER BAR */
+/* ══ FILTER BAR — search box, type dropdown, profit/loss dropdown, sort ══
+   The search input uses a floating dropdown (searchDropdown) for live results.
+   Dropdowns are styled to match the dark surface theme. */
 #filterBar {
   display: flex; gap: 12px; align-items: center;
   padding: 0 24px 16px; flex-wrap: wrap;
@@ -267,7 +309,13 @@ header { display: none; }
 #filterBar select:focus { border-color: var(--blue); }
 #filterBar select option { background: var(--card); }
 
-/* TABLE */
+/* ══ ASSET TABLE — main holdings table ══
+   Each row = one grouped position (all lots of the same ticker combined).
+   The ▶ toggle button expands sub-rows showing individual buy lots.
+   Columns: Asset | Qty | Avg Buy | Current | Invested | Value | P/L | Growth | Type | Date | Performance
+   .profit / .loss / .neutral apply colour to P/L and Growth columns.
+   .eurValue shows the EUR equivalent below native-currency values.
+   The last "Performance" column (.perf-cell) is filled async by loadGrowthFactors(). */
 .table-wrap { padding: 0 24px 32px; overflow-x: auto; }
 #assetTable {
   width: 100%; border-collapse: separate; border-spacing: 0;
@@ -331,7 +379,12 @@ header { display: none; }
 }
 .subRow button:hover { background: rgba(244,80,106,0.15); }
 
-/* INSIGHTS */
+/* ══ INSIGHTS TAB — full-page insights layout ══
+   .insights-wrap    : vertical flex container for all insight cards
+   .insight-hero     : 5-column hero metric cards (returns, best/worst)
+   .charts-row       : 2-column grid for Asset Allocation + Currency Exposure donuts
+   .movers-row       : 2-column grid for Top Gainers % and Top Losers %
+   Cards animate in with fadeUp. */
 .insights-wrap { padding: 20px 24px 32px; display: flex; flex-direction: column; gap: 20px; }
 
 .insight-hero {
@@ -361,13 +414,14 @@ header { display: none; }
 
 .growth-card canvas { max-height: 220px; }
 
-/* SCROLLBAR */
+/* ══ CUSTOM SCROLLBAR — slim dark scrollbar for Webkit browsers ══ */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
 
-/* RESPONSIVE */
+/* ══ RESPONSIVE BREAKPOINTS (≤768px) ══
+   Summary collapses to 2-col, form to 1-col, charts/movers stack vertically. */
 @media (max-width: 768px) {
   #summary { grid-template-columns: 1fr 1fr; padding: 16px 12px; }
   #assetForm { grid-template-columns: 1fr; margin: 0 12px 16px; }
