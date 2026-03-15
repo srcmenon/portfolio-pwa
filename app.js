@@ -791,22 +791,25 @@ async function updatePrices(){
    getCatValues() gracefully falls back to the fraction method for those. */
 async function recordPortfolioSnapshot(){
   if(!db) return
+
+  /* Only record from lastPortfolio — never use the fallback that reads raw assets,
+     because currentPrice may be 0 before the first price fetch completes. */
+  if(!lastPortfolio?.length) return
+
   let total  = 0
   const cats = {}
+  lastPortfolio.forEach(p => {
+    total += p.totalCurrentEUR
+    const cat = p.type === "Commodity" ? "Commodity" : `${p.type}_${p.currency}`
+    if(CAT_DEFS[cat]) cats[cat] = (cats[cat] || 0) + p.totalCurrentEUR
+  })
 
-  if(lastPortfolio?.length){
-    lastPortfolio.forEach(p => {
-      total += p.totalCurrentEUR
-      /* Build category key matching CAT_DEFS format */
-      const cat = p.type === "Commodity" ? "Commodity" : `${p.type}_${p.currency}`
-      if(CAT_DEFS[cat]) cats[cat] = (cats[cat] || 0) + p.totalCurrentEUR
-    })
-  } else {
-    /* Fallback if lastPortfolio not yet populated */
-    const assets = await getAssets()
-    assets.forEach(a => {
-      total += convertToEUR((a.currentPrice || 0) * (a.quantity || 0), a.currency)
-    })
+  /* Anomaly guard: if the new total is less than 30% of the most recent snapshot,
+     something is wrong (prices not loaded yet, FX failed, etc.) — skip recording.
+     This prevents the sharp "V" dips visible when prices momentarily read as zero. */
+  if(allPortfolioHistory.length){
+    const lastSnap = allPortfolioHistory.reduce((a, b) => a.timestamp > b.timestamp ? a : b)
+    if(lastSnap.value > 0 && total < lastSnap.value * 0.30) return
   }
 
   db.transaction("portfolioHistory", "readwrite")
@@ -1044,13 +1047,26 @@ async function buildCategoryChartData(cat, period){
   }
 }
 
-/* Entry point: loads all history from DB, renders chart, and binds buttons */
+/* Entry point: loads all history from DB, cleans bad snapshots, renders chart, and binds buttons.
+   Bad snapshots (near-zero values from race-condition recordings) are filtered out here
+   so they never appear in the chart even if they were already stored in the DB. */
 function drawGrowthChart(){
   if(!db) return
   db.transaction("portfolioHistory", "readonly")
     .objectStore("portfolioHistory")
     .getAll().onsuccess = e => {
-      allPortfolioHistory = e.target.result || []
+      const raw = e.target.result || []
+
+      /* Remove bad snapshots: any value below 20% of the median is an anomaly.
+         Median is more robust than mean — a few near-zero points won't skew it. */
+      if(raw.length > 2){
+        const sorted = [...raw].sort((a, b) => a.value - b.value)
+        const median = sorted[Math.floor(sorted.length / 2)].value
+        allPortfolioHistory = raw.filter(h => h.value >= median * 0.20)
+      } else {
+        allPortfolioHistory = raw
+      }
+
       renderGrowthChart(currentPeriod, currentCat)
       bindPeriodButtons()
       bindCatButtons()
@@ -2197,16 +2213,18 @@ function startApp(){
   }).catch(err => console.error("startApp loadAssets failed:", err))
 
   if(navigator.onLine){
+    /* updatePrices() calls recordPortfolioSnapshot() when it finishes —
+       do NOT call recordPortfolioSnapshot() here directly, it fires before
+       lastPortfolio is populated and records a near-zero bad snapshot */
     updatePrices()
     updateMutualFundNAV()
-    recordPortfolioSnapshot()
   }
 
+  /* Every 5 minutes: update prices (which internally records a snapshot).
+     Do NOT call recordPortfolioSnapshot() separately — it would race with
+     updatePrices() and record before fresh prices are written. */
   setInterval(() => {
-    if(navigator.onLine && db){
-      updatePrices()
-      recordPortfolioSnapshot()
-    }
+    if(navigator.onLine && db) updatePrices()
   }, 300000)
 
   setInterval(() => { if(navigator.onLine) fetchMarketTicker() }, 300000)
