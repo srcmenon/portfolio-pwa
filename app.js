@@ -1915,37 +1915,39 @@ async function runMoversAnalysis(){
       SELL: { label:"🔴 Sell",     cls:"rec-sell" }
     }
 
+    /* Compact accordion: each pick is a single row (name + badges).
+       Clicking a row expands the detail panel inline. Only one open at a time. */
+    let pickIdCounter = 0
     const renderRec = r => {
       const v       = (r.verdict || "").toUpperCase()
       const cfg     = verdictConfig[v] || verdictConfig.BUY
       const confCls = `conf-${(r.confidence || "").toLowerCase()}`
-      return `<div class="pick-item">
-        <div class="pick-top">
-          <span class="mover-name">${r.name}</span>
-          <div class="pick-right">
+      const id      = `pick-detail-${pickIdCounter++}`
+      return `<div class="pick-row" onclick="togglePickDetail('${id}')">
+        <div class="pick-row-main">
+          <span class="pick-row-chevron">›</span>
+          <span class="pick-row-name">${r.name}</span>
+          <div class="pick-row-badges">
             <span class="rec-badge ${cfg.cls}">${r.verdict}</span>
             ${r.confidence ? `<span class="rec-conf ${confCls}">${r.confidence}</span>` : ""}
+            ${r.urgency === "Immediate" ? `<span class="rec-urgent">⚡ Now</span>` : ""}
           </div>
         </div>
-        <div class="rec-reason">${r.reason}</div>
-        <div class="rec-tax">🧾 ${r.taxNote}</div>
-        ${r.urgency ? `<div class="rec-meta"><span class="rec-urgency">⏱ ${r.urgency}</span></div>` : ""}
+        <div class="pick-detail" id="${id}">
+          <div class="rec-reason">${r.reason}</div>
+          <div class="rec-tax">🧾 ${r.taxNote}</div>
+          ${r.urgency ? `<div class="rec-meta"><span class="rec-urgency">⏱ ${r.urgency}</span>${r.targetWeight ? `<span class="rec-target">→ ${r.targetWeight}</span>` : ""}</div>` : ""}
+        </div>
       </div>`
     }
 
     const sections = Object.entries(byVerdict)
       .filter(([, items]) => items.length > 0)
       .map(([verdict, items]) => {
-        const cfg      = verdictConfig[verdict]
-        const isSell   = verdict === "SELL"
-        /* SELL gets a full-width card with a 2-col sub-grid inside for readability */
-        const sectionCls = isSell ? "picks-section picks-section-sell" : "picks-section"
-        const itemsHtml  = isSell
-          ? `<div class="picks-items-grid">${items.map(renderRec).join("")}</div>`
-          : items.map(renderRec).join("")
-        return `<div class="${sectionCls}">
+        const cfg = verdictConfig[verdict]
+        return `<div class="picks-section">
           <div class="picks-section-title">${cfg.label} <span class="picks-count">${items.length}</span></div>
-          ${itemsHtml}
+          <div class="picks-accordion">${items.map(renderRec).join("")}</div>
         </div>`
       }).join("")
 
@@ -1964,6 +1966,18 @@ async function runMoversAnalysis(){
     btnText.textContent = "🎯 Analyse My Picks"
     btn.disabled        = false
   }
+}
+
+/* Toggles a single pick's detail panel open/closed.
+   Rotates the chevron › → ↓ to signal state. */
+function togglePickDetail(id){
+  const detail = document.getElementById(id)
+  if(!detail) return
+  const row     = detail.closest(".pick-row")
+  const chevron = row?.querySelector(".pick-row-chevron")
+  const isOpen  = detail.classList.contains("open")
+  detail.classList.toggle("open", !isOpen)
+  if(chevron) chevron.textContent = isOpen ? "›" : "↓"
 }
 
 async function runMarketIntelligence(){
