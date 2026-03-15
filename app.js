@@ -1936,10 +1936,16 @@ async function runMoversAnalysis(){
     const sections = Object.entries(byVerdict)
       .filter(([, items]) => items.length > 0)
       .map(([verdict, items]) => {
-        const cfg = verdictConfig[verdict]
-        return `<div class="picks-section">
+        const cfg      = verdictConfig[verdict]
+        const isSell   = verdict === "SELL"
+        /* SELL gets a full-width card with a 2-col sub-grid inside for readability */
+        const sectionCls = isSell ? "picks-section picks-section-sell" : "picks-section"
+        const itemsHtml  = isSell
+          ? `<div class="picks-items-grid">${items.map(renderRec).join("")}</div>`
+          : items.map(renderRec).join("")
+        return `<div class="${sectionCls}">
           <div class="picks-section-title">${cfg.label} <span class="picks-count">${items.length}</span></div>
-          ${items.map(renderRec).join("")}
+          ${itemsHtml}
         </div>`
       }).join("")
 
