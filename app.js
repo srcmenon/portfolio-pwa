@@ -961,6 +961,89 @@ function formatLabel(ts, period){
   return d.toLocaleDateString([], { year:"2-digit", month:"short" })
 }
 
+/* Maps app period labels to Yahoo Finance range + history params.
+   1D is always from snapshots (intraday, Yahoo free tier has no minute data).
+   All other periods use real per-asset Yahoo historical data for accuracy. */
+const PERIOD_TO_YAHOO = {
+  "1W":  "5d",   "1M":  "1mo",  "3M":  "3mo",
+  "1Y":  "1y",   "5Y":  "5y",   "ALL": "max"
+}
+
+/* ── CATEGORY CHART FROM REAL PRICE HISTORY ─────────────────
+   For non-ALL categories and non-1D periods, this builds an accurate
+   historical value series by fetching Yahoo Finance OHLCV data for
+   each asset in the category, then summing qty × close at each date.
+
+   Why not use snapshots for categories?
+   All old snapshots lack the `cats` field so getCatValues() falls back
+   to `total × today's_fraction` — making every category identical in
+   shape to the ALL chart. Yahoo gives us the actual diverging prices.
+
+   Indian MutualFunds have no Yahoo history → skipped (cats snapshot
+   fallback is used for MF-only view, which accumulates going forward).
+
+   Returns: { labels: string[], values: number[] } sorted by date,
+            OR null if no data could be fetched (triggers snapshot fallback). */
+async function buildCategoryChartData(cat, period){
+  const yahooRange = PERIOD_TO_YAHOO[period]
+  if(!yahooRange) return null                        /* 1D always uses snapshots */
+
+  /* Identify assets belonging to this category */
+  const assets = lastPortfolio.filter(a => matchCat(a, cat))
+  if(!assets.length) return null
+
+  /* MutualFunds have no Yahoo Finance historical data — fall back to snapshots */
+  const fetchable = assets.filter(a => a.ticker && a.type !== "MutualFund")
+  if(!fetchable.length) return null
+
+  /* Fetch full close history for each asset in parallel */
+  const histories = await Promise.all(fetchable.map(async pos => {
+    const symbol = resolveTicker({ ticker: pos.ticker, currency: pos.currency, type: pos.type })
+    if(!symbol) return null
+    try{
+      const r = await fetch(`/api/price?ticker=${encodeURIComponent(symbol)}&range=${yahooRange}&history=true`)
+      if(!r.ok) return null
+      const d = await r.json()
+      /* d.timestamps = [ms, ms, ...], d.closes = [price, price, ...] */
+      if(!d.timestamps?.length) return null
+      return { pos, timestamps: d.timestamps, closes: d.closes }
+    }catch(e){ return null }
+  }))
+
+  const valid = histories.filter(Boolean)
+  if(!valid.length) return null
+
+  /* Build a unified sorted timeline from all assets' timestamps */
+  const allTs = [...new Set(valid.flatMap(h => h.timestamps))].sort((a, b) => a - b)
+
+  /* For each timestamp, sum (quantity × interpolated_close) across all assets in category,
+     converting to EUR using live FX rates */
+  const values = allTs.map(ts => {
+    let total = 0
+    valid.forEach(({ pos, timestamps, closes }) => {
+      /* Find the most recent close at or before this timestamp */
+      let idx = timestamps.findLastIndex(t => t <= ts)
+      if(idx < 0) idx = 0
+      const close = closes[idx]
+      if(close == null) return
+      /* Convert to EUR using the asset's currency */
+      total += convertToEUR(close * pos.qty, pos.currency)
+    })
+    return total
+  })
+
+  /* Filter to remove leading zeros (assets not yet in portfolio at that date) */
+  const firstNonZero = values.findIndex(v => v > 0)
+  if(firstNonZero < 0) return null
+  const trimTs  = allTs.slice(firstNonZero)
+  const trimVal = values.slice(firstNonZero)
+
+  return {
+    labels: trimTs.map(ts => formatLabel(ts, period)),
+    values: trimVal
+  }
+}
+
 /* Entry point: loads all history from DB, renders chart, and binds buttons */
 function drawGrowthChart(){
   if(!db) return
@@ -975,11 +1058,12 @@ function drawGrowthChart(){
 }
 
 /* Debounced resize handler — redraws to fill new container width.
-   Needed because responsive:false disables Chart.js's own ResizeObserver. */
+   Needed because responsive:false disables Chart.js's own ResizeObserver.
+   renderGrowthChart is async so we just fire-and-forget (no await needed). */
 let _resizeTimer = null
 window.addEventListener("resize", () => {
   clearTimeout(_resizeTimer)
-  _resizeTimer = setTimeout(() => renderGrowthChart(currentPeriod, currentCat), 200)
+  _resizeTimer = setTimeout(() => { renderGrowthChart(currentPeriod, currentCat) }, 200)
 })
 
 /* Wires period buttons (1D / 1W / 1M / 3M / 1Y / 5Y / ALL) */
@@ -1009,25 +1093,48 @@ function bindCatButtons(){
 }
 
 /* Core chart render function.
-   Updates stat pills then either:
-   a) updates the existing Chart.js instance in-place (no destroy/recreate)
-   b) creates a fresh instance the very first time
-
-   IMPORTANT: ch.update("none") skips animation — this prevents
-   the canvas from being resized or recreated which caused the zoom bug. */
-function renderGrowthChart(period, cat){
+   For ALL category or 1D period: uses IndexedDB snapshots (fast, intraday).
+   For all other category + period combos: fetches real Yahoo Finance historical
+   price data via buildCategoryChartData() — giving genuinely different curves
+   per category rather than scaled copies of the All chart.
+   Updates existing Chart.js instance in-place via ch.update("none"). */
+async function renderGrowthChart(period, cat){
   cat = cat || currentCat || "ALL"
 
-  /* Filter history to the selected period; fall back to all if nothing in range */
-  const cutoff = periodMs(period)
-  let history  = allPortfolioHistory
-    .filter(h => h.timestamp >= cutoff)
-    .sort((a, b) => a.timestamp - b.timestamp)
-  if(!history.length) history = [...allPortfolioHistory].sort((a, b) => a.timestamp - b.timestamp)
-  if(!history.length) return
+  /* Show a subtle loading state on the canvas while fetching */
+  const canvasEl = document.getElementById("portfolioGrowthChart")
+  if(canvasEl && cat !== "ALL" && period !== "1D") canvasEl.style.opacity = "0.4"
 
-  const values = getCatValues(history, cat)
-  const labels  = history.map(h => formatLabel(h.timestamp, period))
+  let labels, values
+
+  /* ── Route: use real Yahoo history for category+period combos ── */
+  if(cat !== "ALL" && period !== "1D"){
+    const catData = await buildCategoryChartData(cat, period)
+    if(catData){
+      labels = catData.labels
+      values = catData.values
+    } else {
+      /* Fallback to snapshots with cats if Yahoo data unavailable (e.g. MF only) */
+      const cutoff  = periodMs(period)
+      let history   = allPortfolioHistory.filter(h => h.timestamp >= cutoff).sort((a,b)=>a.timestamp-b.timestamp)
+      if(!history.length) history = [...allPortfolioHistory].sort((a,b)=>a.timestamp-b.timestamp)
+      labels = history.map(h => formatLabel(h.timestamp, period))
+      values = getCatValues(history, cat)
+    }
+  } else {
+    /* ── Route: ALL or 1D always use snapshots ── */
+    const cutoff = periodMs(period)
+    let history  = allPortfolioHistory
+      .filter(h => h.timestamp >= cutoff)
+      .sort((a, b) => a.timestamp - b.timestamp)
+    if(!history.length) history = [...allPortfolioHistory].sort((a, b) => a.timestamp - b.timestamp)
+    if(!history.length){ if(canvasEl) canvasEl.style.opacity="1"; return }
+    labels = history.map(h => formatLabel(h.timestamp, period))
+    values = getCatValues(history, cat)
+  }
+
+  if(canvasEl) canvasEl.style.opacity = "1"
+  if(!values?.length) return
   const first   = values[0] || 0
   const last    = values[values.length - 1] || 0
   const change  = last - first
@@ -1825,6 +1932,8 @@ async function runMoversAnalysis(){
       <div class="picks-timestamp">${recs.length} actionable picks across ${portfolioPayload.length} positions (stocks + funds) · ${new Date().toLocaleString()} · Knowledge-based</div>
       <div class="picks-grid">${sections}</div>`
     result.style.display = "block"
+    /* Persist so the user can return to this analysis without regenerating */
+    try{ localStorage.setItem("capintel_picks_last", JSON.stringify({ html: result.innerHTML, ts: Date.now() })) }catch(e){}
 
   }catch(e){
     result.innerHTML     = `<p class="intel-error">❌ ${e.message}</p>`
@@ -1938,6 +2047,8 @@ async function runMarketIntelligence(){
     result.innerHTML   = `
       <div class="intel-timestamp">Analysis generated ${new Date().toLocaleString()} · Powered by Claude with live web search + extended thinking</div>
       ${html}`
+    /* Persist so the user can return without re-running the expensive API call */
+    try{ localStorage.setItem("capintel_intel_last", JSON.stringify({ html: result.innerHTML, ts: Date.now() })) }catch(e){}
 
   }catch(e){
     result.innerHTML = `<p class="intel-error">❌ ${e.message}</p><p class="intel-error" style="font-size:12px;margin-top:8px">Check Vercel logs for details.</p>`
@@ -2223,6 +2334,44 @@ function bindCSVImport(){
 /* Wires tab switching: Portfolio ↔ Insights.
    On switching to Insights: draws donuts, summaries, movers, loads news.
    The growth chart is NOT recreated on tab switch (it persists from initial load). */
+/* Restores the last generated Smart Picks and AI Intelligence results from
+   localStorage so the user can see them without re-running the API call.
+   Called every time the Insights tab is opened.
+   Shows a "Last generated on …" banner so the user knows it's cached. */
+function restoreLastAnalysis(){
+  const restoreSection = (storageKey, resultId, disclaimerId) => {
+    const el   = document.getElementById(resultId)
+    const disc = document.getElementById(disclaimerId)
+    if(!el) return
+    /* Don't overwrite if content was already generated this session */
+    if(el.innerHTML.trim() && el.style.display !== "none") return
+    try{
+      const saved = localStorage.getItem(storageKey)
+      if(!saved) return
+      const { html, ts } = JSON.parse(saved)
+      if(!html) return
+      const age    = Math.round((Date.now() - ts) / 60000)
+      const ageStr = age < 60 ? `${age}m ago` : age < 1440 ? `${Math.round(age/60)}h ago` : `${Math.round(age/1440)}d ago`
+      /* Prepend a subtle "cached" banner before the saved HTML */
+      el.innerHTML = `<div class="analysis-cached-banner">📋 Last analysis · ${ageStr} · <button class="cached-clear-btn" onclick="clearAnalysisCache('${storageKey}','${resultId}','${disclaimerId}')">Clear</button></div>` + html
+      if(disc) disc.style.display = "none"
+      el.style.display = "block"
+    }catch(e){}
+  }
+
+  restoreSection("capintel_picks_last",  "picksResult",  "picksDisclaimer")
+  restoreSection("capintel_intel_last",  "intelResult",  "intelDisclaimer")
+}
+
+/* Clears a saved analysis from localStorage and hides the result panel */
+function clearAnalysisCache(storageKey, resultId, disclaimerId){
+  try{ localStorage.removeItem(storageKey) }catch(e){}
+  const el   = document.getElementById(resultId)
+  const disc = document.getElementById(disclaimerId)
+  if(el){ el.innerHTML = ""; el.style.display = "none" }
+  if(disc) disc.style.display = ""
+}
+
 function bindTabs(){
   document.querySelectorAll(".tabBtn").forEach(btn => {
     btn.onclick = () => {
@@ -2239,6 +2388,8 @@ function bindTabs(){
         renderInsightsSummary(lastPortfolio)
         renderTopMovers(lastPortfolio)
         fetchDailyInsights(lastPortfolio, false)
+        /* Restore last analysis results without re-running the API */
+        restoreLastAnalysis()
       }
       /* portfolioTab: growth chart persists — no recreate needed here */
     }
