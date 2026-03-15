@@ -1750,9 +1750,10 @@ async function runMoversAnalysis(){
   btnText.textContent  = "🧠 Analysing portfolio…"
   result.style.display = "none"
 
-  /* Exclude Indian MFs — no public fundamentals for Claude to reason about */
+  /* Include ALL positions including MutualFunds.
+     MFs don't have live prices but Claude can still analyse cluster redundancy,
+     over-allocation to small cap, and consolidation opportunities. */
   const portfolioPayload = lastPortfolio
-    .filter(p => p.type !== "MutualFund")
     .map(p => ({
       name:            resolveDisplayName(p),
       key:             p.key,
@@ -1821,7 +1822,7 @@ async function runMoversAnalysis(){
 
     disc.style.display = "none"
     result.innerHTML   = `
-      <div class="picks-timestamp">${recs.length} actionable picks from ${portfolioPayload.length} positions · ${new Date().toLocaleString()} · Knowledge-based</div>
+      <div class="picks-timestamp">${recs.length} actionable picks across ${portfolioPayload.length} positions (stocks + funds) · ${new Date().toLocaleString()} · Knowledge-based</div>
       <div class="picks-grid">${sections}</div>`
     result.style.display = "block"
 
