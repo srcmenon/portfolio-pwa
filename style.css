@@ -884,8 +884,22 @@ header { display: none; }
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 16px;
+  align-items: start;  /* prevent sections stretching to fill row height */
 }
-@media (max-width: 768px) { .picks-grid { grid-template-columns: 1fr; } }
+/* SELL section always spans full width — it typically has many items */
+.picks-section-sell {
+  grid-column: 1 / -1;
+}
+/* Inside full-width SELL, lay items in a 2-column sub-grid for readability */
+.picks-section-sell .picks-items-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0 24px;
+}
+@media (max-width: 768px) {
+  .picks-grid { grid-template-columns: 1fr; }
+  .picks-section-sell .picks-items-grid { grid-template-columns: 1fr; }
+}
 
 .picks-section {
   background: var(--surface);
