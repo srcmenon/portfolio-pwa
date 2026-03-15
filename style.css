@@ -1075,3 +1075,20 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
 .out-down    { color:var(--red); background:rgba(244,80,106,0.1);border:1px solid rgba(244,80,106,0.2);  }
 .out-neutral { color:var(--gold); background:rgba(240,165,53,0.1);border:1px solid rgba(240,165,53,0.2); }
 .multi-src   { font-size:10px; color:#22d17a; font-weight:600; }
+
+/* ── Cached analysis banner — shown when restoring last saved analysis ── */
+.analysis-cached-banner {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; color: var(--muted);
+  padding: 6px 12px; margin-bottom: 12px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.cached-clear-btn {
+  background: none; border: none;
+  color: var(--dim); font-size: 11px;
+  cursor: pointer; padding: 0; text-decoration: underline;
+  font-family: var(--font);
+}
+.cached-clear-btn:hover { color: var(--red); }
