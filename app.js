@@ -423,13 +423,13 @@ function renderPortfolioTable(portfolio){
    Fetches historical price change % for each asset over
    1D, 1W, 1M, 6M, 1Y, 5Y periods via /api/price?range=<range>.
 
-   All ranges for a single asset are fetched in parallel.
-   Indian Mutual Funds are skipped (AMFI data has no historical range API).
+   Uses resolveTicker() — same as updatePrices() — so Indian stocks
+   get .NS suffix, EUR ETFs get .L, crypto pass through unchanged.
+   Indian Mutual Funds are skipped (AMFI has no historical range API).
 
    Results appear as coloured chips (green=up, red=down) in the
    "Performance" column. The cell shows "…" until data arrives. */
 async function loadGrowthFactors(portfolio){
-  /* MutualFund tickers are AMFI scheme codes — not Yahoo-queryable for historical ranges */
   const targets = portfolio.filter(p => p.ticker && p.type !== "MutualFund")
   const RANGES  = [
     { l:"1W", r:"5d"  },
@@ -444,16 +444,19 @@ async function loadGrowthFactors(portfolio){
     const cell   = document.getElementById(cellId)
     if(!cell) return
 
+    /* resolveTicker adds correct exchange suffix (.NS for NSE, .L for LSE, etc.)
+       Without this, BAJFINANCE → Yahoo 404; with it → BAJFINANCE.NS → correct price */
+    const symbol = resolveTicker({ ticker: pos.ticker, currency: pos.currency, type: pos.type })
+    if(!symbol){ cell.innerHTML = `<span class="perf-loading">–</span>`; return }
+
     try{
-      /* Fetch current price (for 1D %) plus all historical ranges — all in parallel */
       const [dayRes, ...rangeRes] = await Promise.all([
-        fetch(`/api/price?ticker=${encodeURIComponent(pos.ticker)}`),
-        ...RANGES.map(({ r }) => fetch(`/api/price?ticker=${encodeURIComponent(pos.ticker)}&range=${r}`))
+        fetch(`/api/price?ticker=${encodeURIComponent(symbol)}`),
+        ...RANGES.map(({ r }) => fetch(`/api/price?ticker=${encodeURIComponent(symbol)}&range=${r}`))
       ])
 
       const chips = []
 
-      /* 1D change comes from the current-price endpoint (changePercent field) */
       if(dayRes.ok){
         const d = await dayRes.json()
         if(d.changePercent != null){
@@ -463,7 +466,6 @@ async function loadGrowthFactors(portfolio){
         }
       }
 
-      /* Longer ranges from the historical endpoint (rangePct = first→last close % change) */
       await Promise.all(rangeRes.map(async (r, i) => {
         if(!r.ok) return
         const d = await r.json()
