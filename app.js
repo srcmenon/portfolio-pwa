@@ -419,75 +419,169 @@ function renderPortfolioTable(portfolio){
   loadGrowthFactors(portfolio)
 }
 
-/* ── PERFORMANCE GROWTH FACTORS ──────────────────────────
-   Fetches 1D, 1W, 1M, 1Y change % for each asset via Yahoo Finance.
-
-   Why sequential (not parallel)?
-   With 60+ stocks × 6 requests = 360+ simultaneous Vercel calls,
-   parallel fetching hits rate limits and every call silently fails.
-   Sequential per-asset (one asset at a time, 6 ranges in parallel)
-   keeps concurrent Vercel calls to ≤6 and renders chips progressively.
-
-   Only the top 25 positions by EUR value are processed — tiny positions
-   don't need historical context. MutualFunds skipped (no Yahoo history). */
-async function loadGrowthFactors(portfolio){
-  const RANGES = [
-    { l:"1W", r:"5d"  },
-    { l:"1M", r:"1mo" },
-    { l:"1Y", r:"1y"  },
-    { l:"5Y", r:"5y"  }
-  ]
-
-  /* Portfolio position objects use .key as the ticker (set in groupAssets/calculatePortfolio).
-     Filter: skip MutualFunds (scheme codes, not Yahoo tickers) and positions with no key. */
-  const targets = portfolio
-    .filter(p => p.key && p.type !== "MutualFund")
-    .sort((a, b) => (b.totalCurrentEUR || 0) - (a.totalCurrentEUR || 0))
-    .slice(0, 25)
-
-  for(const pos of targets){
+/* ── PERFORMANCE CHART BUTTON ─────────────────────────────
+   Replaces the old chip approach. Renders a small "📈" button in the
+   Performance column for each non-MF position.
+   Clicking the button opens a modal with a Chart.js price chart and
+   period tabs (1D / 1W / 1M / 1Y / 5Y).
+   Data is fetched on demand when the modal opens — nothing pre-loaded. */
+function loadGrowthFactors(portfolio){
+  const targets = portfolio.filter(p => p.key && p.type !== "MutualFund")
+  targets.forEach(pos => {
     const cellId = "perf_" + pos.key.replace(/[^a-zA-Z0-9]/g, "_")
     const cell   = document.getElementById(cellId)
-    if(!cell) continue
+    if(!cell) return
+    const symbol  = resolveTicker({ ticker: pos.key, currency: pos.currency, type: pos.type })
+    const name    = resolveDisplayName(pos)
+    if(!symbol){ cell.innerHTML = `<span class="perf-loading">–</span>`; return }
+    cell.innerHTML =
+      `<button class="perf-chart-btn" onclick="openPerfModal('${symbol}','${name.replace(/'/g,"\\'")}','${pos.currency}')">📈</button>`
+  })
+}
 
-    /* resolveTicker needs ticker+currency+type — pos.key IS the raw ticker */
-    const symbol = resolveTicker({ ticker: pos.key, currency: pos.currency, type: pos.type })
-    if(!symbol){ cell.innerHTML = `<span class="perf-loading">–</span>`; continue }
+/* ── PERFORMANCE MODAL ────────────────────────────────────
+   Opens a floating modal with a mini price chart for the given symbol.
+   Period buttons fetch and render the chart for 1D/1W/1M/1Y/5Y.
+   Chart.js instance is stored in window._perfChartInstance. */
+let _perfSymbol = null
+let _perfName   = null
+let _perfCur    = null
 
+function openPerfModal(symbol, name, currency){
+  _perfSymbol = symbol
+  _perfName   = name
+  _perfCur    = currency
+
+  const modal = document.getElementById("perfModal")
+  if(!modal) return
+  document.getElementById("perfModalTitle").textContent = name
+  modal.classList.add("open")
+
+  /* Reset period buttons, activate 1M by default */
+  document.querySelectorAll(".perf-period-btn").forEach(b => b.classList.remove("active"))
+  const def = document.querySelector('.perf-period-btn[data-range="1mo"]')
+  if(def) def.classList.add("active")
+
+  loadPerfChart("1mo", "1M")
+}
+
+function closePerfModal(){
+  const modal = document.getElementById("perfModal")
+  if(modal) modal.classList.remove("open")
+  if(window._perfChartInstance){ window._perfChartInstance.destroy(); window._perfChartInstance = null }
+}
+
+function setPerfPeriod(btn, range, label){
+  document.querySelectorAll(".perf-period-btn").forEach(b => b.classList.remove("active"))
+  btn.classList.add("active")
+  loadPerfChart(range, label)
+}
+
+async function loadPerfChart(range, label){
+  const canvas  = document.getElementById("perfModalCanvas")
+  const loading = document.getElementById("perfModalLoading")
+  const statEl  = document.getElementById("perfModalStat")
+  if(!canvas || !loading) return
+
+  loading.style.display = "flex"
+  canvas.style.display  = "none"
+  statEl.textContent    = ""
+
+  if(window._perfChartInstance){ window._perfChartInstance.destroy(); window._perfChartInstance = null }
+
+  /* For 1D use current price + changePercent — no history endpoint */
+  if(range === "1d"){
     try{
-      /* 1D from current-price endpoint + historical ranges — all in parallel per asset */
-      const [dayRes, ...rangeRes] = await Promise.all([
-        fetch(`/api/price?ticker=${encodeURIComponent(symbol)}`),
-        ...RANGES.map(({ r }) => fetch(`/api/price?ticker=${encodeURIComponent(symbol)}&range=${r}`))
-      ])
+      const r = await fetch(`/api/price?ticker=${encodeURIComponent(_perfSymbol)}`)
+      if(!r.ok) throw new Error("price fetch failed")
+      const d = await r.json()
+      loading.style.display = "none"
+      const pct = d.changePercent
+      const cls = pct >= 0 ? "pf-up" : "pf-dn"
+      const s   = pct >= 0 ? "+" : ""
+      statEl.innerHTML = `<span class="${cls}" style="font-size:22px;font-weight:700;font-family:var(--mono)">${s}${pct != null ? pct.toFixed(2)+"%" : "–"}</span> <span style="font-size:12px;color:var(--dim)">today vs prev close</span>`
+      canvas.style.display = "none"
+    }catch(e){
+      loading.style.display = "none"
+      statEl.textContent = "No data"
+    }
+    return
+  }
 
-      const chips = []
+  try{
+    const r = await fetch(`/api/price?ticker=${encodeURIComponent(_perfSymbol)}&range=${range}&history=true`)
+    if(!r.ok) throw new Error("history fetch failed")
+    const d = await r.json()
+    if(!d.timestamps?.length) throw new Error("no data")
 
-      if(dayRes.ok){
-        const d = await dayRes.json()
-        if(d.changePercent != null){
-          const s   = d.changePercent >= 0 ? "+" : ""
-          const cls = d.changePercent >= 0 ? "pf-up" : "pf-dn"
-          chips.push(`<span class="pf-chip ${cls}">${s}${d.changePercent.toFixed(1)}%<sub>1D</sub></span>`)
+    const labels = d.timestamps.map(ts => {
+      const dt = new Date(ts)
+      if(range === "5d") return dt.toLocaleDateString([], {month:"short", day:"numeric"})
+      if(range === "1mo") return dt.toLocaleDateString([], {month:"short", day:"numeric"})
+      if(range === "3mo" || range === "6mo") return dt.toLocaleDateString([], {month:"short", day:"numeric"})
+      return dt.toLocaleDateString([], {year:"2-digit", month:"short"})
+    })
+    const values = d.closes
+    const first  = values[0], last = values[values.length-1]
+    const pct    = first > 0 ? ((last-first)/first)*100 : 0
+    const isUp   = pct >= 0
+    const color  = isUp ? "#22d17a" : "#f4506a"
+    const s      = isUp ? "+" : ""
+
+    statEl.innerHTML =
+      `<span style="font-size:22px;font-weight:700;font-family:var(--mono);color:${color}">${s}${pct.toFixed(2)}%</span>` +
+      `<span style="font-size:12px;color:var(--dim);margin-left:8px">over ${label}</span>` +
+      `<span style="font-size:12px;color:var(--muted);margin-left:12px">${_perfCur} ${last.toLocaleString(undefined,{maximumFractionDigits:2})}</span>`
+
+    loading.style.display = "none"
+    canvas.style.display  = "block"
+
+    const rgb = isUp ? "34,209,122" : "244,80,106"
+    window._perfChartInstance = new Chart(canvas, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          borderColor: color,
+          borderWidth: 2,
+          pointRadius: values.length > 60 ? 0 : 2,
+          pointHoverRadius: 5,
+          fill: true,
+          backgroundColor: ctx => {
+            const g = ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height)
+            g.addColorStop(0, `rgba(${rgb},0.3)`)
+            g.addColorStop(1, `rgba(${rgb},0.02)`)
+            return g
+          },
+          tension: 0.3
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        devicePixelRatio: window.devicePixelRatio || 2,
+        interaction: { mode:"index", intersect:false },
+        plugins: {
+          legend: { display:false },
+          tooltip: {
+            backgroundColor: "rgba(8,16,40,0.97)",
+            titleColor: "#8faac8", bodyColor: "#dce8ff",
+            borderColor: `rgba(${rgb},0.4)`, borderWidth: 1,
+            callbacks: {
+              label: ctx => `${_perfCur} ${ctx.raw.toLocaleString(undefined,{maximumFractionDigits:2})}`
+            }
+          }
+        },
+        scales: {
+          x: { ticks:{ color:"#8fa3c4", font:{size:10}, maxTicksLimit:7, maxRotation:0 }, grid:{ color:"rgba(91,156,246,0.06)" }, border:{display:false} },
+          y: { ticks:{ color:"#8fa3c4", font:{size:10}, maxTicksLimit:6 }, grid:{ color:"rgba(91,156,246,0.06)" }, border:{display:false} }
         }
       }
-
-      for(let i = 0; i < rangeRes.length; i++){
-        if(!rangeRes[i].ok) continue
-        const d = await rangeRes[i].json()
-        if(d.rangePct == null) continue
-        const s   = d.rangePct >= 0 ? "+" : ""
-        const cls = d.rangePct >= 0 ? "pf-up" : "pf-dn"
-        chips.push(`<span class="pf-chip ${cls}">${s}${d.rangePct.toFixed(1)}%<sub>${RANGES[i].l}</sub></span>`)
-      }
-
-      cell.innerHTML = chips.length
-        ? `<div class="pf-chips">${chips.join("")}</div>`
-        : `<span class="perf-loading">–</span>`
-
-    }catch(e){
-      cell.innerHTML = `<span class="perf-loading">–</span>`
-    }
+    })
+  }catch(e){
+    loading.style.display = "none"
+    statEl.textContent = "Could not load chart data"
   }
 }
 
