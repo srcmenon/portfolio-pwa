@@ -66,6 +66,11 @@ body {
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
+  /* Required for position:sticky to work correctly on #tabs and #timeBar.
+     Without height+overflow, sticky elements also appear at their natural
+     document-flow position at the end of the page, creating a duplicate header. */
+  height: 100vh;
+  overflow-y: auto;
 }
 
 /* ══ ROW 1: TAB BAR (tabs + ticker + brand) ══ */
