@@ -65,20 +65,26 @@ body {
   font-family: var(--font);
   background: var(--bg);
   color: var(--text);
-  height: 100vh;
-  overflow: hidden; /* body itself never scrolls — #appScroll does */
+  /* Use dvh (dynamic viewport height) where supported — correctly excludes
+     iOS browser chrome. Falls back to 100vh for older browsers. */
+  height: 100dvh;
+  height: 100vh; /* fallback for browsers without dvh support */
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
 /* ══ ROW 1: TAB BAR (tabs + ticker + brand) ══ */
 #tabs {
-  flex-shrink: 0; /* never compress — always full height */
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   padding: 0 16px 0 24px;
+  /* On iOS standalone mode with viewport-fit=cover, the status bar overlaps
+     the top of the app. env(safe-area-inset-top) adds the correct padding. */
+  padding-top: max(0px, env(safe-area-inset-top));
   gap: 0;
   min-height: 52px;
   z-index: 100;
@@ -197,7 +203,11 @@ body {
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  min-height: 0; /* required for flex children to scroll correctly */
+  min-height: 0; /* required for flex children to scroll correctly in all browsers */
+  /* iOS momentum scrolling — without this, scrolling feels sluggish on iPhone */
+  -webkit-overflow-scrolling: touch;
+  /* Pad bottom for iPhone home indicator so last content isn't hidden */
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 .tabContent { display: none; }
