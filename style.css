@@ -1100,17 +1100,95 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
   color: var(--dim); font-size: 13px; padding: 16px 0;
 }
 
-/* ── Performance chips in asset table ── */
-.perf-cell { min-width: 220px; padding: 6px 8px; }
+/* ── Performance chart button in asset table ── */
+.perf-cell { width: 48px; padding: 4px 8px; text-align: center; }
 .perf-loading { color: var(--muted); font-size: 11px; }
-.pf-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.pf-chip {
-  font-size: 10px; font-weight: 700; font-family: var(--mono);
-  padding: 2px 5px; border-radius: 4px; white-space: nowrap;
+.perf-chart-btn {
+  background: rgba(91,156,246,0.1);
+  border: 1px solid rgba(91,156,246,0.25);
+  color: var(--blue); border-radius: 6px;
+  padding: 4px 8px; font-size: 14px;
+  cursor: pointer; transition: all 0.15s;
+  line-height: 1;
 }
-.pf-chip sub { font-size: 8px; opacity: 0.75; margin-left: 1px; }
-.pf-up { color: #22d17a; background: rgba(34,209,122,0.1); border: 1px solid rgba(34,209,122,0.2); }
-.pf-dn { color: var(--red); background: rgba(244,80,106,0.1); border: 1px solid rgba(244,80,106,0.2); }
+.perf-chart-btn:hover {
+  background: rgba(91,156,246,0.22);
+  border-color: var(--blue);
+  transform: scale(1.08);
+}
+
+/* ── Performance chart modal ── */
+.perf-modal-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(2,6,18,0.75);
+  backdrop-filter: blur(4px);
+  align-items: center; justify-content: center;
+}
+.perf-modal-overlay.open { display: flex; }
+
+.perf-modal {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+  width: min(560px, 94vw);
+  overflow: hidden;
+  animation: fadeUp 0.2s ease both;
+}
+
+.perf-modal-header {
+  display: flex; justify-content: space-between;
+  align-items: flex-start; padding: 18px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.perf-modal-title {
+  font-size: 14px; font-weight: 700; color: var(--text);
+  margin-bottom: 6px;
+}
+.perf-modal-stat { min-height: 32px; }
+.perf-modal-close {
+  background: none; border: none;
+  color: var(--muted); font-size: 16px;
+  cursor: pointer; padding: 2px 6px;
+  border-radius: 4px; transition: color 0.15s;
+  flex-shrink: 0; margin-left: 12px;
+}
+.perf-modal-close:hover { color: var(--text); }
+
+.perf-period-tabs {
+  display: flex; gap: 4px; padding: 10px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.perf-period-btn {
+  padding: 5px 14px; border: 1px solid var(--border);
+  border-radius: 6px; background: transparent;
+  color: var(--dim); font-family: var(--font);
+  font-size: 12px; font-weight: 600;
+  cursor: pointer; transition: all 0.15s;
+}
+.perf-period-btn:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
+.perf-period-btn.active {
+  background: var(--blue); color: #fff;
+  border-color: var(--blue);
+  box-shadow: 0 2px 8px rgba(91,156,246,0.4);
+}
+
+.perf-modal-body {
+  padding: 16px 20px 20px;
+  height: 240px;
+  position: relative;
+}
+.perf-modal-loading {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  gap: 10px; color: var(--dim); font-size: 13px;
+}
+#perfModalCanvas {
+  width: 100% !important;
+  height: 100% !important;
+}
 
 /* ── Outlook badge in insights ── */
 .out-badge {
