@@ -65,15 +65,15 @@ body {
   font-family: var(--font);
   background: var(--bg);
   color: var(--text);
-  min-height: 100vh;
-  /* padding-top reserves space for the two fixed header bars:
-     #tabs (52px) + #timeBar (~46px) = 98px total */
-  padding-top: 98px;
+  height: 100vh;
+  overflow: hidden; /* body itself never scrolls — #appScroll does */
+  display: flex;
+  flex-direction: column;
 }
 
 /* ══ ROW 1: TAB BAR (tabs + ticker + brand) ══ */
 #tabs {
-  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  flex-shrink: 0; /* never compress — always full height */
   display: flex;
   align-items: center;
   background: var(--surface);
@@ -81,6 +81,7 @@ body {
   padding: 0 16px 0 24px;
   gap: 0;
   min-height: 52px;
+  z-index: 100;
 }
 .tabBtn {
   padding: 16px 24px;
@@ -136,8 +137,7 @@ body {
 
 /* ══ ROW 2: TIMEZONE CLOCK BAR ══ */
 #timeBar {
-  position: fixed;
-  top: 52px; left: 0; right: 0;
+  flex-shrink: 0;
   z-index: 99;
   background: rgba(10,16,34,0.97);
   border-bottom: 1px solid var(--border);
@@ -187,6 +187,18 @@ body {
 }
 .time-dot.open  { background: var(--green); box-shadow: 0 0 6px var(--green); }
 .time-dot.closed { background: var(--muted); }
+
+/* ══ ROW 3: SCROLLABLE CONTENT AREA ══
+   #appScroll is a flex child that fills all remaining viewport height.
+   Only this div scrolls — the two header bars above it never move.
+   This permanently eliminates the "duplicate header at end of page" bug
+   without relying on position:sticky or position:fixed. */
+#appScroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0; /* required for flex children to scroll correctly */
+}
 
 .tabContent { display: none; }
 .tabContent.active { display: block; }
