@@ -66,16 +66,14 @@ body {
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
-  /* Required for position:sticky to work correctly on #tabs and #timeBar.
-     Without height+overflow, sticky elements also appear at their natural
-     document-flow position at the end of the page, creating a duplicate header. */
-  height: 100vh;
-  overflow-y: auto;
+  /* padding-top reserves space for the two fixed header bars:
+     #tabs (52px) + #timeBar (~46px) = 98px total */
+  padding-top: 98px;
 }
 
 /* ══ ROW 1: TAB BAR (tabs + ticker + brand) ══ */
 #tabs {
-  position: sticky; top: 0; z-index: 100;
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
   display: flex;
   align-items: center;
   background: var(--surface);
@@ -138,8 +136,8 @@ body {
 
 /* ══ ROW 2: TIMEZONE CLOCK BAR ══ */
 #timeBar {
-  position: sticky;
-  top: 52px;
+  position: fixed;
+  top: 52px; left: 0; right: 0;
   z-index: 99;
   background: rgba(10,16,34,0.97);
   border-bottom: 1px solid var(--border);
