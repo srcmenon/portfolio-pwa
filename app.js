@@ -438,19 +438,20 @@ async function loadGrowthFactors(portfolio){
     { l:"5Y", r:"5y"  }
   ]
 
-  /* Top 25 by current EUR value — the rest show "–" */
+  /* Portfolio position objects use .key as the ticker (set in groupAssets/calculatePortfolio).
+     Filter: skip MutualFunds (scheme codes, not Yahoo tickers) and positions with no key. */
   const targets = portfolio
-    .filter(p => p.ticker && p.type !== "MutualFund")
+    .filter(p => p.key && p.type !== "MutualFund")
     .sort((a, b) => (b.totalCurrentEUR || 0) - (a.totalCurrentEUR || 0))
     .slice(0, 25)
 
-  /* Process one asset at a time — chips appear progressively as each resolves */
   for(const pos of targets){
     const cellId = "perf_" + pos.key.replace(/[^a-zA-Z0-9]/g, "_")
     const cell   = document.getElementById(cellId)
     if(!cell) continue
 
-    const symbol = resolveTicker({ ticker: pos.ticker, currency: pos.currency, type: pos.type })
+    /* resolveTicker needs ticker+currency+type — pos.key IS the raw ticker */
+    const symbol = resolveTicker({ ticker: pos.key, currency: pos.currency, type: pos.type })
     if(!symbol){ cell.innerHTML = `<span class="perf-loading">–</span>`; continue }
 
     try{
@@ -1002,12 +1003,12 @@ async function buildCategoryChartData(cat, period){
   if(!assets.length) return null
 
   /* MutualFunds have no Yahoo Finance historical data — fall back to snapshots */
-  const fetchable = assets.filter(a => a.ticker && a.type !== "MutualFund")
+  const fetchable = assets.filter(a => a.key && a.type !== "MutualFund")
   if(!fetchable.length) return null
 
   /* Fetch full close history for each asset in parallel */
   const histories = await Promise.all(fetchable.map(async pos => {
-    const symbol = resolveTicker({ ticker: pos.ticker, currency: pos.currency, type: pos.type })
+    const symbol = resolveTicker({ ticker: pos.key, currency: pos.currency, type: pos.type })
     if(!symbol) return null
     try{
       const r = await fetch(`/api/price?ticker=${encodeURIComponent(symbol)}&range=${yahooRange}&history=true`)
