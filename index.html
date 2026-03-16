@@ -2,11 +2,22 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- viewport-fit=cover lets the app extend under the notch; safe-area-inset-* CSS vars handle spacing -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>CapIntel</title>
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="style.css">
 <link rel="icon" href="icons/icon-192.png">
+
+<!-- ── iOS PWA meta tags ── -->
+<!-- Tells iOS Safari to run this as a full-screen app (no browser chrome) -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<!-- Sets the status bar style in standalone mode -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- App name shown under the home screen icon -->
+<meta name="apple-mobile-web-app-title" content="CapIntel">
+<!-- Touch icon for iOS home screen (Safari ignores the manifest icons) -->
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
 </head>
 <body>
 
