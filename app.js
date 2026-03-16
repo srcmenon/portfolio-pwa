@@ -420,36 +420,41 @@ function renderPortfolioTable(portfolio){
 }
 
 /* ── PERFORMANCE GROWTH FACTORS ──────────────────────────
-   Fetches historical price change % for each asset over
-   1D, 1W, 1M, 6M, 1Y, 5Y periods via /api/price?range=<range>.
+   Fetches 1D, 1W, 1M, 1Y change % for each asset via Yahoo Finance.
 
-   Uses resolveTicker() — same as updatePrices() — so Indian stocks
-   get .NS suffix, EUR ETFs get .L, crypto pass through unchanged.
-   Indian Mutual Funds are skipped (AMFI has no historical range API).
+   Why sequential (not parallel)?
+   With 60+ stocks × 6 requests = 360+ simultaneous Vercel calls,
+   parallel fetching hits rate limits and every call silently fails.
+   Sequential per-asset (one asset at a time, 6 ranges in parallel)
+   keeps concurrent Vercel calls to ≤6 and renders chips progressively.
 
-   Results appear as coloured chips (green=up, red=down) in the
-   "Performance" column. The cell shows "…" until data arrives. */
+   Only the top 25 positions by EUR value are processed — tiny positions
+   don't need historical context. MutualFunds skipped (no Yahoo history). */
 async function loadGrowthFactors(portfolio){
-  const targets = portfolio.filter(p => p.ticker && p.type !== "MutualFund")
-  const RANGES  = [
+  const RANGES = [
     { l:"1W", r:"5d"  },
     { l:"1M", r:"1mo" },
-    { l:"6M", r:"6mo" },
     { l:"1Y", r:"1y"  },
     { l:"5Y", r:"5y"  }
   ]
 
-  await Promise.all(targets.map(async pos => {
+  /* Top 25 by current EUR value — the rest show "–" */
+  const targets = portfolio
+    .filter(p => p.ticker && p.type !== "MutualFund")
+    .sort((a, b) => (b.totalCurrentEUR || 0) - (a.totalCurrentEUR || 0))
+    .slice(0, 25)
+
+  /* Process one asset at a time — chips appear progressively as each resolves */
+  for(const pos of targets){
     const cellId = "perf_" + pos.key.replace(/[^a-zA-Z0-9]/g, "_")
     const cell   = document.getElementById(cellId)
-    if(!cell) return
+    if(!cell) continue
 
-    /* resolveTicker adds correct exchange suffix (.NS for NSE, .L for LSE, etc.)
-       Without this, BAJFINANCE → Yahoo 404; with it → BAJFINANCE.NS → correct price */
     const symbol = resolveTicker({ ticker: pos.ticker, currency: pos.currency, type: pos.type })
-    if(!symbol){ cell.innerHTML = `<span class="perf-loading">–</span>`; return }
+    if(!symbol){ cell.innerHTML = `<span class="perf-loading">–</span>`; continue }
 
     try{
+      /* 1D from current-price endpoint + historical ranges — all in parallel per asset */
       const [dayRes, ...rangeRes] = await Promise.all([
         fetch(`/api/price?ticker=${encodeURIComponent(symbol)}`),
         ...RANGES.map(({ r }) => fetch(`/api/price?ticker=${encodeURIComponent(symbol)}&range=${r}`))
@@ -466,15 +471,14 @@ async function loadGrowthFactors(portfolio){
         }
       }
 
-      await Promise.all(rangeRes.map(async (r, i) => {
-        if(!r.ok) return
-        const d = await r.json()
-        if(d.rangePct == null) return
-        const { l } = RANGES[i]
-        const s     = d.rangePct >= 0 ? "+" : ""
-        const cls   = d.rangePct >= 0 ? "pf-up" : "pf-dn"
-        chips.push(`<span class="pf-chip ${cls}">${s}${d.rangePct.toFixed(1)}%<sub>${l}</sub></span>`)
-      }))
+      for(let i = 0; i < rangeRes.length; i++){
+        if(!rangeRes[i].ok) continue
+        const d = await rangeRes[i].json()
+        if(d.rangePct == null) continue
+        const s   = d.rangePct >= 0 ? "+" : ""
+        const cls = d.rangePct >= 0 ? "pf-up" : "pf-dn"
+        chips.push(`<span class="pf-chip ${cls}">${s}${d.rangePct.toFixed(1)}%<sub>${RANGES[i].l}</sub></span>`)
+      }
 
       cell.innerHTML = chips.length
         ? `<div class="pf-chips">${chips.join("")}</div>`
@@ -483,7 +487,7 @@ async function loadGrowthFactors(portfolio){
     }catch(e){
       cell.innerHTML = `<span class="perf-loading">–</span>`
     }
-  }))
+  }
 }
 
 
