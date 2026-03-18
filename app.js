@@ -262,6 +262,8 @@ function calculatePortfolio(groups){
     const avgBuy         = qty ? totalBuyLocal / qty : 0
     /* Use the most recent currentPrice from any lot; fall back to avgBuy */
     const currentPrice   = list.reduce((p, c) => c.currentPrice || p, 0) || avgBuy
+    /* Use the most recent priceUpdatedAt across all lots */
+    const priceUpdatedAt = list.reduce((latest, c) => Math.max(latest, c.priceUpdatedAt || 0), 0) || null
     const totalCurrentLocal = currentPrice * qty
     const buyEUR         = convertToEUR(avgBuy,       currency)
     const currentEUR     = convertToEUR(currentPrice, currency)
@@ -280,6 +282,7 @@ function calculatePortfolio(groups){
       totalBuyEUR,   totalCurrentEUR,
       profitLocal,   profitEUR,
       growth,        lastDate,
+      priceUpdatedAt,
       list
     })
   })
@@ -371,6 +374,9 @@ function renderPortfolioTable(portfolio){
       <td>
         <span class="num">${formatCurrency(pos.currentPrice, pos.currency)}</span>
         <span class="eurValue">${formatCurrency(convertToEUR(pos.currentPrice, pos.currency), "EUR")}</span>
+        ${pos.priceUpdatedAt
+          ? priceAge(pos.priceUpdatedAt)
+          : `<span class="price-age pa-stale">not fetched</span>`}
       </td>
       <td>
         <span class="num">${formatCurrency(pos.totalBuyLocal, pos.currency)}</span>
@@ -860,7 +866,7 @@ async function updatePrices(){
         : price
 
       const tx = db.transaction("assets", "readwrite")
-      tx.objectStore("assets").put({ ...a, currentPrice: adjustedPrice })
+      tx.objectStore("assets").put({ ...a, currentPrice: adjustedPrice, priceUpdatedAt: Date.now() })
     }
   }
 
@@ -1935,6 +1941,21 @@ function timeAgo(ms){
   if(h < 1)  return Math.floor(diff / 60000) + "m ago"
   if(h < 24) return h + "h ago"
   return Math.floor(h / 24) + "d ago"
+}
+
+/* Formats priceUpdatedAt for display under the current price cell.
+   Shows in green if fresh (<10 min), amber if aging (10min–2h), red if stale (>2h). */
+function priceAge(ts){
+  if(!ts) return ""
+  const diff = Date.now() - ts
+  const mins = Math.floor(diff / 60000)
+  const hrs  = Math.floor(diff / 3600000)
+  let label, cls
+  if(mins < 1)   { label = "just now";         cls = "pa-fresh" }
+  else if(mins < 60) { label = `${mins}m ago`; cls = mins < 10 ? "pa-fresh" : "pa-aging" }
+  else if(hrs < 24)  { label = `${hrs}h ago`;  cls = "pa-stale" }
+  else               { label = `${Math.floor(hrs/24)}d ago`; cls = "pa-stale" }
+  return `<span class="price-age ${cls}">${label}</span>`
 }
 
 
