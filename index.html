@@ -164,89 +164,74 @@
   </div>
 
   <div id="assetForm" class="card">
-    <h3>Backup & Restore</h3>
 
-    <!-- Backup / Restore — solves iOS PWA storage isolation -->
-    <div class="backup-section" style="grid-column:1/-1">
-      <p class="backup-desc">
-        💡 <strong>iPhone users:</strong> Safari and the home screen app store data separately.
-        Export a backup in Safari, then import it in the home screen app to transfer your portfolio.
-      </p>
-      <div class="backup-btns">
-        <button id="exportBackupBtn" class="backup-btn-export" onclick="exportBackup()">
-          💾 Export Backup
-        </button>
-        <label class="backup-btn-import" for="importBackupFile">
-          📂 Import Backup
-        </label>
-        <input type="file" id="importBackupFile" accept=".json" style="display:none"
-               onchange="importBackup(this.files[0]); this.value=''">
+    <!-- ══ DATA MANAGEMENT: all import/export/backup in one place ══ -->
+    <h3>Data Management</h3>
+    <div class="data-mgmt-grid" style="grid-column:1/-1">
+
+      <!-- Backup/Restore (JSON — includes chart history, use for device transfer) -->
+      <div class="data-mgmt-block">
+        <div class="data-mgmt-label">💾 Full Backup <span class="data-mgmt-note">JSON · includes chart history</span></div>
+        <p class="data-mgmt-desc">Use this to transfer your portfolio to another device or browser (e.g. iPhone home screen app). Restores everything including growth chart history.</p>
+        <div class="data-mgmt-btns">
+          <button class="dmb-primary" onclick="exportBackup()">⬇ Export Backup</button>
+          <label class="dmb-secondary" for="importBackupFile">⬆ Import Backup</label>
+          <input type="file" id="importBackupFile" accept=".json" style="display:none"
+                 onchange="importBackup(this.files[0]); this.value=''">
+        </div>
+        <div id="backupStatus" class="data-mgmt-status"></div>
       </div>
-      <div id="backupStatus" class="backup-status"></div>
+
+      <!-- CSV Export/Import (human-readable, works with Excel, no history) -->
+      <div class="data-mgmt-block">
+        <div class="data-mgmt-label">📊 CSV Export / Import <span class="data-mgmt-note">Excel-compatible · assets only</span></div>
+        <p class="data-mgmt-desc">Human-readable format. Use to edit buy lots in a spreadsheet, share with others, or as a simple backup of your asset list.</p>
+        <div class="data-mgmt-btns">
+          <button class="dmb-primary" id="exportCSV">⬇ Export CSV</button>
+          <label class="dmb-secondary" for="csvFile">⬆ Import CSV</label>
+          <input type="file" id="csvFile" accept=".csv" style="display:none"
+                 onchange="document.getElementById('importCSV').click()">
+          <button id="importCSV" style="display:none"></button>
+        </div>
+        <details class="csv-guide" style="margin-top:8px">
+          <summary class="csv-guide-summary">📋 CSV format guide</summary>
+          <div class="csv-guide-body">
+            <p class="csv-guide-intro">One row per purchase lot. Columns:</p>
+            <div class="csv-format-table">
+              <div class="csv-fmt-row csv-fmt-header">
+                <span>#</span><span>Column</span><span>Required?</span><span>Example</span>
+              </div>
+              <div class="csv-fmt-row"><span>1</span><span>Date</span><span class="csv-opt">optional</span><span>2024-03-15</span></div>
+              <div class="csv-fmt-row"><span>2</span><span>Name</span><span class="csv-req">required</span><span>Apple Inc</span></div>
+              <div class="csv-fmt-row"><span>3</span><span>Ticker</span><span class="csv-req">required</span><span>AAPL</span></div>
+              <div class="csv-fmt-row"><span>4</span><span>Broker</span><span class="csv-opt">optional</span><span>Scalable</span></div>
+              <div class="csv-fmt-row"><span>5</span><span>Type</span><span class="csv-opt">optional</span><span>Stock · ETF · MutualFund</span></div>
+              <div class="csv-fmt-row"><span>6</span><span>Quantity</span><span class="csv-req">required</span><span>10</span></div>
+              <div class="csv-fmt-row"><span>7</span><span>Price</span><span class="csv-req">required</span><span>178.50</span></div>
+              <div class="csv-fmt-row"><span>8</span><span>Currency</span><span class="csv-opt">optional</span><span>EUR · USD · INR</span></div>
+            </div>
+            <p class="csv-guide-example"><strong>Example:</strong><br>
+              <code>2024-03-15,Apple Inc,AAPL,Scalable,Stock,10,178.50,EUR</code>
+            </p>
+          </div>
+        </details>
+      </div>
+
     </div>
 
-    <hr style="grid-column:1/-1">
-    <h3>Import CSV</h3>
-
-    <!-- CSV Format Guide -->
-    <details class="csv-guide" style="grid-column:1/-1">
-      <summary class="csv-guide-summary">📋 CSV format guide — click to expand</summary>
-      <div class="csv-guide-body">
-        <p class="csv-guide-intro">Your file must be a plain <code>.csv</code> with <strong>one row per purchase lot</strong>. Columns can be in either of these two orders:</p>
-        <div class="csv-format-table">
-          <div class="csv-fmt-row csv-fmt-header">
-            <span>#</span><span>Column</span><span>Required?</span><span>Example</span>
-          </div>
-          <div class="csv-fmt-row">
-            <span>1</span><span>Date</span><span class="csv-opt">optional</span><span>2024-03-15</span>
-          </div>
-          <div class="csv-fmt-row">
-            <span>2</span><span>Name</span><span class="csv-req">required</span><span>Apple Inc</span>
-          </div>
-          <div class="csv-fmt-row">
-            <span>3</span><span>Ticker</span><span class="csv-req">required</span><span>AAPL</span>
-          </div>
-          <div class="csv-fmt-row">
-            <span>4</span><span>Broker</span><span class="csv-opt">optional</span><span>Scalable</span>
-          </div>
-          <div class="csv-fmt-row">
-            <span>5</span><span>Type</span><span class="csv-opt">optional</span><span>Stock · ETF · MutualFund · Commodity</span>
-          </div>
-          <div class="csv-fmt-row">
-            <span>6</span><span>Quantity</span><span class="csv-req">required</span><span>10</span>
-          </div>
-          <div class="csv-fmt-row">
-            <span>7</span><span>Price</span><span class="csv-req">required</span><span>178.50</span>
-          </div>
-          <div class="csv-fmt-row">
-            <span>8</span><span>Currency</span><span class="csv-opt">optional</span><span>EUR · USD · INR</span>
-          </div>
-        </div>
-        <p class="csv-guide-example"><strong>Example row (with date):</strong><br>
-          <code>2024-03-15,Apple Inc,AAPL,Scalable,Stock,10,178.50,EUR</code>
-        </p>
-        <p class="csv-guide-example"><strong>Example row (without date — 7 columns):</strong><br>
-          <code>Apple Inc,AAPL,Scalable,Stock,10,178.50,EUR</code>
-        </p>
-        <ul class="csv-guide-tips">
-          <li>Each row = one <em>purchase lot</em>. Add multiple rows for the same stock if you bought at different times/prices.</li>
-          <li>Ticker must match Yahoo Finance (e.g. <code>^NSEI</code> for Nifty, <code>BTC-USD</code> for Bitcoin).</li>
-          <li>Currency defaults to <strong>EUR</strong> if omitted. Prices are converted to EUR using live FX rates.</li>
-          <li>No header row needed — the app detects columns automatically.</li>
-          <li>Use the <em>Export Portfolio as CSV</em> button below to download a template from your existing data.</li>
-        </ul>
-      </div>
-    </details>
-
-    <input type="file" id="csvFile" accept=".csv" style="grid-column:1/-1">
-    <button id="importCSV" style="grid-column:1/-1">Import Portfolio CSV</button>
-    <button id="exportCSV" style="grid-column:1/-1;background:var(--surface);border:1px solid var(--border);color:var(--dim)">⬇ Export Portfolio as CSV</button>
-
-    <hr>
+    <hr style="grid-column:1/-1; margin:4px 0">
 
     <h3>Add Asset Manually</h3>
-    <input id="assetName" placeholder="Asset Name" required>
-    <input id="assetTicker" placeholder="Ticker (e.g. NVDA, BTC-USD)">
+    <!-- Name + Ticker share a dropdown for autocomplete suggestions -->
+    <div style="position:relative; grid-column:1/-1; display:grid; grid-template-columns:1fr 1fr; gap:12px">
+      <input id="assetName"   placeholder="Asset Name (type to search…)" autocomplete="off">
+      <input id="assetTicker" placeholder="Ticker — use search above for correct suffix" autocomplete="off">
+      <!-- Shared dropdown sits under both inputs -->
+      <div id="tickerDropdown" class="ticker-dropdown" style="display:none; grid-column:1/-1"></div>
+    </div>
+    <p style="grid-column:1/-1; font-size:11px; color:var(--muted); margin-top:-6px">
+      💡 Tip: Use the search dropdown to auto-fill the correct exchange symbol (e.g. <code style="color:var(--blue)">AI3A.DE</code> for Amadeus, <code style="color:var(--blue)">IWDA.L</code> for iShares World). European stocks need the exchange suffix.
+    </p>
     <select id="assetBroker">
       <option value="">Broker</option>
       <option>Kite</option><option>Scalable</option>
