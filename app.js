@@ -2235,6 +2235,126 @@ async function exportPortfolioCSV(){
 }
 
 
+/* ── BACKUP & RESTORE ─────────────────────────────────────
+   Solves the iOS PWA storage isolation problem:
+   Safari browser and the home screen PWA use completely separate
+   IndexedDB databases. This feature lets you export the full database
+   (assets + portfolio history snapshots) as a .json file, then
+   import it into any other browser/context (e.g. the home screen app).
+
+   Export format:
+   {
+     version: 1,
+     exportedAt: "2026-03-17T...",
+     assets: [ ...all asset records from IndexedDB ],
+     portfolioHistory: [ ...all snapshot records from IndexedDB ]
+   }
+
+   Import: clears both stores, then bulk-writes the exported records.
+   IDs are preserved so sub-row expand buttons still work. */
+
+async function exportBackup(){
+  if(!db) return
+  try{
+    const assets  = await getAssets()
+    const history = await new Promise(resolve => {
+      db.transaction("portfolioHistory","readonly")
+        .objectStore("portfolioHistory")
+        .getAll().onsuccess = e => resolve(e.target.result || [])
+    })
+
+    const backup = {
+      version:         1,
+      exportedAt:      new Date().toISOString(),
+      assets,
+      portfolioHistory: history
+    }
+
+    const json = JSON.stringify(backup, null, 2)
+    const blob = new Blob([json], { type:"application/json" })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement("a")
+    a.href     = url
+    a.download = `capintel_backup_${new Date().toISOString().slice(0,10)}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+
+    /* Show success feedback */
+    const btn = document.getElementById("exportBackupBtn")
+    if(btn){ btn.textContent = "✅ Downloaded!"; setTimeout(()=>{ btn.textContent="💾 Export Backup" }, 3000) }
+
+  }catch(e){
+    alert("Export failed: " + e.message)
+  }
+}
+
+async function importBackup(file){
+  if(!db || !file) return
+  const statusEl = document.getElementById("backupStatus")
+
+  try{
+    const text   = await file.text()
+    const backup = JSON.parse(text)
+
+    /* Validate format */
+    if(!backup.version || !Array.isArray(backup.assets)){
+      alert("Invalid backup file. Please use a .json file exported from CapIntel.")
+      return
+    }
+
+    const assetCount   = backup.assets.length
+    const historyCount = (backup.portfolioHistory || []).length
+
+    const confirmed = confirm(
+      `This will REPLACE all current data with:\n` +
+      `• ${assetCount} assets\n` +
+      `• ${historyCount} portfolio history snapshots\n\n` +
+      `Your current data will be overwritten. Continue?`
+    )
+    if(!confirmed) return
+
+    if(statusEl) statusEl.textContent = "Importing…"
+
+    /* Clear both stores, then write all records */
+    await new Promise((resolve, reject) => {
+      const tx    = db.transaction(["assets","portfolioHistory"], "readwrite")
+      tx.onerror  = () => reject(tx.error)
+      tx.oncomplete = resolve
+
+      const assetStore   = tx.objectStore("assets")
+      const historyStore = tx.objectStore("portfolioHistory")
+
+      assetStore.clear().onsuccess = () => {
+        historyStore.clear().onsuccess = () => {
+          /* Write assets — remove id so autoIncrement assigns fresh ones
+             (avoids key conflicts if IDs differ between devices) */
+          backup.assets.forEach(a => {
+            const { id, ...rest } = a
+            assetStore.add(rest)
+          })
+          /* Write history — timestamp is keyPath, preserve as-is */
+          ;(backup.portfolioHistory || []).forEach(h => {
+            historyStore.put(h)
+          })
+        }
+      }
+    })
+
+    if(statusEl) statusEl.textContent = `✅ Restored ${assetCount} assets + ${historyCount} snapshots`
+    setTimeout(() => { if(statusEl) statusEl.textContent = "" }, 5000)
+
+    /* Reload everything */
+    loadAssets()
+    drawGrowthChart()
+
+  }catch(e){
+    if(statusEl) statusEl.textContent = "❌ Import failed: " + e.message
+    console.error("Backup import error:", e)
+  }
+}
+
 /* ── TIMEZONE CLOCK ───────────────────────────────────────
    Live clocks for IST, Frankfurt, and New York (updates every second).
    Also shows whether NSE, XETRA, and NYSE are currently open.
