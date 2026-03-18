@@ -2508,28 +2508,93 @@ function bindAssetForm(){
     const broker   = document.getElementById("assetBroker")?.value   || ""
     const type     = document.getElementById("assetType")?.value     || "Other"
     const currency = document.getElementById("assetCurrency")?.value || "EUR"
-    const quantity = parseNumber(document.getElementById("assetQty")?.value)
-    const buyPrice = parseNumber(document.getElementById("assetPrice")?.value)
-    const buyDate  = document.getElementById("assetDate")?.value     || ""
+    const qtyRaw   = document.getElementById("assetQty")?.value    || ""
+    const priceRaw = document.getElementById("assetPrice")?.value  || ""
+    const buyDate  = document.getElementById("assetDate")?.value   || ""
 
-    if(!name || quantity <= 0 || buyPrice < 0) return
+    /* Clear any previous errors */
+    clearFormErrors()
+
+    let hasError = false
+
+    /* Name is required */
+    if(!name){
+      showFieldError("assetName", "Asset name is required")
+      hasError = true
+    }
+
+    /* Quantity — check for comma used as decimal separator */
+    if(!qtyRaw){
+      showFieldError("assetQty", "Quantity is required")
+      hasError = true
+    } else if(qtyRaw.includes(",") && !qtyRaw.includes(".")){
+      showFieldError("assetQty", "Use a dot (.) not a comma — e.g. 3.728 not 3,728")
+      hasError = true
+    } else if(isNaN(Number(qtyRaw)) || Number(qtyRaw) <= 0){
+      showFieldError("assetQty", "Enter a valid positive number")
+      hasError = true
+    }
+
+    /* Price — check for comma used as decimal separator */
+    if(!priceRaw){
+      showFieldError("assetPrice", "Buy price is required")
+      hasError = true
+    } else if(priceRaw.includes(",") && !priceRaw.includes(".")){
+      showFieldError("assetPrice", "Use a dot (.) not a comma — e.g. 52.84 not 52,84")
+      hasError = true
+    } else if(isNaN(Number(priceRaw)) || Number(priceRaw) < 0){
+      showFieldError("assetPrice", "Enter a valid price (0 or above)")
+      hasError = true
+    }
+
+    if(hasError) return
+
+    const quantity = parseNumber(qtyRaw)
+    const buyPrice = parseNumber(priceRaw)
 
     saveAsset({ name, ticker, broker, type, currency, quantity,
                 buyPrice, buyPriceEUR: convertToEUR(buyPrice, currency),
                 currentPrice: buyPrice, buyDate })
 
-    /* Clear form fields after save */
+    /* Clear form fields after successful save */
     document.getElementById("assetName").value   = ""
     document.getElementById("assetTicker").value = ""
     document.getElementById("assetQty").value    = ""
     document.getElementById("assetPrice").value  = ""
     document.getElementById("assetDate").value   = ""
+    clearFormErrors()
 
     loadAssets()
   }
 
   /* Wire up ticker/name autocomplete */
   bindTickerAutocomplete()
+}
+
+/* Shows a red error message below a form field and highlights the field border */
+function showFieldError(fieldId, message){
+  const field = document.getElementById(fieldId)
+  if(!field) return
+  field.classList.add("field-error")
+  /* Insert error element after the field if not already there */
+  let errEl = document.getElementById("err_" + fieldId)
+  if(!errEl){
+    errEl = document.createElement("span")
+    errEl.id = "err_" + fieldId
+    errEl.className = "field-error-msg"
+    field.parentNode.insertBefore(errEl, field.nextSibling)
+  }
+  errEl.textContent = "⚠ " + message
+  /* Shake the field to draw attention */
+  field.classList.remove("field-shake")
+  void field.offsetWidth  /* reflow to restart animation */
+  field.classList.add("field-shake")
+}
+
+/* Clears all field error states and messages */
+function clearFormErrors(){
+  document.querySelectorAll(".field-error").forEach(el => el.classList.remove("field-error", "field-shake"))
+  document.querySelectorAll(".field-error-msg").forEach(el => el.remove())
 }
 
 /* ── TICKER AUTOCOMPLETE ──────────────────────────────────
