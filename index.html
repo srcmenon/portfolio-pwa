@@ -164,6 +164,28 @@
   </div>
 
   <div id="assetForm" class="card">
+    <h3>Backup & Restore</h3>
+
+    <!-- Backup / Restore — solves iOS PWA storage isolation -->
+    <div class="backup-section" style="grid-column:1/-1">
+      <p class="backup-desc">
+        💡 <strong>iPhone users:</strong> Safari and the home screen app store data separately.
+        Export a backup in Safari, then import it in the home screen app to transfer your portfolio.
+      </p>
+      <div class="backup-btns">
+        <button id="exportBackupBtn" class="backup-btn-export" onclick="exportBackup()">
+          💾 Export Backup
+        </button>
+        <label class="backup-btn-import" for="importBackupFile">
+          📂 Import Backup
+        </label>
+        <input type="file" id="importBackupFile" accept=".json" style="display:none"
+               onchange="importBackup(this.files[0]); this.value=''">
+      </div>
+      <div id="backupStatus" class="backup-status"></div>
+    </div>
+
+    <hr style="grid-column:1/-1">
     <h3>Import CSV</h3>
 
     <!-- CSV Format Guide -->
