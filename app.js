@@ -404,6 +404,7 @@ function renderPortfolioTable(portfolio){
         <td class="num">${formatCurrency(a.currentPrice || a.buyPrice, a.currency)}</td>
         <td colspan="4" style="color:var(--dim)">${a.broker || ""}</td>
         <td>
+          <button class="btn-edit-lot" onclick="editAsset(${a.id})">✏️ Edit</button>
           <button class="btn-sell-partial"
             data-assetid="${a.id}"
             data-qty="${a.quantity}"
@@ -785,30 +786,38 @@ async function updateMutualFundNAV(){
 }
 
 /* Resolves a stored ticker + asset metadata to the correct Yahoo Finance symbol.
-   Rules (in order):
-   - Crypto (e.g. BTC-USD)          → pass through unchanged
-   - MutualFund                     → return null (uses AMFI, not Yahoo)
-   - Already has a dot (e.g. .NS)   → pass through unchanged
-   - Special overrides              → hardcoded for ambiguous tickers
-   - USD currency                   → no suffix (US exchange)
-   - EUR + ETF/Commodity            → .L suffix (London Stock Exchange)
-   - EUR + Stock                    → no suffix (US-listed via Scalable/TR)
-   - INR                            → .NS suffix (NSE)
-*/
+
+   The preferred approach is to always use the autocomplete when adding assets —
+   it returns the full Yahoo symbol (e.g. AI3A.DE, SAP.DE, IWDA.L) which already
+   has the correct exchange suffix. The dot-passthrough rule below handles these.
+
+   For manually typed tickers or CSV imports without suffixes, best-effort rules:
+   - Crypto (BTC-USD etc.)     → pass through unchanged
+   - MutualFund                → null (uses AMFI)
+   - Already has a dot         → pass through unchanged (autocomplete result)
+   - Special overrides         → hardcoded for known ambiguous tickers
+   - USD currency              → no suffix (US exchange)
+   - EUR + ETF/Commodity       → .L suffix (London)
+   - EUR + Stock               → no suffix (assume US-listed; if wrong, user should
+                                  type or select the full symbol e.g. AI3A.DE)
+   - INR                       → .NS suffix (NSE) */
 function resolveTicker(asset){
-  let t       = asset.ticker
-  const cur   = asset.currency || "INR"
+  const t   = asset.ticker
+  const cur = asset.currency || "INR"
   if(!t) return null
-  if(t.includes("-USD"))        return t          /* Crypto */
-  if(asset.type === "MutualFund") return null     /* handled by AMFI, not Yahoo */
-  if(t.includes("."))           return t          /* already fully qualified */
-  if(t === "SEMI")  return "CHIP.PA"              /* Amundi Semiconductors — Euronext Paris */
-  if(t === "EWG2")  return "EWG2.SG"             /* EUWAX Gold II — Stuttgart */
+  if(t.includes("-USD"))          return t      /* Crypto */
+  if(asset.type === "MutualFund") return null   /* AMFI */
+  if(t.includes("."))             return t      /* already has exchange suffix */
+  if(t === "SEMI")  return "CHIP.PA"           /* Amundi Semiconductors — Euronext Paris */
+  if(t === "EWG2")  return "EWG2.SG"          /* EUWAX Gold II — Stuttgart */
   if(cur === "USD") return t
   if(cur === "EUR"){
     const type = (asset.type || "").toLowerCase()
     if(type === "etf" || type === "commodity") return t + ".L"
-    return t   /* EUR stocks are US-listed (Scalable/TR fractional shares — no .L suffix) */
+    /* EUR stocks: assumed US-listed (Scalable/TR fractional shares).
+       For European-exchange stocks, always use autocomplete or type the
+       full symbol with suffix (e.g. AI3A.DE, SAP.DE) when adding the asset. */
+    return t
   }
   return t + ".NS"  /* default: Indian NSE */
 }
@@ -2281,9 +2290,9 @@ async function exportBackup(){
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
 
-    /* Show success feedback */
-    const btn = document.getElementById("exportBackupBtn")
-    if(btn){ btn.textContent = "✅ Downloaded!"; setTimeout(()=>{ btn.textContent="💾 Export Backup" }, 3000) }
+    /* Show success feedback on the export button */
+    const btn = document.querySelector("[onclick='exportBackup()']")
+    if(btn){ btn.textContent = "✅ Downloaded!"; setTimeout(()=>{ btn.textContent="⬇ Export Backup" }, 3000) }
 
   }catch(e){
     alert("Export failed: " + e.message)
@@ -2518,21 +2527,116 @@ function bindAssetForm(){
 
     loadAssets()
   }
+
+  /* Wire up ticker/name autocomplete */
+  bindTickerAutocomplete()
+}
+
+/* ── TICKER AUTOCOMPLETE ──────────────────────────────────
+   Searches Yahoo Finance as the user types in the ticker or name field.
+   Selecting a result auto-fills both name and ticker fields.
+   Debounced to 350ms to avoid hammering the API. */
+function bindTickerAutocomplete(){
+  const nameInput   = document.getElementById("assetName")
+  const tickerInput = document.getElementById("assetTicker")
+  const dropdown    = document.getElementById("tickerDropdown")
+  if(!nameInput || !tickerInput || !dropdown) return
+
+  let debounceTimer = null
+
+  async function searchAndShow(query){
+    if(!query || query.length < 2){ dropdown.style.display = "none"; return }
+    try{
+      const r = await fetch(`/api/search?q=${encodeURIComponent(query)}`)
+      if(!r.ok) return
+      const { results } = await r.json()
+      if(!results.length){ dropdown.style.display = "none"; return }
+
+      dropdown.innerHTML = results.map(r => `
+        <div class="ticker-suggest" data-symbol="${r.symbol}" data-name="${r.name.replace(/"/g,'&quot;')}" data-type="${r.type}">
+          <span class="ts-symbol">${r.symbol}</span>
+          <span class="ts-name">${r.name}</span>
+          <span class="ts-exch">${r.exchange}</span>
+        </div>`).join("")
+      dropdown.style.display = "block"
+
+      dropdown.querySelectorAll(".ticker-suggest").forEach(el => {
+        el.onclick = () => {
+          tickerInput.value = el.dataset.symbol
+          nameInput.value   = el.dataset.name
+          /* Auto-select type if recognisable */
+          const typeMap = { EQUITY:"Stock", ETF:"ETF", CRYPTOCURRENCY:"Crypto", FUTURE:"Commodity" }
+          const typeEl  = document.getElementById("assetType")
+          if(typeEl && typeMap[el.dataset.type]) typeEl.value = typeMap[el.dataset.type]
+          dropdown.style.display = "none"
+          document.getElementById("assetQty")?.focus()
+        }
+      })
+    }catch(e){ dropdown.style.display = "none" }
+  }
+
+  function onInput(e){
+    clearTimeout(debounceTimer)
+    debounceTimer = setTimeout(() => searchAndShow(e.target.value.trim()), 350)
+  }
+
+  nameInput.addEventListener("input",   onInput)
+  tickerInput.addEventListener("input", onInput)
+
+  /* Close dropdown when clicking outside */
+  document.addEventListener("click", e => {
+    if(!nameInput.contains(e.target) && !tickerInput.contains(e.target) && !dropdown.contains(e.target)){
+      dropdown.style.display = "none"
+    }
+  })
+}
+
+/* ── EDIT ASSET LOT ──────────────────────────────────────
+   Opens an inline edit form in the sub-row to adjust qty or buy price.
+   Current price is intentionally not editable — it comes from market data.
+   After saving, reloads the table and triggers a fresh price update. */
+async function editAsset(id){
+  const assets = await getAssets()
+  const asset  = assets.find(a => a.id === id)
+  if(!asset) return
+
+  const newQty   = parseFloat(prompt(`Edit quantity for ${asset.name}\nCurrent: ${asset.quantity}`, asset.quantity))
+  if(isNaN(newQty) || newQty <= 0){ alert("Invalid quantity."); return }
+
+  const newPrice = parseFloat(prompt(`Edit buy price for ${asset.name} (${asset.currency})\nCurrent: ${asset.buyPrice}`, asset.buyPrice))
+  if(isNaN(newPrice) || newPrice < 0){ alert("Invalid price."); return }
+
+  const tx = db.transaction("assets", "readwrite")
+  tx.objectStore("assets").put({
+    ...asset,
+    quantity:    newQty,
+    buyPrice:    newPrice,
+    buyPriceEUR: convertToEUR(newPrice, asset.currency)
+    /* currentPrice intentionally preserved — will update on next price fetch */
+  })
+  tx.oncomplete = () => loadAssets()
 }
 
 /* Reads a CSV file, parses rows, and bulk-imports assets.
    Supports 7-column (no date) and 8-column (with date) formats.
    Handles quoted-comma CSV fields and iPhone line endings (\r\n, \r). */
 function bindCSVImport(){
-  const btn       = document.getElementById("importCSV")
   const fileInput = document.getElementById("csvFile")
   const exportBtn = document.getElementById("exportCSV")
   if(exportBtn) exportBtn.onclick = exportPortfolioCSV
-  if(!btn || !fileInput) return
+  if(!fileInput) return
 
-  btn.onclick = () => {
+  /* CSV file input now has onchange wired in HTML to call importCSVFile()
+     The hidden importCSV button is kept only for legacy compatibility */
+  fileInput.addEventListener("change", () => {
     const file = fileInput.files[0]
     if(!file) return
+    importCSVFile(file)
+    fileInput.value = ""
+  })
+}
+
+function importCSVFile(file){
 
     const reader = new FileReader()
     reader.onload = e => {
@@ -2587,7 +2691,6 @@ function bindCSVImport(){
       if(skipped > 0) console.warn(`CSV import: ${imported} imported, ${skipped} rows skipped (invalid qty/price)`)
     }
     reader.readAsText(file)
-  }
 }
 
 /* Wires tab switching: Portfolio ↔ Insights.
