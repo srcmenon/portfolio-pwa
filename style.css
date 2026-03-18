@@ -1381,3 +1381,10 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
 .pa-fresh  { color: var(--green); opacity: 0.8; }   /* <10 min — green */
 .pa-aging  { color: var(--gold);  opacity: 0.85; }  /* 10min–1h — amber */
 .pa-stale  { color: var(--red);   opacity: 0.75; }  /* >1h — red */
+
+/* ── Summary card sub-label ── */
+.summary-sub {
+  font-size: 10.5px; color: var(--muted);
+  display: block; margin-top: 4px;
+  font-family: var(--font);
+}
