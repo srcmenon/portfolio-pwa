@@ -1348,3 +1348,26 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
   transition: background 0.15s;
 }
 .btn-edit-lot:hover { background: rgba(91,156,246,0.2); }
+
+/* ── Form field validation errors ── */
+.field-error {
+  border-color: var(--red) !important;
+  box-shadow: 0 0 0 2px rgba(244,80,106,0.2);
+}
+.field-error-msg {
+  display: block;
+  font-size: 11px; font-weight: 600;
+  color: var(--red);
+  margin-top: 3px;
+  margin-bottom: 2px;
+  line-height: 1.4;
+  grid-column: span 1; /* stays in the same grid column as the field */
+}
+@keyframes fieldShake {
+  0%,100% { transform: translateX(0); }
+  20%      { transform: translateX(-5px); }
+  40%      { transform: translateX(5px); }
+  60%      { transform: translateX(-4px); }
+  80%      { transform: translateX(4px); }
+}
+.field-shake { animation: fieldShake 0.35s ease; }
