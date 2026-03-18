@@ -778,14 +778,17 @@ async function updateMutualFundNAV(){
     console.groupEnd()
     console.groupEnd()
 
-    /* Write updated NAVs back to the database */
+    /* Write updated NAVs back to the database.
+       Also stamp priceUpdatedAt so the price age indicator shows correctly.
+       MFs always use "CLOSED" as marketState — AMFI publishes once daily after close. */
+    const navUpdatedAt = Date.now()
     const tx    = db.transaction("assets", "readwrite")
     const store = tx.objectStore("assets")
     for(const a of assets){
       if(a.type !== "MutualFund") continue
       const nav = navMap[a.ticker]
       if(!nav) continue
-      store.put({ ...a, currentPrice: nav })
+      store.put({ ...a, currentPrice: nav, priceUpdatedAt: navUpdatedAt, marketState: "CLOSED" })
     }
     tx.oncomplete = () => loadAssets()
 
