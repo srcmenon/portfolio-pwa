@@ -1371,3 +1371,13 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
   80%      { transform: translateX(4px); }
 }
 .field-shake { animation: fieldShake 0.35s ease; }
+
+/* ── Price age indicator under current price ── */
+.price-age {
+  display: block;
+  font-size: 10px; font-family: var(--mono);
+  margin-top: 2px;
+}
+.pa-fresh  { color: var(--green); opacity: 0.8; }   /* <10 min — green */
+.pa-aging  { color: var(--gold);  opacity: 0.85; }  /* 10min–1h — amber */
+.pa-stale  { color: var(--red);   opacity: 0.75; }  /* >1h — red */
