@@ -1241,3 +1241,40 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
   font-family: var(--font);
 }
 .cached-clear-btn:hover { color: var(--red); }
+
+/* ── Backup & Restore section ── */
+.backup-section {
+  display: flex; flex-direction: column; gap: 10px;
+}
+.backup-desc {
+  font-size: 12.5px; color: var(--dim); line-height: 1.6;
+  padding: 10px 14px;
+  background: rgba(91,156,246,0.06);
+  border: 1px solid rgba(91,156,246,0.2);
+  border-radius: var(--radius-sm);
+}
+.backup-desc strong { color: var(--text); }
+.backup-btns {
+  display: flex; gap: 10px; flex-wrap: wrap;
+}
+.backup-btn-export, .backup-btn-import {
+  padding: 10px 20px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; white-space: nowrap;
+}
+.backup-btn-export {
+  background: var(--blue); color: #fff; border: none;
+  box-shadow: 0 2px 10px rgba(91,156,246,0.3);
+}
+.backup-btn-export:hover { opacity: 0.88; }
+.backup-btn-import {
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border);
+  display: inline-flex; align-items: center;
+}
+.backup-btn-import:hover { border-color: var(--blue); color: var(--blue); }
+.backup-status {
+  font-size: 12px; color: var(--green); font-weight: 600;
+  min-height: 18px;
+}
