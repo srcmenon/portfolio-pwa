@@ -264,6 +264,9 @@ function calculatePortfolio(groups){
     const currentPrice   = list.reduce((p, c) => c.currentPrice || p, 0) || avgBuy
     /* Use the most recent priceUpdatedAt across all lots */
     const priceUpdatedAt = list.reduce((latest, c) => Math.max(latest, c.priceUpdatedAt || 0), 0) || null
+    /* Use marketState from the lot that has the most recent price */
+    const newestLot  = list.reduce((newest, c) => (c.priceUpdatedAt||0) > (newest.priceUpdatedAt||0) ? c : newest, list[0])
+    const marketState = newestLot.marketState || null
     const totalCurrentLocal = currentPrice * qty
     const buyEUR         = convertToEUR(avgBuy,       currency)
     const currentEUR     = convertToEUR(currentPrice, currency)
@@ -282,7 +285,7 @@ function calculatePortfolio(groups){
       totalBuyEUR,   totalCurrentEUR,
       profitLocal,   profitEUR,
       growth,        lastDate,
-      priceUpdatedAt,
+      priceUpdatedAt, marketState,
       list
     })
   })
@@ -375,7 +378,7 @@ function renderPortfolioTable(portfolio){
         <span class="num">${formatCurrency(pos.currentPrice, pos.currency)}</span>
         <span class="eurValue">${formatCurrency(convertToEUR(pos.currentPrice, pos.currency), "EUR")}</span>
         ${pos.priceUpdatedAt
-          ? priceAge(pos.priceUpdatedAt)
+          ? priceAge(pos.priceUpdatedAt, pos.marketState)
           : `<span class="price-age pa-stale">not fetched</span>`}
       </td>
       <td>
@@ -828,7 +831,10 @@ function resolveTicker(asset){
   return t + ".NS"  /* default: Indian NSE */
 }
 
-/* Fetches current price for a single asset via the /api/price serverless proxy. */
+/* Fetches current price for a single asset via the /api/price serverless proxy.
+   Returns { price, marketState } or null on failure.
+   marketState: "REGULAR" = live trading, "CLOSED" = last session close,
+                "PRE"/"POST" = pre/after-market */
 async function fetchPrice(asset){
   try{
     const symbol = resolveTicker(asset)
@@ -836,7 +842,8 @@ async function fetchPrice(asset){
     const r = await fetch("/api/price?ticker=" + symbol)
     if(!r.ok) return null
     const data = await r.json()
-    return Number(data.price) || null
+    if(!data.price) return null
+    return { price: Number(data.price), marketState: data.marketState || "CLOSED" }
   }catch(e){
     console.log("Price fetch failed", asset.ticker)
     return null
@@ -846,7 +853,11 @@ async function fetchPrice(asset){
 /* Loops all non-MF assets, fetches live prices, saves to DB.
    Currency note: Yahoo returns USD prices for US-listed tickers.
    If an asset is stored in EUR (bought via Scalable/TR), we divide
-   by FX.USD to convert the Yahoo USD price back to EUR. */
+   by FX.USD to convert the Yahoo USD price back to EUR.
+
+   IMPORTANT: Yahoo regularMarketPrice = last NYSE/NASDAQ session close.
+   When US markets are closed, this is yesterday's close — not the live
+   European venue price (gettex, Xetra etc.). This is a Yahoo limitation. */
 async function updatePrices(){
   if(priceUpdateRunning || !db) return
   priceUpdateRunning = true
@@ -856,8 +867,9 @@ async function updatePrices(){
     if(a.type === "MutualFund") continue
     if(!a.ticker) continue
 
-    const price = await fetchPrice(a)
-    if(price !== null){
+    const result = await fetchPrice(a)
+    if(result !== null){
+      const { price, marketState } = result
       const symbol     = resolveTicker(a)
       const isUSTicker = symbol && !symbol.includes(".") && !symbol.includes("-USD")
       /* Convert USD-priced tickers to EUR if the asset is recorded in EUR */
@@ -865,8 +877,18 @@ async function updatePrices(){
         ? price / FX.USD
         : price
 
-      const tx = db.transaction("assets", "readwrite")
-      tx.objectStore("assets").put({ ...a, currentPrice: adjustedPrice, priceUpdatedAt: Date.now() })
+      /* Await the DB write so loadAssets() always sees the updated price */
+      await new Promise(resolve => {
+        const tx = db.transaction("assets", "readwrite")
+        tx.objectStore("assets").put({
+          ...a,
+          currentPrice:   adjustedPrice,
+          priceUpdatedAt: Date.now(),
+          marketState                    /* "REGULAR"|"PRE"|"POST"|"CLOSED" */
+        })
+        tx.oncomplete = resolve
+        tx.onerror    = resolve
+      })
     }
   }
 
@@ -1944,17 +1966,36 @@ function timeAgo(ms){
 }
 
 /* Formats priceUpdatedAt for display under the current price cell.
-   Shows in green if fresh (<10 min), amber if aging (10min–2h), red if stale (>2h). */
-function priceAge(ts){
+   Shows market state so user knows if price is live or last session close.
+   Green = live/fresh, amber = aging, red = stale/market closed */
+function priceAge(ts, marketState){
   if(!ts) return ""
   const diff = Date.now() - ts
   const mins = Math.floor(diff / 60000)
   const hrs  = Math.floor(diff / 3600000)
-  let label, cls
-  if(mins < 1)   { label = "just now";         cls = "pa-fresh" }
-  else if(mins < 60) { label = `${mins}m ago`; cls = mins < 10 ? "pa-fresh" : "pa-aging" }
-  else if(hrs < 24)  { label = `${hrs}h ago`;  cls = "pa-stale" }
-  else               { label = `${Math.floor(hrs/24)}d ago`; cls = "pa-stale" }
+
+  /* Market state label */
+  const stateLabel = {
+    "REGULAR": "live",
+    "PRE":     "pre-mkt",
+    "POST":    "after-hrs",
+    "CLOSED":  "mkt closed"
+  }[marketState] || ""
+
+  let age, cls
+  if(mins < 1)       { age = "just now"; cls = "pa-fresh" }
+  else if(mins < 60) { age = `${mins}m ago`; cls = mins < 10 ? "pa-fresh" : "pa-aging" }
+  else if(hrs < 24)  { age = `${hrs}h ago`;  cls = "pa-stale" }
+  else               { age = `${Math.floor(hrs/24)}d ago`; cls = "pa-stale" }
+
+  /* If market is closed show that prominently regardless of fetch age */
+  if(marketState === "CLOSED" || marketState === "POST"){
+    cls = "pa-stale"
+  } else if(marketState === "REGULAR"){
+    cls = mins < 10 ? "pa-fresh" : "pa-aging"
+  }
+
+  const label = stateLabel ? `${age} · ${stateLabel}` : age
   return `<span class="price-age ${cls}">${label}</span>`
 }
 
