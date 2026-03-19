@@ -25,6 +25,7 @@
 <div id="tabs">
   <button class="tabBtn active" data-tab="portfolioTab">Portfolio</button>
   <button class="tabBtn" data-tab="insightsTab">Insights</button>
+  <button class="tabBtn" data-tab="goalsTab">🎯 Goals</button>
   <div class="tab-ticker" id="headerMarket">
     <div class="mkt-item mkt-loading">
       <span class="mkt-name">Loading markets…</span>
@@ -437,6 +438,86 @@
         <span>This analysis is for informational purposes only and does not constitute financial advice. Always do your own research and consult a qualified financial advisor before making investment decisions. Past performance does not guarantee future results.</span>
       </div>
       <div id="intelResult" class="intel-result" style="display:none"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     GOALS TAB
+══════════════════════════════════════ -->
+<div id="goalsTab" class="tabContent">
+  <div class="goals-wrap">
+
+    <!-- Goals Setup -->
+    <div class="goals-setup card" id="goalsSetupCard">
+      <h3>My Financial Goals</h3>
+      <div class="goals-setup-grid">
+        <div class="goals-setup-field">
+          <label>Monthly Investment (EUR)</label>
+          <input type="number" id="goalMonthly" placeholder="600" min="0">
+        </div>
+        <div class="goals-setup-field">
+          <label>Home Purchase Year</label>
+          <input type="number" id="goalHomeYear" placeholder="2030" min="2025">
+        </div>
+        <div class="goals-setup-field">
+          <label>Home Budget (₹ lakhs)</label>
+          <input type="number" id="goalHomeBudget" placeholder="80" min="0">
+        </div>
+        <div class="goals-setup-field">
+          <label>Retirement Age</label>
+          <input type="number" id="goalRetireAge" placeholder="50" min="40">
+        </div>
+        <div class="goals-setup-field">
+          <label>Retirement Corpus Target (€)</label>
+          <input type="number" id="goalCorpus" placeholder="270000" min="0">
+        </div>
+        <div class="goals-setup-field">
+          <label>Plan Start Date</label>
+          <input type="date" id="goalStartDate">
+        </div>
+      </div>
+      <button class="goals-save-btn" onclick="saveGoals()">Save Goals</button>
+    </div>
+
+    <!-- Progress Cards -->
+    <div class="goals-progress-row" id="goalsProgressRow" style="display:none">
+      <div class="card goals-prog-card">
+        <h3>Retirement Corpus</h3>
+        <div class="gp-value" id="gpCorpusNow">€0</div>
+        <div class="gp-target" id="gpCorpusTarget">of €270,000 target</div>
+        <div class="gp-bar-wrap"><div class="gp-bar" id="gpCorpusBar"></div></div>
+        <div class="gp-pct" id="gpCorpusPct">0%</div>
+      </div>
+      <div class="card goals-prog-card">
+        <h3>Home Fund (India)</h3>
+        <div class="gp-value" id="gpHomeNow">₹0</div>
+        <div class="gp-target" id="gpHomeTarget">of ₹80L target</div>
+        <div class="gp-bar-wrap"><div class="gp-bar gp-bar-gold" id="gpHomeBar"></div></div>
+        <div class="gp-pct" id="gpHomePct">0%</div>
+      </div>
+      <div class="card goals-prog-card">
+        <h3>Plan Status</h3>
+        <div class="gp-value" id="gpDaysActive">Day 0</div>
+        <div class="gp-target" id="gpPlanDelay" style="color:var(--gold)"></div>
+        <div class="gp-target" id="gpRetireIn"></div>
+        <div class="gp-target" id="gpHomeIn"></div>
+      </div>
+    </div>
+
+    <!-- Phase Checklist -->
+    <div class="card goals-checklist-card" id="goalsChecklistCard" style="display:none">
+      <h3>Restructuring Checklist — Do these in order</h3>
+      <p class="goals-checklist-sub">Complete each step before moving to the next. Steps stay visible until you tick them off.</p>
+      <div id="goalsChecklist"></div>
+    </div>
+
+    <!-- Projection Chart -->
+    <div class="card goals-proj-card" id="goalsProjCard" style="display:none">
+      <h3>Corpus Projection</h3>
+      <p class="goals-checklist-sub">Blue = projected growth path · Orange dot = your portfolio today</p>
+      <canvas id="goalsProjectionChart" style="height:260px"></canvas>
     </div>
 
   </div>
