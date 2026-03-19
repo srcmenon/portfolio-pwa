@@ -147,52 +147,92 @@ body {
   z-index: 99;
   background: rgba(10,16,34,0.97);
   border-bottom: 1px solid var(--border);
-  padding: 7px 24px;
+  padding: 6px 24px;
 }
 .time-clocks {
   display: flex;
   align-items: center;
   gap: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 .time-clock {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 2px 16px 2px 0;
+  gap: 6px;
+  padding: 2px 14px 2px 0;
+  flex-shrink: 0;
 }
-.time-flag { font-size: 14px; line-height: normal; }
+.time-flag { font-size: 13px; line-height: normal; }
 .time-label {
-  font-size: 11px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.6px;
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.5px;
   color: var(--dim);
   line-height: normal;
 }
 .time-value {
   font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  font-size: 14px; font-weight: 700;
+  font-size: 13px; font-weight: 700;
   color: var(--text);
-  letter-spacing: 0.3px;
+  letter-spacing: 0.2px;
   line-height: normal;
 }
 .time-divider {
-  width: 1px; height: 20px;
+  width: 1px; height: 18px;
   background: var(--border);
-  margin: 0 16px 0 0;
+  margin: 0 14px 0 0;
   flex-shrink: 0;
 }
-.time-market-status {
-  margin-left: 4px;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--dim);
+.time-markets {
+  display: flex; align-items: center; gap: 5px;
+  margin-left: 2px; flex-shrink: 0;
 }
-.time-dot {
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
+.mkt-status-chip {
+  display: flex; align-items: center; gap: 4px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.02);
+  font-size: 9.5px; font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  transition: all 0.3s; flex-shrink: 0;
 }
-.time-dot.open  { background: var(--green); box-shadow: 0 0 6px var(--green); }
-.time-dot.closed { background: var(--muted); }
+.mkt-status-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0; transition: all 0.3s;
+}
+.mkt-status-name { color: var(--dim); }
+.mkt-open .mkt-status-name { color: var(--text); }
+.mkt-open { border-color: rgba(34,209,122,0.25); background: rgba(34,209,122,0.06); }
+.mkt-closed { opacity: 0.55; }
+
+/* ── Mobile timeBar: stack into 2 compact rows ── */
+@media (max-width: 640px) {
+  #timeBar { padding: 5px 12px; }
+  .time-clocks {
+    flex-wrap: wrap;
+    gap: 4px 0;
+    row-gap: 4px;
+  }
+  /* Row 1: clocks only */
+  .time-clock { padding: 0 10px 0 0; }
+  .time-label { display: none; } /* hide label, keep flag+time */
+  .time-divider { margin: 0 10px 0 0; height: 14px; }
+  /* Row 2: market status chips wrap below */
+  .time-markets {
+    width: 100%;
+    margin-left: 0;
+    padding-top: 3px;
+    border-top: 1px solid rgba(26,45,80,0.4);
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+  .mkt-status-chip { font-size: 9px; padding: 1px 6px; }
+  /* Show market labels on mobile since clocks lost their labels */
+  #timeBar .time-clock::after { display: none; }
+}
 
 /* ══ ROW 3: SCROLLABLE CONTENT AREA ══
    #appScroll is a flex child that fills all remaining viewport height.
@@ -669,34 +709,6 @@ header { display: none; }
 .today-dn { color: var(--red); }
 
 /* ══ Market status chips in timebar ══ */
-.time-markets {
-  display: flex; align-items: center; gap: 6px;
-  margin-left: 2px;
-}
-.mkt-status-chip {
-  display: flex; align-items: center; gap: 5px;
-  padding: 2px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: rgba(255,255,255,0.02);
-  font-size: 10px; font-weight: 600;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
-  transition: all 0.3s;
-}
-.mkt-status-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--muted);
-  flex-shrink: 0; transition: all 0.3s;
-}
-.mkt-status-name { color: var(--dim); }
-.mkt-open .mkt-status-name { color: var(--text); }
-.mkt-open {
-  border-color: rgba(34,209,122,0.25);
-  background: rgba(34,209,122,0.06);
-}
-.mkt-closed { opacity: 0.55; }
-
 /* ══ CSV Guide Panel ══ */
 .csv-guide {
   border: 1px solid var(--border);
@@ -1388,3 +1400,111 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
   display: block; margin-top: 4px;
   font-family: var(--font);
 }
+
+/* ══ GOALS TAB ══════════════════════════════════════════════════ */
+.goals-wrap {
+  padding: 20px 24px 32px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+
+/* Setup form */
+.goals-setup h3 { margin-bottom: 14px; }
+.goals-setup-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+  margin-bottom: 16px;
+}
+@media (max-width: 768px) { .goals-setup-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 480px) { .goals-setup-grid { grid-template-columns: 1fr; } }
+.goals-setup-field label {
+  display: block; font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.6px;
+  color: var(--dim); margin-bottom: 6px;
+}
+.goals-setup-field input {
+  width: 100%; padding: 9px 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text);
+  font-family: var(--font); font-size: 14px; outline: none;
+}
+.goals-setup-field input:focus { border-color: var(--blue); }
+.goals-save-btn {
+  padding: 10px 28px;
+  background: var(--blue); color: #fff; border: none;
+  border-radius: var(--radius-sm); cursor: pointer;
+  font-family: var(--font); font-size: 13px; font-weight: 600;
+  transition: opacity 0.2s;
+}
+.goals-save-btn:hover { opacity: 0.88; }
+
+/* Progress row */
+.goals-progress-row {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+}
+@media (max-width: 768px) { .goals-progress-row { grid-template-columns: 1fr; } }
+.goals-prog-card h3 { margin-bottom: 8px; }
+.gp-value { font-family: var(--mono); font-size: 26px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.gp-target { font-size: 11px; color: var(--dim); margin-bottom: 10px; }
+.gp-bar-wrap { background: var(--bg); border-radius: 6px; height: 6px; overflow: hidden; margin-bottom: 6px; }
+.gp-bar { height: 100%; background: var(--blue); border-radius: 6px; transition: width 0.5s ease; min-width: 2px; }
+.gp-bar-gold { background: var(--gold) !important; }
+.gp-pct { font-family: var(--mono); font-size: 12px; color: var(--dim); }
+
+/* Checklist */
+.goals-checklist-card h3 { margin-bottom: 4px; }
+.goals-checklist-sub { font-size: 12px; color: var(--dim); margin-bottom: 16px; }
+.goals-proj-card h3 { margin-bottom: 4px; }
+.cl-summary { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.cl-summary-bar-wrap { flex: 1; background: var(--bg); border-radius: 6px; height: 6px; overflow: hidden; }
+.cl-summary-bar { height: 100%; background: var(--green); border-radius: 6px; transition: width 0.5s; }
+.cl-summary-text { font-size: 11px; color: var(--dim); white-space: nowrap; }
+.cl-phase-header {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.8px; color: var(--blue);
+  padding: 12px 0 6px; border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+.cl-phase-done { color: var(--muted); }
+.cl-step {
+  border-bottom: 1px solid rgba(26,45,80,0.4);
+  transition: background 0.15s;
+}
+.cl-step:last-child { border-bottom: none; }
+.cl-step-main {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 10px 4px;
+}
+.cl-tick {
+  width: 26px; height: 26px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; cursor: pointer; flex-shrink: 0;
+  transition: all 0.2s; border: none;
+}
+.cl-done   .cl-tick      { background: rgba(34,209,122,0.15); color: var(--green); }
+.cl-active .cl-tick      { background: rgba(91,156,246,0.15); color: var(--blue); }
+.cl-overdue .cl-tick     { background: rgba(244,80,106,0.15); color: var(--red); }
+.cl-pending .cl-tick     { background: rgba(255,255,255,0.04); color: var(--muted); }
+.cl-tick:hover           { transform: scale(1.1); }
+.cl-step-body { flex: 1; }
+.cl-step-text {
+  font-size: 13px; font-weight: 500; color: var(--text); line-height: 1.5;
+}
+.cl-done .cl-step-text   { color: var(--muted); text-decoration: line-through; }
+.cl-active .cl-step-text { color: var(--text); font-weight: 600; }
+.cl-overdue .cl-step-text{ color: var(--red); }
+.cl-step-meta { display: flex; gap: 10px; align-items: center; margin-top: 3px; flex-wrap: wrap; }
+.cl-deadline { font-size: 10px; color: var(--muted); }
+.cl-done-date { font-size: 10px; color: var(--green); }
+.cl-overdue-badge {
+  font-size: 9.5px; font-weight: 700; color: var(--red);
+  background: rgba(244,80,106,0.1); border: 1px solid rgba(244,80,106,0.25);
+  padding: 1px 6px; border-radius: 4px;
+}
+.cl-detail {
+  font-size: 12px; color: var(--dim); line-height: 1.55;
+  margin-top: 6px; padding: 8px 10px;
+  background: rgba(91,156,246,0.05);
+  border-left: 2px solid rgba(91,156,246,0.3);
+  border-radius: 0 4px 4px 0;
+}
+.cl-active { background: rgba(91,156,246,0.03); }
+.cl-overdue { background: rgba(244,80,106,0.03); }
