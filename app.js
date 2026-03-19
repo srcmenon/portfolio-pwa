@@ -2904,8 +2904,10 @@ function bindTabs(){
         renderInsightsSummary(lastPortfolio)
         renderTopMovers(lastPortfolio)
         fetchDailyInsights(lastPortfolio, false)
-        /* Restore last analysis results without re-running the API */
         restoreLastAnalysis()
+      }
+      if(tabId === "goalsTab"){
+        renderGoalsTab()
       }
       /* portfolioTab: growth chart persists — no recreate needed here */
     }
@@ -2932,6 +2934,335 @@ function applyFilters(rows){
   })
 }
 
+
+/* ── GOALS TAB ENGINE ─────────────────────────────────────
+   Tracks progress toward retirement, home purchase, and restructuring.
+   Goals config stored in localStorage: "capintel_goals"
+   Checklist state stored in localStorage: "capintel_checklist"
+
+   On opening the tab:
+   - Shows/hides setup form based on whether goals are saved
+   - Calculates live progress from lastPortfolio
+   - Shows each checklist step sequentially — completed steps collapse,
+     the next pending step is highlighted
+   - Shows delay in days from goalStartDate if plan hasn't started  */
+
+/* The 4-phase restructuring checklist — sequential, ordered */
+const CHECKLIST_STEPS = [
+  { id:"p1_1", phase:1, text:"Exit all 25 Indian stock positions under €70 (KWIL, RPOWER, LTFOODS, SAIL, PATELENG, MAANALU, KWIL, NMDC, RPOWER, TATACHEM tiny lots, etc.)",        detail:"Combined value ~€1,033. Sell via Kite. Target near break-even. Each sale < ₹5,000 — minimal tax.", deadline:"3 months" },
+  { id:"p1_2", phase:1, text:"Stop all Indian MF SIPs if any are still running",                                    detail:"Freeze small cap allocation. Do not add new money to any small cap fund.", deadline:"1 week" },
+  { id:"p1_3", phase:1, text:"Move proceeds from tiny exits into IWDA on Scalable Capital",                         detail:"€1,033 from exits → buy IWDA. This starts your EUR compounding engine.", deadline:"3 months" },
+  { id:"p2_1", phase:2, text:"Set up €600/month auto-invest: 60% IWDA, 20% SEMI, 20% DFNS",                         detail:"Use Scalable Capital savings plans. Automate — don't time the market.", deadline:"1 month" },
+  { id:"p2_2", phase:2, text:"Grow ISRG (Intuitive Surgical) position to €2,000–€2,500",                            detail:"Current: €751. Add €200–300/month on any dip. Long-term surgical robotics monopoly.", deadline:"12 months" },
+  { id:"p2_3", phase:2, text:"Grow GE Aerospace position to €2,000",                                                detail:"Current: €597. Aviation supercycle play. Add on weakness.", deadline:"12 months" },
+  { id:"p2_4", phase:2, text:"Exit EIMI (iShares EM ETF) — consolidate into IWDA",                                  detail:"EIMI overlaps with IWDA's EM component. Sell and reinvest into IWDA. German tax: if in loss, this offsets gains.", deadline:"3 months" },
+  { id:"p2_5", phase:2, text:"Exit WTAI (AI ETF) — consolidate into SEMI",                                          detail:"Overlapping exposure. SEMI (Amundi Semiconductors) is the purer vehicle.", deadline:"3 months" },
+  { id:"p3_1", phase:3, text:"Exit UTI Small Cap Fund (using ₹1.25L LTCG exemption — Year 1)",                      detail:"Check if held >1yr. Sell when near cost price. Use India FY2026-27 exemption.", deadline:"18 months" },
+  { id:"p3_2", phase:3, text:"Exit Canara Robeco Small Cap Fund (using ₹1.25L LTCG — Year 2)",                      detail:"Spread across a second financial year to stay within free exemption.", deadline:"30 months" },
+  { id:"p3_3", phase:3, text:"Exit Edelweiss Small Cap Regular Plan — switch to Direct or consolidate",              detail:"Regular plan = higher expense ratio. Exit and reinvest into Nippon India Small Cap Direct.", deadline:"36 months" },
+  { id:"p3_4", phase:3, text:"Start STP from small cap exits into Balanced Advantage Fund (BAF)",                   detail:"Start a Systematic Transfer Plan from exited small cap proceeds into SBI/HDFC Balanced Advantage Fund. This is your home purchase corpus.", deadline:"18 months" },
+  { id:"p3_5", phase:3, text:"Exit PSU cluster: COALINDIA, ONGC, PTC, NLCINDIA, POWERGRID",                         detail:"Exit when near cost or slightly up. Reduce PSU energy concentration from 11 stocks to 2-3 max.", deadline:"24 months" },
+  { id:"p4_1", phase:4, text:"Trim SOBHA Ltd by 30-40% — lock in gains",                                            detail:"Up 144%. Too concentrated for a single real estate developer. Trim while in profit. LTCG if >1yr.", deadline:"6 months" },
+  { id:"p4_2", phase:4, text:"IWDA corpus reaches €50,000 milestone",                                               detail:"At €600/month + starting €1,114, this takes ~5 years. Track monthly.", deadline:"60 months" },
+  { id:"p4_3", phase:4, text:"Total EUR portfolio reaches €100,000",                                                detail:"The inflection point. Compounding becomes very visible after this.", deadline:"84 months" },
+]
+
+function saveGoals(){
+  const goals = {
+    monthly:    parseFloat(document.getElementById("goalMonthly")?.value) || 600,
+    homeYear:   parseInt(document.getElementById("goalHomeYear")?.value)  || 2030,
+    homeBudget: parseFloat(document.getElementById("goalHomeBudget")?.value) || 80,
+    retireAge:  parseInt(document.getElementById("goalRetireAge")?.value)  || 50,
+    corpus:     parseFloat(document.getElementById("goalCorpus")?.value)   || 270000,
+    startDate:  document.getElementById("goalStartDate")?.value || new Date().toISOString().slice(0,10),
+    savedAt:    Date.now()
+  }
+  try{ localStorage.setItem("capintel_goals", JSON.stringify(goals)) }catch(e){}
+  renderGoalsTab()
+}
+
+function loadGoals(){
+  try{ return JSON.parse(localStorage.getItem("capintel_goals")) || null }catch(e){ return null }
+}
+
+function getChecklistState(){
+  try{ return JSON.parse(localStorage.getItem("capintel_checklist")) || {} }catch(e){ return {} }
+}
+
+function tickStep(id){
+  const state = getChecklistState()
+  state[id] = { done: true, doneAt: Date.now() }
+  try{ localStorage.setItem("capintel_checklist", JSON.stringify(state)) }catch(e){}
+  renderGoalsTab()
+}
+
+function untickStep(id){
+  const state = getChecklistState()
+  delete state[id]
+  try{ localStorage.setItem("capintel_checklist", JSON.stringify(state)) }catch(e){}
+  renderGoalsTab()
+}
+
+let _goalsChartInstance = null
+
+function renderGoalsTab(){
+  const goals = loadGoals()
+
+  /* Populate form with saved values if any */
+  if(goals){
+    const set = (id, val) => { const el = document.getElementById(id); if(el) el.value = val }
+    set("goalMonthly",    goals.monthly)
+    set("goalHomeYear",   goals.homeYear)
+    set("goalHomeBudget", goals.homeBudget)
+    set("goalRetireAge",  goals.retireAge)
+    set("goalCorpus",     goals.corpus)
+    set("goalStartDate",  goals.startDate)
+  } else {
+    /* Set default start date to tomorrow */
+    const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1)
+    const el = document.getElementById("goalStartDate")
+    if(el && !el.value) el.value = tomorrow.toISOString().slice(0,10)
+  }
+
+  const progRow  = document.getElementById("goalsProgressRow")
+  const checkEl  = document.getElementById("goalsChecklistCard")
+  const projCard = document.getElementById("goalsProjCard")
+
+  if(!goals){ if(progRow) progRow.style.display="none"; return }
+
+  /* Show progress + checklist */
+  if(progRow)  progRow.style.display  = "grid"
+  if(checkEl)  checkEl.style.display  = "block"
+  if(projCard) projCard.style.display = "block"
+
+  /* ── Progress calculations ── */
+  const totalEUR     = lastPortfolio.reduce((s,p) => s + p.totalCurrentEUR, 0)
+  const indiaMF_EUR  = lastPortfolio.filter(p => p.type==="MutualFund").reduce((s,p) => s+p.totalCurrentEUR, 0)
+  const indiaStk_EUR = lastPortfolio.filter(p => p.currency==="INR" && p.type!=="MutualFund").reduce((s,p) => s+p.totalCurrentEUR, 0)
+  const indiaTotal   = indiaMF_EUR + indiaStk_EUR
+  const indiaINR     = convertFromEUR(indiaTotal, "INR")
+  const targetINR    = goals.homeBudget * 100000  /* lakhs to rupees */
+  const homePct      = Math.min(100, (indiaINR / targetINR) * 100)
+  const corpusPct    = Math.min(100, (totalEUR / goals.corpus) * 100)
+
+  /* Plan delay */
+  const startDate  = new Date(goals.startDate)
+  const today      = new Date()
+  const daysActive = Math.floor((today - startDate) / 86400000)
+  const planStatus = daysActive < 0
+    ? `Plan starts in ${Math.abs(daysActive)} day${Math.abs(daysActive)===1?"":"s"}`
+    : daysActive === 0 ? "Plan starts TODAY — begin Phase 1!"
+    : `Day ${daysActive} of plan`
+
+  /* Delay: check how many Phase 1 steps are overdue */
+  const state      = getChecklistState()
+  const overdueSteps = CHECKLIST_STEPS.filter(s => {
+    if(state[s.id]?.done) return false
+    const deadlineDays = parseInt(s.deadline) * (s.deadline.includes("month") ? 30 : 7)
+    return daysActive > deadlineDays
+  })
+  const delayMsg = overdueSteps.length > 0
+    ? `⚠ ${overdueSteps.length} step${overdueSteps.length>1?"s":""} overdue!`
+    : daysActive > 0 ? "✓ On track" : ""
+
+  const retireYear  = 2026 + (goals.retireAge - 36)
+  const homeYearsLeft = goals.homeYear - today.getFullYear()
+
+  /* Update DOM */
+  const set = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v }
+  const setHTML = (id, v) => { const el = document.getElementById(id); if(el) el.innerHTML = v }
+
+  set("gpCorpusNow", `€${totalEUR.toLocaleString("de-DE",{minimumFractionDigits:0,maximumFractionDigits:0})}`)
+  set("gpCorpusTarget", `of €${goals.corpus.toLocaleString()} target`)
+  set("gpCorpusPct",  `${corpusPct.toFixed(1)}%`)
+  const cb = document.getElementById("gpCorpusBar")
+  if(cb){ cb.style.width = corpusPct + "%"; cb.style.background = corpusPct > 50 ? "var(--green)" : "var(--blue)" }
+
+  set("gpHomeNow", `₹${(indiaINR/100000).toFixed(1)}L`)
+  set("gpHomeTarget", `of ₹${goals.homeBudget}L target`)
+  set("gpHomePct", `${homePct.toFixed(1)}%`)
+  const hb = document.getElementById("gpHomeBar")
+  if(hb){ hb.style.width = homePct + "%" }
+
+  set("gpDaysActive", planStatus)
+  setHTML("gpPlanDelay",  delayMsg ? `<span style="color:${overdueSteps.length>0?"var(--red)":"var(--green)"}">${delayMsg}</span>` : "")
+  set("gpRetireIn", `Retire in ${retireYear - today.getFullYear()} years (${retireYear})`)
+  set("gpHomeIn", `Home purchase in ${Math.max(0,homeYearsLeft)} year${homeYearsLeft===1?"":"s"} (${goals.homeYear})`)
+
+  /* ── Checklist ── */
+  renderChecklist(state, daysActive)
+
+  /* ── Projection chart ── */
+  renderProjectionChart(goals, totalEUR)
+}
+
+function renderChecklist(state, daysActive){
+  const el = document.getElementById("goalsChecklist")
+  if(!el) return
+
+  const phaseNames = { 1:"Phase 1 — Clean (0–3 months)", 2:"Phase 2 — Build (months 1–12)",
+                       3:"Phase 3 — Merge (years 1–3)", 4:"Phase 4 — Grow (years 3–14)" }
+  let html = ""
+  let currentPhase = 0
+  let foundFirstPending = false
+
+  CHECKLIST_STEPS.forEach((step, idx) => {
+    const done       = state[step.id]?.done
+    const doneAt     = state[step.id]?.doneAt
+    const doneStr    = doneAt ? new Date(doneAt).toLocaleDateString("de-DE") : ""
+    const deadlineDays = parseInt(step.deadline) * (step.deadline.includes("month") ? 30 : 7)
+    const overdue    = !done && daysActive > deadlineDays && daysActive > 0
+
+    /* Phase header */
+    if(step.phase !== currentPhase){
+      currentPhase = step.phase
+      const allDoneInPhase = CHECKLIST_STEPS.filter(s=>s.phase===currentPhase).every(s=>state[s.id]?.done)
+      html += `<div class="cl-phase-header ${allDoneInPhase?"cl-phase-done":""}">${phaseNames[currentPhase]}</div>`
+    }
+
+    /* First pending step = "active" */
+    const isNext = !done && !foundFirstPending
+    if(isNext) foundFirstPending = true
+
+    const cls = done ? "cl-step cl-done" : overdue ? "cl-step cl-overdue" : isNext ? "cl-step cl-active" : "cl-step cl-pending"
+
+    html += `<div class="${cls}" id="clstep_${step.id}">
+      <div class="cl-step-main">
+        <button class="cl-tick ${done?"cl-tick-done":""}" onclick="${done ? `untickStep('${step.id}')` : `tickStep('${step.id}')`}">
+          ${done ? "✓" : isNext ? "◎" : overdue ? "⚠" : "○"}
+        </button>
+        <div class="cl-step-body">
+          <div class="cl-step-text">${step.text}</div>
+          <div class="cl-step-meta">
+            <span class="cl-deadline">${step.deadline}</span>
+            ${done ? `<span class="cl-done-date">✓ Done ${doneStr}</span>` : ""}
+            ${overdue && !done ? `<span class="cl-overdue-badge">OVERDUE by ${Math.floor(daysActive - deadlineDays)} days</span>` : ""}
+          </div>
+          ${(isNext || overdue) && !done ? `<div class="cl-detail">${step.detail}</div>` : ""}
+        </div>
+      </div>
+    </div>`
+  })
+
+  el.innerHTML = html
+
+  /* Summary */
+  const doneCount = CHECKLIST_STEPS.filter(s => state[s.id]?.done).length
+  const total     = CHECKLIST_STEPS.length
+  const pct       = Math.round(doneCount/total*100)
+  el.insertAdjacentHTML("beforebegin",
+    `<div class="cl-summary">
+       <div class="cl-summary-bar-wrap"><div class="cl-summary-bar" style="width:${pct}%"></div></div>
+       <span class="cl-summary-text">${doneCount} of ${total} steps complete · ${pct}% done</span>
+     </div>`)
+}
+
+function renderProjectionChart(goals, currentTotal){
+  const canvas = document.getElementById("goalsProjectionChart")
+  if(!canvas) return
+
+  if(_goalsChartInstance){ _goalsChartInstance.destroy(); _goalsChartInstance = null }
+
+  const currentYear = new Date().getFullYear()
+  const retireYear  = 2026 + (goals.retireAge - 36)
+  const years       = []
+  const projected   = []
+  const conservative= []
+
+  /* Project year by year */
+  for(let y = 0; y <= retireYear - currentYear; y++){
+    const yr = currentYear + y
+    years.push(yr.toString())
+    const r     = 0.08 / 12
+    const n     = y * 12
+    const base  = 9446  /* EUR start */
+    const india = 32710 /* India start in EUR */
+    const fvEUR   = base  * Math.pow(1+r,n) + goals.monthly * (Math.pow(1+r,n)-1)/r
+    const fvIndia = india * Math.pow(1+0.09/12, n)
+    projected.push(Math.round(fvEUR + fvIndia))
+
+    const rC = 0.06/12
+    const fvEURC   = base * Math.pow(1+rC,n) + (goals.monthly*0.7) * (Math.pow(1+rC,n)-1)/rC
+    const fvIndiaC = india * Math.pow(1+0.07/12,n)
+    conservative.push(Math.round(fvEURC + fvIndiaC))
+  }
+
+  /* Today dot index */
+  const todayIdx = 0
+
+  _goalsChartInstance = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: years,
+      datasets: [
+        {
+          label: "Base Case (8% EUR + 9% India)",
+          data: projected,
+          borderColor: "#5b9cf6",
+          borderWidth: 2.5,
+          fill: true,
+          backgroundColor: ctx => {
+            const g = ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height)
+            g.addColorStop(0,"rgba(91,156,246,0.2)"); g.addColorStop(1,"rgba(91,156,246,0.01)"); return g
+          },
+          tension: 0.4,
+          pointRadius: 0, pointHoverRadius: 5
+        },
+        {
+          label: "Conservative (6% EUR + 7% India)",
+          data: conservative,
+          borderColor: "#f0a535",
+          borderWidth: 1.5,
+          borderDash: [5,4],
+          fill: false,
+          tension: 0.4,
+          pointRadius: 0, pointHoverRadius: 5
+        },
+        {
+          label: "Today",
+          data: years.map((_,i) => i===todayIdx ? currentTotal : null),
+          borderColor: "#22d17a",
+          backgroundColor: "#22d17a",
+          pointRadius: years.map((_,i) => i===todayIdx ? 8 : 0),
+          pointHoverRadius: 10,
+          showLine: false
+        },
+        {
+          label: "Target corpus",
+          data: years.map(() => goals.corpus),
+          borderColor: "rgba(244,80,106,0.4)",
+          borderWidth: 1,
+          borderDash: [3,3],
+          fill: false,
+          pointRadius: 0
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      devicePixelRatio: window.devicePixelRatio || 2,
+      interaction: { mode:"index", intersect:false },
+      plugins: {
+        legend: { labels: { color:"#8fa3c4", font:{ family:"Outfit", size:11 }, padding:16, boxWidth:20 } },
+        tooltip: {
+          backgroundColor:"rgba(8,16,40,0.97)", titleColor:"#8faac8", bodyColor:"#dce8ff",
+          callbacks: {
+            label: ctx => ctx.raw != null ? `${ctx.dataset.label}: €${ctx.raw.toLocaleString()}` : null
+          }
+        }
+      },
+      scales: {
+        x: { ticks:{ color:"#8fa3c4", font:{size:11} }, grid:{ color:"rgba(91,156,246,0.06)" }, border:{display:false} },
+        y: {
+          ticks:{ color:"#8fa3c4", font:{size:11},
+            callback: v => v >= 1000000 ? "€"+(v/1000000).toFixed(1)+"M" : "€"+(v/1000).toFixed(0)+"k"
+          },
+          grid:{ color:"rgba(91,156,246,0.06)" }, border:{display:false}
+        }
+      }
+    }
+  })
+}
 
 /* ── BOOT SEQUENCE ────────────────────────────────────────
    These calls run immediately at script parse time.
