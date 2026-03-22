@@ -520,6 +520,60 @@
       <canvas id="goalsProjectionChart" style="height:260px"></canvas>
     </div>
 
+    <!-- AI Goals Advisor — daily auto-refresh, goal-aware, market-aware -->
+    <div class="card goals-advisor-card" id="goalsAdvisorCard" style="display:none">
+      <div class="goals-advisor-header">
+        <div>
+          <h3>🧠 Daily Portfolio Advisor</h3>
+          <p class="goals-checklist-sub">Analyses your live portfolio against your goals using today's market data. Auto-refreshes once per day.</p>
+        </div>
+        <button class="goals-advisor-btn" id="goalsAdvisorBtn" onclick="runGoalsAdvisor(true)">
+          <span id="goalsAdvisorBtnText">🔄 Refresh Now</span>
+        </button>
+      </div>
+      <!-- Market Context Banner -->
+      <div id="gaMarketContext" class="ga-market-context" style="display:none"></div>
+      <!-- Goal Summary -->
+      <div id="gaGoalSummary" class="ga-goal-summary" style="display:none"></div>
+      <!-- Advice Table -->
+      <div id="gaAdviceResult" style="display:none"></div>
+      <!-- Cached timestamp -->
+      <div id="gaCachedNote" class="ga-cached-note" style="display:none"></div>
+      <!-- Loading state -->
+      <div id="gaLoading" class="ga-loading" style="display:none">
+        <span class="insights-spinner"></span>
+        <div id="gaLoadingText">Searching live market data…</div>
+      </div>
+    </div>
+
+    <!-- Manual Trade Reminders (kept for user-set alerts) -->
+    <div class="card" id="tradeRemindersCard">
+      <h3>Trade Reminders</h3>
+      <p class="goals-checklist-sub">Set your own date or price-trigger reminders. The app checks every 5 minutes and notifies you.</p>
+      <div class="tr-form" id="trAddForm">
+        <div class="tr-form-row">
+          <select id="trType" class="tr-input">
+            <option value="buy">📈 BUY</option>
+            <option value="sell">📉 SELL</option>
+          </select>
+          <input id="trTicker" class="tr-input" placeholder="Ticker (e.g. HDFCBANK)" autocomplete="off">
+          <input id="trQty" class="tr-input" type="number" placeholder="Qty" min="1" step="any">
+          <input id="trPrice" class="tr-input" type="number" placeholder="At price (₹)" step="any">
+        </div>
+        <div class="tr-form-row">
+          <select id="trTrigger" class="tr-input" onchange="toggleTrDate()">
+            <option value="date">📅 On a date</option>
+            <option value="price_below">🔻 If price drops below</option>
+            <option value="price_above">🔺 If price rises above</option>
+          </select>
+          <input id="trDate" class="tr-input" type="date">
+          <input id="trNote" class="tr-input" placeholder="Note (e.g. Tranche 2)">
+          <button class="tr-add-btn" onclick="addTradeReminder()">+ Add</button>
+        </div>
+      </div>
+      <div id="trList" class="tr-list"></div>
+    </div>
+
   </div>
 </div>
 
