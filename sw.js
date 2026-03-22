@@ -3,7 +3,7 @@
    BUMP THIS VERSION STRING every time you deploy new code.
    Safari/iPhone will only pick up changes when this string changes.
 ───────────────────────────────────────────────────────── */
-const CACHE_NAME = "capintel-v7.9";
+const CACHE_NAME = "capintel-v8.0";
 
 const PRECACHE = [
   "/",
