@@ -323,6 +323,12 @@ async function loadAssets(){
     renderPortfolioTable(filtered)
     renderPortfolioSummary(portfolio)
 
+    /* Re-apply cached advisor results to Action column after table re-renders */
+    const cache = getAdvisorCache()
+    if(cache && cache.data) applyAdvisorResults(cache.data)
+    /* Auto-run once per day if goals are configured */
+    runPortfolioAdvisor(false)
+
     /* Only redraw Insights charts if that tab is currently visible */
     if(document.getElementById("insightsTab")?.classList.contains("active")){
       drawCharts(lastPortfolio)
@@ -395,6 +401,9 @@ function renderPortfolioTable(portfolio){
       <td class="${plClass}">${pos.growth.toFixed(2)}%</td>
       <td>${typeBadge}</td>
       <td class="num" style="font-size:12px;color:var(--dim)">${pos.lastDate || ""}</td>
+      <td class="action-cell" id="action_${pos.key.replace(/[^a-zA-Z0-9]/g,"_")}">
+        <span class="action-loading">–</span>
+      </td>
       <td class="perf-cell" id="perf_${pos.key.replace(/[^a-zA-Z0-9]/g, "_")}">
         <span class="perf-loading">…</span>
       </td>`
@@ -2924,9 +2933,10 @@ function bindTabs(){
 /* Filters the portfolio array by active search text, type dropdown,
    and profit/loss filter dropdown. Pure function — does not touch the DOM. */
 function applyFilters(rows){
-  const asset  = document.getElementById("filterAsset")?.value.toLowerCase().trim()
-  const type   = document.getElementById("filterType")?.value
-  const growth = document.getElementById("filterGrowth")?.value
+  const asset   = document.getElementById("filterAsset")?.value.toLowerCase().trim()
+  const type    = document.getElementById("filterType")?.value
+  const growth  = document.getElementById("filterGrowth")?.value
+  const verdict = document.querySelector(".vf-btn.active")?.dataset.verdict || ""
 
   return rows.filter(r => {
     if(asset){
@@ -2937,6 +2947,11 @@ function applyFilters(rows){
     if(type   && r.type !== type) return false
     if(growth === "positive" && r.profitEUR <= 0) return false
     if(growth === "negative" && r.profitEUR >= 0) return false
+    if(verdict){
+      /* Filter by advisor verdict stored in window._advisorMap */
+      const adv = window._advisorMap?.[r.key]
+      if(!adv || adv.verdict !== verdict) return false
+    }
     return true
   })
 }
@@ -3717,6 +3732,162 @@ function renderAdvisorResult(data, fromCache){
       : `Analysis generated at ${ts} using live market data.`
     cachedEl.style.display = "block"
   }
+}
+
+/* ── PORTFOLIO ADVISOR ENGINE ─────────────────────────────
+   Runs once per day on Portfolio tab load.
+   Fetches real technicals + Claude analysis.
+   Results stored in:
+   - window._advisorMap  : {ticker → advice} for table Action column
+   - localStorage cache  : keyed by date, avoid re-calling same day  */
+
+const PA_CACHE_KEY = "capintel_portfolio_advisor"
+window._advisorMap = {}
+window._advisorVerdict = ""  /* current verdict filter */
+
+function getAdvisorCache(){
+  try{ return JSON.parse(localStorage.getItem(PA_CACHE_KEY)) || null }catch(e){ return null }
+}
+function setAdvisorCache(data){
+  try{ localStorage.setItem(PA_CACHE_KEY, JSON.stringify({ data, date:new Date().toDateString() })) }catch(e){}
+}
+
+/* Called on Portfolio tab open — auto-runs if no cache for today */
+async function runPortfolioAdvisor(force = false){
+  if(!lastPortfolio?.length) return
+
+  const goals = loadGoals()
+  if(!goals) return  /* need goals configured first */
+
+  const cache = getAdvisorCache()
+  if(!force && cache && cache.date === new Date().toDateString()){
+    applyAdvisorResults(cache.data)
+    return
+  }
+
+  /* Show loading state on refresh button */
+  const btn     = document.getElementById("advisorRefreshBtn")
+  const btnText = document.getElementById("advisorRefreshBtnText")
+  if(btn)     btn.disabled = true
+  if(btnText) btnText.textContent = "Analysing…"
+
+  /* Show banner in loading state */
+  const banner = document.getElementById("advisorBanner")
+  const bannerContent = document.getElementById("advisorBannerContent")
+  if(banner) banner.style.display = "flex"
+  if(bannerContent) bannerContent.innerHTML =
+    `<span class="insights-spinner"></span> Fetching technicals + AI analysis — this takes ~30 seconds…`
+
+  try{
+    const portfolioPayload = lastPortfolio.map(p => ({
+      name:            p.name,
+      key:             p.key,
+      type:            p.type,
+      currency:        p.currency,
+      qty:             p.qty,
+      avgBuy:          p.avgBuy,
+      currentPrice:    p.currentPrice,
+      totalBuyEUR:     p.totalBuyEUR,
+      totalCurrentEUR: p.totalCurrentEUR,
+      growth:          p.growth,
+      profitEUR:       p.profitEUR
+    }))
+
+    const r = await fetch("/api/goals-advisor", {
+      method:  "POST",
+      headers: { "Content-Type":"application/json" },
+      body:    JSON.stringify({ portfolio:portfolioPayload, goals })
+    })
+
+    if(!r.ok){
+      const err = await r.json().catch(()=>({}))
+      throw new Error(err.error || `HTTP ${r.status}`)
+    }
+
+    const data = await r.json()
+    setAdvisorCache(data)
+    applyAdvisorResults(data)
+
+  }catch(e){
+    if(bannerContent) bannerContent.textContent = `⚠ Analysis failed: ${e.message}`
+  }finally{
+    if(btn)     btn.disabled = false
+    if(btnText) btnText.textContent = "🔄 Refresh Analysis"
+  }
+}
+
+function applyAdvisorResults(data){
+  if(!data?.advice) return
+
+  /* Build lookup map by ticker */
+  window._advisorMap = {}
+  data.advice.forEach(a => { window._advisorMap[a.ticker] = a })
+
+  /* Populate Action column for each row in the table */
+  data.advice.forEach(a => {
+    const cellId = "action_" + (a.ticker||"").replace(/[^a-zA-Z0-9]/g,"_")
+    const cell   = document.getElementById(cellId)
+    if(!cell) return
+
+    const vCls = {BUY:"av-buy", HOLD:"av-hold", TRIM:"av-trim", SELL:"av-sell"}[a.verdict] || ""
+    const uCls = a.urgency === "This week" ? "av-urgent" : a.urgency === "This month" ? "av-soon" : ""
+
+    cell.innerHTML = `
+      <div class="action-badge-wrap">
+        <span class="action-badge ${vCls}" title="${(a.action||"").replace(/"/g,"&quot;")}">${a.verdict}</span>
+        ${a.urgency === "This week" ? `<span class="action-urgent-dot"></span>` : ""}
+      </div>
+      <div class="action-detail" id="adetail_${(a.ticker||"").replace(/[^a-zA-Z0-9]/g,"_")}">
+        <div class="action-action">${a.action||""}</div>
+        <div class="action-reason">${a.reason||""}</div>
+        ${a.taxNote ? `<div class="action-tax">🧾 ${a.taxNote}</div>` : ""}
+        ${a.holdUntil ? `<div class="action-hold">⏱ ${a.holdUntil}</div>` : ""}
+      </div>`
+    cell.dataset.verdict = a.verdict
+    /* Show verdict filter if not already visible */
+    const vf = document.getElementById("verdictFilter")
+    if(vf) vf.style.display = "flex"
+  })
+
+  /* Market summary banner */
+  const banner = document.getElementById("advisorBanner")
+  const bannerContent = document.getElementById("advisorBannerContent")
+  if(banner) banner.style.display = "flex"
+  if(bannerContent && data.marketSummary){
+    const ts = data.generatedAt ? new Date(data.generatedAt).toLocaleString("de-DE") : ""
+    bannerContent.innerHTML =
+      `<div class="advisor-summary">${data.marketSummary}</div>
+       <div class="advisor-ts">Last updated: ${ts}</div>`
+  }
+
+  /* New Opportunities panel */
+  if(data.newOpportunities?.length){
+    const panel = document.getElementById("newOpportunitiesPanel")
+    const list  = document.getElementById("newOppList")
+    if(panel && list){
+      list.innerHTML = data.newOpportunities.map(o => `
+        <div class="new-opp-item">
+          <div class="new-opp-head">
+            <span class="new-opp-ticker">${o.ticker}</span>
+            <span class="new-opp-name">${o.name}</span>
+            <span class="new-opp-exch">${o.exchange||""}</span>
+            <span class="new-opp-amount">${o.suggestedAmount||""}</span>
+            <span class="ga-goal-tag ga-${(o.goalAlignment||"").toLowerCase().replace("_","-")}">${o.goalAlignment||""}</span>
+          </div>
+          <div class="new-opp-reason">${o.reason||""}</div>
+        </div>`).join("")
+      panel.style.display = "block"
+    }
+  }
+
+  /* Wire up verdict filter buttons */
+  document.querySelectorAll(".vf-btn").forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll(".vf-btn").forEach(b => b.classList.remove("active"))
+      btn.classList.add("active")
+      loadAssets()  /* re-render table with verdict filter applied */
+    }
+  })
 }
 
 /* ── BOOT SEQUENCE ────────────────────────────────────────
