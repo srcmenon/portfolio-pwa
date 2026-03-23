@@ -143,73 +143,103 @@ export default async function handler(req, res) {
   const retYrs  = (goals.retireAge || 50) - 36
 
   const systemPrompt =
-    `You are a senior portfolio manager with real technical analysis data already computed.
-     Make specific, actionable, technically-grounded decisions for every position.
-     Respond ONLY with raw JSON — absolutely no text outside the JSON object.`
+    `You are a high-performance portfolio manager advising an aggressive growth investor.
+     Your mandate is maximum wealth creation aligned to specific goals — NOT capital preservation.
+     Unnecessary caution, hedging language, or generic "diversify" advice is explicitly forbidden.
+     Every suggestion must be profit-driven, technically grounded, and time-specific.
+     Do NOT add disclaimers. Do NOT say "consult a financial advisor".
+     The investor is 36, aggressive, has 14 years, and wants to grow wealth — not protect it.
+     Respond ONLY with raw JSON. No text outside the JSON object.`
 
   const userPrompt = `
-INVESTOR PROFILE:
+INVESTOR — READ THIS CAREFULLY BEFORE ADVISING:
 - Age 36, German tax resident, Indian origin
-- Goal 1: Buy home in India in ${homeYrs} years (${goals.homeYear}), budget ₹${goals.homeBudget} lakhs
-- Goal 2: Retire at ${goals.retireAge} (${retYrs} years). Target corpus: €${(goals.corpus||270000).toLocaleString()}
-- Monthly EUR investment: €${goals.monthly||600}
-- Current portfolio: €${totalEUR.toFixed(0)} | Cost basis: €${totalBuy.toFixed(0)}
-- Tax: Germany 26.375% flat | India LTCG 12.5% (₹1.25L/yr free), STCG 20%
-- Risk: Aggressive, 6-month drawdown tolerance
+- HARD GOAL 1: Own home in India in ${homeYrs} years (${goals.homeYear}). Budget ₹${goals.homeBudget} lakhs.
+- HARD GOAL 2: Retire at ${goals.retireAge} with €${(goals.corpus||270000).toLocaleString()} corpus. ${retYrs} years left.
+- Monthly investment capacity: €${goals.monthly||600}/month new money
+- Total portfolio NOW: €${totalEUR.toFixed(0)} | Cost basis: €${totalBuy.toFixed(0)} | True return: ${totalBuy > 0 ? (((totalEUR-totalBuy)/totalBuy)*100).toFixed(1) : 0}%
+- Tax: Germany 26.375% flat | India LTCG 12.5% (first ₹1.25L/yr free), STCG (<1yr) 20%
+- Risk tolerance: AGGRESSIVE. Accepts 6-12 month drawdowns for superior long-term returns.
+- Philosophy: Every rupee sitting in an underperforming position is a wasted rupee. Time IS money.
 
-TECHNICAL RULES TO APPLY:
-- RSI > 70 = overbought → consider TRIM or SELL
-- RSI < 30 = oversold → consider BUY if thesis intact
-- BELOW_200DMA = bear trend → cautious, only hold if strong fundamental thesis
-- 52wkHigh% near 0% = at peak → avoid adding, consider trimming
-- 52wkHigh% < -35% = deep correction → evaluate if thesis broken or opportunity
-- Weight > 5% = concentrated → review for trim unless it is core index ETF
-- EUR value < €100 = noise position → SELL to simplify
+MANDATE:
+This investor does not want to hear "be careful" or "consider the risks".
+They want to know: What to DO, exactly, TODAY — to grow this portfolio to €${(goals.corpus||270000).toLocaleString()} by age ${goals.retireAge}
+and accumulate ₹${goals.homeBudget} lakhs for a home by ${goals.homeYear}.
 
-ALL ${portfolio.length} PORTFOLIO POSITIONS WITH REAL TECHNICALS:
+CURRENT ALLOCATION ANALYSIS (identify imbalances):
+- If India MF weight > 40%: over-concentrated in one geography, recommend rebalancing
+- If small-cap MF weight > 20%: redundant cluster, consolidate aggressively
+- If EUR/global weight < 30%: under-invested globally, this investor earns EUR — must grow EUR corpus
+- If commodities/gold < 5%: underweight as inflation hedge
+- If single position > 8%: concentration risk unless it's a core world ETF
+
+ALL ${portfolio.length} POSITIONS WITH REAL TECHNICALS:
+(Format: Name | Ticker | EUR Value | Weight | Growth | P&L | Qty | RSI14 | Trend | vs50DMA | vs200DMA | 52wkHigh% | 52wkLow% | 6M momentum | 1Y momentum)
+
 ${positionLines}
 
-GENERATE:
+TECHNICAL DECISION RULES — apply strictly:
+RSI < 35 + ABOVE_200DMA + strong fundamentals = STRONG BUY opportunity
+RSI 35-50 + ABOVE_200DMA = BUY on dips, accumulate
+RSI 50-65 + ABOVE_200DMA = HOLD, let it run
+RSI 65-75 + near 52wk high = TRIM 30-50% to lock profits
+RSI > 75 OR BELOW_200DMA + broken thesis = SELL
+BELOW_200DMA + RSI < 40 + strong long-term thesis = HOLD (do not panic sell)
+EUR value < €100 = SELL immediately — noise positions destroy focus
+Weight > 6% (non-ETF) = TRIM to 3-4% to free capital for better opportunities
 
-1. Verdict for EVERY position above. Use actual RSI/DMA numbers in your reasoning.
-   - BUY: where to add and at what price/level
-   - HOLD: specific condition or timeframe to review next
-   - TRIM: EXACT shares to sell and new weight after trimming
-   - SELL: all shares, specific technical + fundamental reason
+ADVICE REQUIREMENTS:
+1. Give verdict for EVERY position. No position left unadvised.
+2. For TRIM: state exact number of shares AND what to do with proceeds (which asset to buy)
+3. For BUY: state exact entry price, position size in EUR/INR, and which goal it serves
+4. For HOLD: state a specific numeric trigger to reassess (not "monitor") — e.g. "Hold until RSI>72 then trim 30%" or "Hold until price recovers to ₹X, then exit"
+5. For SELL: state where to redeploy the proceeds immediately
+6. Flag any REBALANCING needed: if too much India, push to EUR. If too much small-cap MF, push to index.
 
-2. 5-6 NEW OPPORTUNITIES not currently in portfolio:
-   - What is missing relative to goals?
-   - Gold (more)? European small cap? Indian index fund? Global bonds? Healthcare ETF?
-   - Specify exact ticker, exchange, and monthly SIP amount or lump sum
+NEW OPPORTUNITIES — what this portfolio is MISSING relative to goals:
+- Consider: Nifty 50 index fund (if not enough India index exposure), S&P 500 ETF or MSCI World, European mid-cap, gold ETF increase, semiconductor ETF, healthcare ETF, emerging market ex-India
+- For each: specify monthly SIP amount from the €${goals.monthly||600}/month budget OR one-time amount from SELL/TRIM proceeds
+- Be specific about WHICH ETF/fund, on WHICH exchange, and WHAT amount monthly
 
-Return ONLY this JSON:
+Return ONLY this JSON (every field required, no nulls):
 {
-  "marketSummary": "3 sentences covering: aggregate portfolio RSI signal, how many positions are above/below 200DMA, overall India vs global positioning, and one key risk or opportunity right now",
+  "portfolioHealth": {
+    "indiaWeight": "X%",
+    "globalWeight": "X%",
+    "commodityWeight": "X%",
+    "biggestConcentration": "position name at X%",
+    "rebalanceUrgency": "Critical|High|Normal",
+    "summary": "2 sentences: what is the single biggest structural problem and the single biggest opportunity in this portfolio TODAY"
+  },
+  "marketSummary": "3 sentences: aggregate RSI signal across portfolio, how many positions above vs below 200DMA, and the single most important market-level action to take this week",
   "advice": [
     {
       "ticker": "TICKER",
-      "name": "Name",
+      "name": "Full name",
       "verdict": "BUY|HOLD|TRIM|SELL",
-      "currentPrice": "₹X",
+      "currentPrice": "₹X or €X",
       "weight": "X.X%",
-      "growth": "+X%",
+      "growth": "+X% or -X%",
       "rsi": 45,
-      "trend": "ABOVE_200DMA",
-      "action": "Specific instruction: e.g. 'Trim 43 of 86 shares → reduces weight from 2.8% to 1.4%' or 'Hold — review if RSI crosses 72 or price falls below 200DMA at ₹X' or 'Buy ₹25,000 in tranches at ₹780 or below (RSI=38, near 52-week low at ₹750)'",
-      "reason": "2 sentences referencing actual RSI/DMA values from data + how it serves the investor's specific goals",
+      "trend": "ABOVE_200DMA|BELOW_200DMA|UNKNOWN",
+      "action": "Precise: e.g. 'Trim 43 of 86 shares at ₹1,270. Proceeds ₹54,610 → deploy into HDFCBANK (RSI=42, near 52wk low). Reduces SOBHA weight from 2.8% to 1.4%' OR 'Buy ₹30,000 at ₹780 or below. RSI=38, price is 31% below 52-week high, 200DMA at ₹760 holding as support. Grows HDFCBANK to meaningful ₹58k position.' OR 'Hold. RSI=52, ABOVE_200DMA, 6M momentum +18%. Reassess only if RSI exceeds 73 or drops below 200DMA (currently at ₹X).'",
+      "reason": "2 sentences: technical basis (cite actual numbers) + goal basis (which goal and how much closer it gets you)",
+      "redeploy": "Where proceeds go if SELL or TRIM. 'N/A' for BUY/HOLD.",
       "goalAlignment": "HOME_FUND|RETIREMENT|CLEANUP|REBALANCE",
-      "taxNote": "1 sentence on specific Indian or German tax implication",
+      "taxNote": "Specific: e.g. 'Held >1yr — LTCG at 12.5%, gain ₹X is within ₹1.25L annual exemption' or 'STCG applies if sold now — wait 3 months for LTCG threshold'",
       "urgency": "This week|This month|Next quarter|No rush"
     }
   ],
   "newOpportunities": [
     {
-      "name": "Asset full name",
+      "name": "Full asset name",
       "ticker": "TICKER.EXCHANGE",
       "exchange": "NSE|LSE|XETRA|NYSE|BSE",
-      "suggestedAmount": "€X/month SIP or one-time €X",
-      "reason": "Why this fills a specific gap vs goals. 2 sentences.",
-      "goalAlignment": "HOME_FUND|RETIREMENT|REBALANCE"
+      "suggestedAmount": "€X/month SIP" or "One-time €X from [POSITION] trim proceeds",
+      "reason": "2 sentences: what gap it fills + specific return expectation or historical performance + which goal",
+      "goalAlignment": "HOME_FUND|RETIREMENT|REBALANCE",
+      "urgency": "Start now|Start this month|Start next quarter"
     }
   ],
   "generatedAt": "${new Date().toISOString()}"
