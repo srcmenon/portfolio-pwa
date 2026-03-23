@@ -267,6 +267,21 @@
     <button id="saveAsset">Add Asset</button>
   </div>
 
+  <!-- AI Advisor Banner — auto-runs once daily -->
+  <div id="advisorBanner" class="advisor-banner" style="display:none">
+    <div id="advisorBannerContent"></div>
+    <button class="advisor-refresh-btn" id="advisorRefreshBtn" onclick="runPortfolioAdvisor(true)">
+      <span id="advisorRefreshBtnText">🔄 Refresh Analysis</span>
+    </button>
+  </div>
+
+  <!-- New Opportunities Panel -->
+  <div id="newOpportunitiesPanel" class="card new-opp-card" style="display:none">
+    <h3>💡 New Opportunities</h3>
+    <p class="goals-checklist-sub">Assets not in your portfolio that align with your goals — based on current market conditions and portfolio gaps.</p>
+    <div id="newOppList"></div>
+  </div>
+
   <!-- Filter Bar -->
   <div id="filterBar">
     <div class="search-wrap">
@@ -290,6 +305,14 @@
       <option value="profit">Sort: P/L</option>
       <option value="value">Sort: Value</option>
     </select>
+    <!-- Verdict filter pills -->
+    <div class="verdict-filter" id="verdictFilter" style="display:none">
+      <button class="vf-btn active" data-verdict="">All</button>
+      <button class="vf-btn vf-buy"  data-verdict="BUY">BUY</button>
+      <button class="vf-btn vf-hold" data-verdict="HOLD">HOLD</button>
+      <button class="vf-btn vf-trim" data-verdict="TRIM">TRIM</button>
+      <button class="vf-btn vf-sell" data-verdict="SELL">SELL</button>
+    </div>
   </div>
 
   <div class="table-wrap">
@@ -306,6 +329,7 @@
           <th>Growth</th>
           <th>Type</th>
           <th>Date</th>
+          <th>Action</th>
           <th>Performance</th>
         </tr>
       </thead>
