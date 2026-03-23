@@ -3823,42 +3823,53 @@ function applyAdvisorResults(data){
   window._advisorMap = {}
   data.advice.forEach(a => { window._advisorMap[a.ticker] = a })
 
-  /* Populate Action column for each row in the table */
+  /* Portfolio Health banner */
+  const banner        = document.getElementById("advisorBanner")
+  const bannerContent = document.getElementById("advisorBannerContent")
+  if(banner) banner.style.display = "flex"
+  if(bannerContent){
+    const ph = data.portfolioHealth
+    const urgCls = ph?.rebalanceUrgency === "Critical" ? "ph-critical"
+                 : ph?.rebalanceUrgency === "High"     ? "ph-high" : "ph-normal"
+    const ts = data.generatedAt ? new Date(data.generatedAt).toLocaleString("de-DE") : ""
+
+    bannerContent.innerHTML = `
+      ${ph ? `<div class="ph-row">
+        <span class="ph-chip">🇮🇳 India <strong>${ph.indiaWeight}</strong></span>
+        <span class="ph-chip">🌍 Global <strong>${ph.globalWeight}</strong></span>
+        <span class="ph-chip">🥇 Commodity <strong>${ph.commodityWeight}</strong></span>
+        <span class="ph-chip ${urgCls}">Rebalance: <strong>${ph.rebalanceUrgency}</strong></span>
+      </div>
+      <div class="advisor-summary">${ph.summary || data.marketSummary || ""}</div>` : `
+      <div class="advisor-summary">${data.marketSummary || ""}</div>`}
+      <div class="advisor-ts">Analysis: ${ts}</div>`
+  }
+
+  /* Populate Action column for each row */
   data.advice.forEach(a => {
     const cellId = "action_" + (a.ticker||"").replace(/[^a-zA-Z0-9]/g,"_")
     const cell   = document.getElementById(cellId)
     if(!cell) return
 
     const vCls = {BUY:"av-buy", HOLD:"av-hold", TRIM:"av-trim", SELL:"av-sell"}[a.verdict] || ""
-    const uCls = a.urgency === "This week" ? "av-urgent" : a.urgency === "This month" ? "av-soon" : ""
+    const redeployHtml = (a.redeploy && a.redeploy !== "N/A")
+      ? `<div class="action-redeploy">↪ ${a.redeploy}</div>` : ""
 
     cell.innerHTML = `
       <div class="action-badge-wrap">
-        <span class="action-badge ${vCls}" title="${(a.action||"").replace(/"/g,"&quot;")}">${a.verdict}</span>
+        <span class="action-badge ${vCls}">${a.verdict}</span>
         ${a.urgency === "This week" ? `<span class="action-urgent-dot"></span>` : ""}
       </div>
-      <div class="action-detail" id="adetail_${(a.ticker||"").replace(/[^a-zA-Z0-9]/g,"_")}">
+      <div class="action-detail">
         <div class="action-action">${a.action||""}</div>
         <div class="action-reason">${a.reason||""}</div>
+        ${redeployHtml}
         ${a.taxNote ? `<div class="action-tax">🧾 ${a.taxNote}</div>` : ""}
-        ${a.holdUntil ? `<div class="action-hold">⏱ ${a.holdUntil}</div>` : ""}
       </div>`
     cell.dataset.verdict = a.verdict
-    /* Show verdict filter if not already visible */
     const vf = document.getElementById("verdictFilter")
     if(vf) vf.style.display = "flex"
   })
-
-  /* Market summary banner */
-  const banner = document.getElementById("advisorBanner")
-  const bannerContent = document.getElementById("advisorBannerContent")
-  if(banner) banner.style.display = "flex"
-  if(bannerContent && data.marketSummary){
-    const ts = data.generatedAt ? new Date(data.generatedAt).toLocaleString("de-DE") : ""
-    bannerContent.innerHTML =
-      `<div class="advisor-summary">${data.marketSummary}</div>
-       <div class="advisor-ts">Last updated: ${ts}</div>`
-  }
 
   /* New Opportunities panel */
   if(data.newOpportunities?.length){
@@ -3872,6 +3883,7 @@ function applyAdvisorResults(data){
             <span class="new-opp-name">${o.name}</span>
             <span class="new-opp-exch">${o.exchange||""}</span>
             <span class="new-opp-amount">${o.suggestedAmount||""}</span>
+            ${o.urgency === "Start now" ? `<span class="action-urgent-dot"></span>` : ""}
             <span class="ga-goal-tag ga-${(o.goalAlignment||"").toLowerCase().replace("_","-")}">${o.goalAlignment||""}</span>
           </div>
           <div class="new-opp-reason">${o.reason||""}</div>
@@ -3885,7 +3897,7 @@ function applyAdvisorResults(data){
     btn.onclick = () => {
       document.querySelectorAll(".vf-btn").forEach(b => b.classList.remove("active"))
       btn.classList.add("active")
-      loadAssets()  /* re-render table with verdict filter applied */
+      loadAssets()
     }
   })
 }
