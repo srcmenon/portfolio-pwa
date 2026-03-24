@@ -346,14 +346,14 @@
 <div id="insightsTab" class="tabContent">
   <div class="insights-wrap">
 
-    <!-- Daily Market Insights — TOP of page -->
+    <!-- Daily Market Insights — TOP of page, FREE -->
     <div class="card intel-card" id="dailyInsightsCard">
       <div class="intel-header">
         <div>
-          <h3>Daily Market Insights</h3>
-          <p class="intel-sub">Top news stories affecting your holdings today · refreshes daily</p>
+          <h3>📰 Daily Market Insights</h3>
+          <p class="intel-sub">Live headlines for your holdings from Google News · <strong class="free-badge">FREE</strong></p>
         </div>
-        <button id="refreshInsightsBtn" onclick="fetchDailyInsights(lastPortfolio, true)">
+        <button id="refreshInsightsBtn" onclick="fetchFreeMarketNews()">
           <span id="insightsBtnText">🔄 Refresh</span>
         </button>
       </div>
@@ -441,20 +441,6 @@
         </button>
       </div>
       <div id="picksResult" class="picks-result" style="display:none"></div>
-    </div>
-
-    <!-- Market Insights — FREE, live RSS headlines -->
-    <div class="card intel-card" id="dailyInsightsCard">
-      <div class="intel-header">
-        <div>
-          <h3>📰 Market News</h3>
-          <p class="intel-sub">Live headlines for your holdings from Google News · <strong class="free-badge">FREE</strong></p>
-        </div>
-        <button id="refreshInsightsBtn" onclick="fetchFreeMarketNews()">
-          <span id="insightsBtnText">🔄 Refresh News</span>
-        </button>
-      </div>
-      <div id="dailyInsightsResult"></div>
     </div>
 
   </div>
