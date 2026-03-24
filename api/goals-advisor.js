@@ -81,7 +81,7 @@ export default async function handler(req, res) {
   const apiKey = process.env.ANTHROPIC_API_KEY
   if (!apiKey) return res.status(500).json({ error: "ANTHROPIC_API_KEY not set" })
 
-  const { portfolio, goals } = req.body || {}
+  const { portfolio, goals, techMap: clientTechMap } = req.body || {}
   if (!portfolio?.length) return res.status(400).json({ error: "portfolio required" })
   if (!goals)             return res.status(400).json({ error: "goals required" })
 
@@ -89,41 +89,64 @@ export default async function handler(req, res) {
   const totalEUR = portfolio.reduce((s, p) => s + (p.totalCurrentEUR || 0), 0)
   const totalBuy = portfolio.reduce((s, p) => s + (p.totalBuyEUR || 0), 0)
 
-  /* Fetch technicals for all non-MF positions in parallel (capped at 40 by value) */
-  const targets = portfolio
-    .filter(p => p.type !== "MutualFund" && resolveYahooTicker(p))
-    .sort((a, b) => (b.totalCurrentEUR || 0) - (a.totalCurrentEUR || 0))
-    .slice(0, 35)  /* top 35 non-MF by value — keeps response within 8192 tokens */
-
+  /* Use pre-computed technicals from client (window._techMap) if available.
+     This avoids duplicate Yahoo Finance fetching — the free technicals engine
+     already computed RSI/MACD/BB/ADX for all positions. Fall back to
+     lightweight fetch only for positions missing from client map. */
   const techMap = {}
-  await Promise.all(targets.map(async pos => {
-    const symbol = resolveYahooTicker(pos)
-    const closes = await fetchHistory(symbol)
-    if (!closes || closes.length < 20) return
 
-    const cur       = pos.currentPrice || closes[closes.length - 1]
-    const high52    = Math.max(...closes)
-    const low52     = Math.min(...closes)
-    const sma50     = calcSMA(closes, 50)
-    const sma200    = calcSMA(closes, 200)
-    const rsi14     = calcRSI(closes)
-    const closes6m  = closes.slice(-126)
-    const mom6m     = closes6m.length > 1
-      ? ((closes6m[closes6m.length - 1] - closes6m[0]) / closes6m[0]) * 100 : null
-    const mom1y     = closes.length > 1
-      ? ((closes[closes.length - 1] - closes[0]) / closes[0]) * 100 : null
+  if (clientTechMap && Object.keys(clientTechMap).length > 0) {
+    /* Client already computed full technicals — use them directly */
+    Object.entries(clientTechMap).forEach(([key, t]) => {
+      if (!t) return
+      techMap[key] = {
+        rsi14:         t.rsi     !== null ? t.rsi     : "N/A",
+        trend:         t.sma200  ? (t.currentPrice > t.sma200 ? "ABOVE_200DMA" : "BELOW_200DMA") : (t.trend || "UNKNOWN"),
+        vsS50:         t.sma50   ? ((t.currentPrice - t.sma50)  / t.sma50  * 100).toFixed(1) + "%" : "N/A",
+        vsS200:        t.sma200  ? ((t.currentPrice - t.sma200) / t.sma200 * 100).toFixed(1) + "%" : "N/A",
+        pctFrom52High: t.pctFrom52High !== null ? t.pctFrom52High.toFixed(1) + "%" : "N/A",
+        pctFrom52Low:  t.pctFrom52Low  !== null ? t.pctFrom52Low.toFixed(1)  + "%" : "N/A",
+        momentum6m:    t.mom6m   !== null ? t.mom6m.toFixed(1)  + "%" : "N/A",
+        momentum1y:    t.mom1y   !== null ? t.mom1y.toFixed(1)  + "%" : "N/A",
+        macd:          t.macd    ? (t.macd.bullish ? "bullish" : "bearish") : "N/A",
+        bb:            t.bb      ? `${t.bb.pct.toFixed(0)}% BB position` : "N/A",
+        adx:           t.adx     ? `ADX ${t.adx.adx} (${t.adx.trending?"trending":"sideways"})` : "N/A",
+        score:         t.score   ?? null,
+        signals:       (t.signals||[]).join(", ") || "N/A"
+      }
+    })
+  } else {
+    /* Fallback: fetch lightweight technicals for top 30 only */
+    const targets = portfolio
+      .filter(p => p.type !== "MutualFund" && resolveYahooTicker(p))
+      .sort((a, b) => (b.totalCurrentEUR || 0) - (a.totalCurrentEUR || 0))
+      .slice(0, 30)
 
-    techMap[pos.key] = {
-      rsi14:         rsi14 !== null ? rsi14 : "N/A",
-      trend:         sma200 ? (cur > sma200 ? "ABOVE_200DMA" : "BELOW_200DMA") : "UNKNOWN",
-      vsS50:         sma50  ? ((cur - sma50)  / sma50  * 100).toFixed(1) + "%" : "N/A",
-      vsS200:        sma200 ? ((cur - sma200) / sma200 * 100).toFixed(1) + "%" : "N/A",
-      pctFrom52High: ((cur - high52) / high52 * 100).toFixed(1) + "%",
-      pctFrom52Low:  ((cur - low52)  / low52  * 100).toFixed(1) + "%",
-      momentum6m:    mom6m  !== null ? mom6m.toFixed(1)  + "%" : "N/A",
-      momentum1y:    mom1y  !== null ? mom1y.toFixed(1)  + "%" : "N/A"
-    }
-  }))
+    await Promise.all(targets.map(async pos => {
+      const symbol = resolveYahooTicker(pos)
+      const closes = await fetchHistory(symbol)
+      if (!closes || closes.length < 20) return
+      const cur    = pos.currentPrice || closes[closes.length - 1]
+      const high52 = Math.max(...closes)
+      const low52  = Math.min(...closes)
+      const sma50  = calcSMA(closes, 50)
+      const sma200 = calcSMA(closes, 200)
+      const rsi    = calcRSI(closes)
+      const mom6m  = closes.length > 126 ? ((closes[closes.length-1]-closes[closes.length-127])/closes[closes.length-127]*100) : null
+      const mom1y  = closes.length > 1   ? ((closes[closes.length-1]-closes[0])/closes[0]*100) : null
+      techMap[pos.key] = {
+        rsi14:         rsi !== null ? rsi : "N/A",
+        trend:         sma200 ? (cur > sma200 ? "ABOVE_200DMA" : "BELOW_200DMA") : "UNKNOWN",
+        vsS50:         sma50  ? ((cur-sma50)/sma50*100).toFixed(1)+"%" : "N/A",
+        vsS200:        sma200 ? ((cur-sma200)/sma200*100).toFixed(1)+"%" : "N/A",
+        pctFrom52High: ((cur-high52)/high52*100).toFixed(1)+"%",
+        pctFrom52Low:  ((cur-low52)/low52*100).toFixed(1)+"%",
+        momentum6m:    mom6m  !== null ? mom6m.toFixed(1)+"%" : "N/A",
+        momentum1y:    mom1y  !== null ? mom1y.toFixed(1)+"%" : "N/A",
+        macd: "N/A", bb: "N/A", adx: "N/A", score: null, signals: "N/A"
+      }
+    }))
+  }
 
   /* Build prompt lines — top 30 by EUR value to stay within token budget */
   const topPositions = portfolio
@@ -136,8 +159,20 @@ export default async function handler(req, res) {
       const sign = (pos.growth || 0) >= 0 ? "+" : ""
       const t    = techMap[pos.key]
       const techStr = t
-        ? `RSI14=${t.rsi14}, trend=${t.trend}, vs50DMA=${t.vsS50}, vs200DMA=${t.vsS200}, 52wkHigh=${t.pctFrom52High}, 52wkLow=${t.pctFrom52Low}, mom6m=${t.momentum6m}, mom1y=${t.momentum1y}`
-        : `type=${pos.type} (NAV-based, no price technicals)`
+        ? [
+            `RSI=${t.rsi14}`,
+            `trend=${t.trend}`,
+            `vs50=${t.vsS50}`,
+            `vs200=${t.vsS200}`,
+            `52wkH=${t.pctFrom52High}`,
+            `mom6m=${t.momentum6m}`,
+            `MACD=${t.macd}`,
+            `BB=${t.bb}`,
+            `${t.adx}`,
+            t.score !== null ? `score=${t.score}/100` : "",
+            t.signals && t.signals !== "N/A" ? `signals:[${t.signals}]` : ""
+          ].filter(Boolean).join(", ")
+        : `type=${pos.type} (NAV-based)`
       return `${pos.name} | ${pos.key} | €${(pos.totalCurrentEUR||0).toFixed(0)} | wt=${wt}% | ${sign}${(pos.growth||0).toFixed(1)}% | PL=€${(pos.profitEUR||0).toFixed(0)} | qty=${pos.qty||0} | ${techStr}`
     })
     .join("\n")
