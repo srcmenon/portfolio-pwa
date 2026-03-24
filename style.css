@@ -1825,3 +1825,49 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
   display: block; font-size: 10.5px; color: var(--muted);
   margin-top: 4px; line-height: 1.4;
 }
+
+/* ── FREE ENGINE UI ─────────────────────────────────────────── */
+.free-badge { color:var(--green); font-size:10px; font-weight:700; }
+.advisor-cost-label {
+  font-size:9px; color:rgba(255,255,255,0.6);
+  background:rgba(0,0,0,0.3); padding:1px 5px;
+  border-radius:3px; margin-left:4px;
+}
+.action-score {
+  font-size:9px; font-weight:700; font-family:var(--mono);
+  color:var(--muted); background:rgba(255,255,255,0.05);
+  padding:1px 4px; border-radius:3px;
+}
+.action-signals { font-size:9.5px; color:var(--muted); margin-top:2px; line-height:1.3; }
+.av-strong { box-shadow:0 0 6px rgba(34,209,122,0.4); }
+
+/* Smart Picks free */
+.sp-section { margin-bottom:14px; }
+.sp-header {
+  font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.6px;
+  padding:6px 10px; border-radius:var(--radius-sm) var(--radius-sm) 0 0;
+}
+.sp-row {
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding:8px 10px; border-bottom:1px solid rgba(26,45,80,0.4);
+}
+.sp-row:last-child { border-bottom:none; }
+.sp-name   { font-size:12px; font-weight:600; color:var(--text); flex:1; min-width:100px; }
+.sp-ticker { font-size:10px; font-family:var(--mono); color:var(--blue); }
+.sp-val    { font-size:11px; font-family:var(--mono); color:var(--dim); }
+.sp-growth { font-size:11px; font-family:var(--mono); font-weight:600; }
+.sp-rsi    { font-size:10px; color:var(--muted); }
+.sp-signals{ width:100%; font-size:10px; color:var(--muted); padding-top:2px; }
+.sp-footer { font-size:10px; color:var(--muted); padding:8px 4px; border-top:1px solid var(--border); margin-top:4px; }
+
+/* News */
+.news-grid  { display:flex; flex-direction:column; gap:6px; }
+.news-item  {
+  display:block; padding:8px 10px; background:rgba(255,255,255,0.02);
+  border:1px solid var(--border); border-radius:var(--radius-sm);
+  text-decoration:none; transition:background 0.15s;
+}
+.news-item:hover { background:rgba(91,156,246,0.06); }
+.news-title { font-size:12.5px; color:var(--text); line-height:1.4; margin-bottom:3px; }
+.news-date  { font-size:10px; color:var(--muted); }
+.news-footer{ font-size:10px; color:var(--muted); padding-top:8px; border-top:1px solid var(--border); margin-top:6px; }
