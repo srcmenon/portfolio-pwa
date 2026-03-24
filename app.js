@@ -930,7 +930,8 @@ async function updatePrices(){
   priceUpdateRunning = false
   await recordPortfolioSnapshot()
   loadAssets()
-  checkTradeReminders()  /* check date + price alerts after every price update */
+  checkTradeReminders()
+  runFreeTechnicals(false)  /* free — no credits, updates action column */
 
   /* Redraw growth chart so the latest data point reflects live prices */
   if(document.getElementById("portfolioGrowthChart")){
@@ -2056,255 +2057,260 @@ function priceAge(ts, marketState){
    simpleMarkdown()
      Lightweight markdown → HTML converter for AI response rendering. */
 
-function simpleMarkdown(text){
-  return text
-    .replace(/## (.+)/g,    '<h2 class="intel-h2">$1</h2>')
-    .replace(/### (.+)/g,   '<h3 class="intel-h3">$1</h3>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/^- (.+)/gm,  '<li>$1</li>')
-    .replace(/(<li>.*<\/li>\n?)+/gs, m => '<ul>' + m + '</ul>')
-    .replace(/\n{2,}/g,    '</p><p>')
-    .replace(/^(?!<[hul])/gm, '')
-    .replace(/(<p><\/p>)/g, '')
-    || text
+/* ── FREE TECHNICAL ANALYSIS ENGINE ──────────────────────────
+   Calls /api/technicals — no Claude, no credits.
+   Computes RSI, MACD, Bollinger Bands, ADX, Volume, Support/Resistance
+   and a composite 0-100 score per position.
+   Results cached for 30 minutes then auto-refresh.
+   Populates: Action column, Smart Picks, portfolio health banner. */
+
+const TECH_CACHE_KEY = "capintel_technicals"
+window._techMap = {}  /* ticker → technicals + score + verdict */
+
+function getTechCache(){
+  try{
+    const c = JSON.parse(localStorage.getItem(TECH_CACHE_KEY))
+    if(!c) return null
+    const age = Date.now() - (c.ts || 0)
+    return age < 30*60*1000 ? c : null  /* 30-minute TTL */
+  }catch(e){ return null }
+}
+function setTechCache(data){
+  try{ localStorage.setItem(TECH_CACHE_KEY, JSON.stringify({data, ts:Date.now()})) }catch(e){}
 }
 
-async function runMoversAnalysis(){
-  if(!lastPortfolio || !lastPortfolio.length){ alert("Load your portfolio first."); return }
+async function runFreeTechnicals(force=false){
+  if(!lastPortfolio?.length) return
 
-  const btn     = document.getElementById("runPicksBtn")
-  const btnText = document.getElementById("picksBtnText")
-  const result  = document.getElementById("picksResult")
-  const disc    = document.getElementById("picksDisclaimer")
-
-  btn.disabled         = true
-  btnText.textContent  = "🧠 Analysing portfolio…"
-  result.style.display = "none"
-
-  /* Include ALL positions including MutualFunds.
-     MFs don't have live prices but Claude can still analyse cluster redundancy,
-     over-allocation to small cap, and consolidation opportunities. */
-  const portfolioPayload = lastPortfolio
-    .map(p => ({
-      name:            resolveDisplayName(p),
-      key:             p.key,
-      type:            p.type,
-      currency:        p.currency,
-      totalBuyEUR:     p.totalBuyEUR,
-      totalCurrentEUR: p.totalCurrentEUR,
-      growth:          p.growth,
-      profitEUR:       p.profitEUR
-    }))
+  const cached = getTechCache()
+  if(!force && cached){
+    applyTechnicalsToUI(cached.data)
+    return
+  }
 
   try{
-    const res = await fetch("/api/recommend", {
-      method:  "POST",
-      headers: { "Content-Type":"application/json" },
-      body:    JSON.stringify({ portfolio: portfolioPayload })
+    const r = await fetch("/api/technicals", {
+      method: "POST",
+      headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({
+        portfolio: lastPortfolio.map(p=>({
+          key:p.key, type:p.type, currency:p.currency,
+          totalCurrentEUR:p.totalCurrentEUR, growth:p.growth
+        }))
+      })
     })
-    const raw = await res.json()
-    if(!res.ok || raw.error) throw new Error(raw.error || "API error")
+    if(!r.ok) return
+    const data = await r.json()
+    setTechCache(data)
+    applyTechnicalsToUI(data)
+  }catch(e){ console.warn("Technicals fetch failed:", e.message) }
+}
 
-    const recs = raw.recommendations || []
-    if(!recs.length){
-      disc.style.display = "none"
-      result.innerHTML   = `<div class="picks-timestamp">Analysis complete — no actionable trades identified. Your portfolio looks well-positioned to hold.</div>`
-      result.style.display = "block"
+function applyTechnicalsToUI(data){
+  if(!data?.technicals) return
+  window._techMap = data.technicals
+
+  /* 1. Populate Action column for every row */
+  Object.entries(data.technicals).forEach(([ticker, tech]) => {
+    const cellId = "action_" + ticker.replace(/[^a-zA-Z0-9]/g,"_")
+    const cell   = document.getElementById(cellId)
+    if(!cell) return
+
+    const v    = tech.verdict || "HOLD"
+    const vCls = {
+      "STRONG BUY":"av-buy av-strong",
+      "BUY":"av-buy","HOLD":"av-hold","TRIM":"av-trim","SELL":"av-sell"
+    }[v] || "av-hold"
+
+    const score = tech.score ?? "–"
+    const sigs  = (tech.signals||[]).slice(0,2).join(" · ")
+    const isUrgent = v==="SELL" || v==="STRONG BUY"
+
+    cell.innerHTML = `
+      <div class="action-badge-wrap">
+        <span class="action-badge ${vCls}">${v}</span>
+        <span class="action-score">${score}</span>
+        ${isUrgent?`<span class="action-urgent-dot"></span>`:""}
+      </div>
+      ${sigs?`<div class="action-signals">${sigs}</div>`:""}`
+    cell.dataset.verdict = v === "STRONG BUY" ? "BUY" : v
+
+    /* Show verdict filter pills */
+    const vf = document.getElementById("verdictFilter")
+    if(vf) vf.style.display = "flex"
+  })
+
+  /* 2. Refresh Smart Picks if already visible */
+  const picksEl = document.getElementById("picksResult")
+  if(picksEl && picksEl.style.display !== "none") renderFreeSmartPicks()
+
+  /* 3. Update portfolio health banner */
+  updateFreeAdvisorBanner(data)
+}
+
+function updateFreeAdvisorBanner(data){
+  const banner  = document.getElementById("advisorBanner")
+  const content = document.getElementById("advisorBannerContent")
+  if(!banner || !content || !data?.technicals) return
+
+  const techs  = Object.values(data.technicals)
+  const above  = techs.filter(t=>t.sma200&&t.currentPrice>t.sma200).length
+  const below  = techs.filter(t=>t.sma200&&t.currentPrice<=t.sma200).length
+  const avgRSI = Math.round(techs.filter(t=>t.rsi).reduce((s,t)=>s+t.rsi,0)/Math.max(1,techs.filter(t=>t.rsi).length))
+  const buys   = techs.filter(t=>t.verdict==="BUY"||t.verdict==="STRONG BUY").length
+  const sells  = techs.filter(t=>t.verdict==="SELL").length
+  const ts     = new Date(data.computedAt||Date.now()).toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"})
+
+  banner.style.display = "flex"
+  content.innerHTML = `
+    <div class="ph-row">
+      <span class="ph-chip">📊 Avg RSI <strong>${avgRSI}</strong></span>
+      <span class="ph-chip">🟢 Above 200DMA <strong>${above}</strong></span>
+      <span class="ph-chip">🔴 Below 200DMA <strong>${below}</strong></span>
+      <span class="ph-chip ph-normal">✅ BUY signals <strong>${buys}</strong></span>
+      <span class="ph-chip ph-critical">⚠ SELL signals <strong>${sells}</strong></span>
+    </div>
+    <div class="advisor-summary">Technicals computed from Yahoo Finance OHLCV. Updated ${ts}. Click <strong>Run Full Analysis</strong> for AI-powered narrative, rotation recommendations, and goal alignment.</div>`
+}
+
+/* ── FREE SMART PICKS ── */
+function renderFreeSmartPicks(){
+  const el  = document.getElementById("picksResult")
+  const btn = document.getElementById("runPicksBtn")
+  if(!el) return
+
+  if(!Object.keys(window._techMap).length){
+    el.innerHTML = `<p class="intel-empty">Technical data not loaded yet. Prices must be fetched first — wait a moment and try again.</p>`
+    el.style.display = "block"
+    return
+  }
+
+  /* Build scored list from techMap + portfolio data */
+  const scored = lastPortfolio.map(p => {
+    const t = window._techMap[p.key]
+    if(!t) return null
+    return {
+      name:    resolveDisplayName(p),
+      ticker:  p.key,
+      type:    p.type,
+      verdict: t.verdict || "HOLD",
+      score:   t.score ?? 50,
+      signals: t.signals || [],
+      value:   p.totalCurrentEUR || 0,
+      growth:  p.growth || 0,
+      weight:  t.weight || 0,
+      rsi:     t.rsi || null,
+      cur:     p.currentPrice || 0,
+      currency:p.currency
+    }
+  }).filter(Boolean)
+
+  const buys  = scored.filter(p=>p.verdict==="BUY"||p.verdict==="STRONG BUY").sort((a,b)=>b.score-a.score).slice(0,8)
+  const trims = scored.filter(p=>p.verdict==="TRIM").sort((a,b)=>b.value-a.value).slice(0,5)
+  const sells = scored.filter(p=>p.verdict==="SELL").sort((a,b)=>a.score-b.score).slice(0,8)
+
+  const row = (p, cls) => `
+    <div class="sp-row">
+      <span class="action-badge ${cls}">${p.verdict}</span>
+      <span class="action-score">${p.score}</span>
+      <span class="sp-name">${p.name}</span>
+      <span class="sp-ticker">${p.ticker}</span>
+      <span class="sp-val">€${p.value.toFixed(0)}</span>
+      <span class="sp-growth ${p.growth>=0?"profit":"loss"}">${p.growth>=0?"+":""}${p.growth.toFixed(1)}%</span>
+      ${p.rsi?`<span class="sp-rsi">RSI ${p.rsi}</span>`:""}
+      <div class="sp-signals">${p.signals.slice(0,2).join(" · ")}</div>
+    </div>`
+
+  el.innerHTML = `
+    <div class="sp-section">
+      <div class="sp-header av-buy">📈 Buy / Accumulate (${buys.length})</div>
+      ${buys.length ? buys.map(p=>row(p,p.verdict==="STRONG BUY"?"av-buy av-strong":"av-buy")).join("") : "<p class='intel-empty'>No strong buy signals currently.</p>"}
+    </div>
+    <div class="sp-section">
+      <div class="sp-header av-trim">✂️ Trim — take profits (${trims.length})</div>
+      ${trims.length ? trims.map(p=>row(p,"av-trim")).join("") : "<p class='intel-empty'>No trim signals.</p>"}
+    </div>
+    <div class="sp-section">
+      <div class="sp-header av-sell">📉 Sell — exit position (${sells.length})</div>
+      ${sells.length ? sells.map(p=>row(p,"av-sell")).join("") : "<p class='intel-empty'>No sell signals.</p>"}
+    </div>
+    <div class="sp-footer">Score 0-100 from RSI, MACD, Bollinger Bands, ADX, Volume, 52-week position · <strong>FREE</strong> · Updates with prices</div>`
+  el.style.display = "block"
+}
+
+/* ── FREE MARKET NEWS (RSS, no Claude) ── */
+async function fetchFreeMarketNews(){
+  const el  = document.getElementById("dailyInsightsResult")
+  const btn = document.getElementById("refreshInsightsBtn")
+  const txt = document.getElementById("insightsBtnText")
+  if(!el) return
+
+  /* Check date cache — one refresh per day is enough for news */
+  const today = new Date().toISOString().slice(0,10)
+  const cKey  = "capintel_news_" + today
+  try{
+    const cached = localStorage.getItem(cKey)
+    if(cached){ el.innerHTML = cached; return }
+  }catch(e){}
+
+  if(btn) btn.disabled = true
+  if(txt) txt.textContent = "⏳ Loading…"
+  el.innerHTML = `<div class="insights-loading"><span class="insights-spinner"></span>Fetching latest news…</div>`
+
+  /* Pick top 8 holdings by value for news search */
+  const tickers = lastPortfolio
+    .sort((a,b)=>(b.totalCurrentEUR||0)-(a.totalCurrentEUR||0))
+    .slice(0,8)
+    .map(p => p.name.split(" ")[0])
+
+  const fetchRSS = async (query) => {
+    const rss  = `https://news.google.com/rss/search?q=${encodeURIComponent(query+" stock market 2026")}&hl=en-US&gl=US&ceid=US:en`
+    const url  = `https://api.allorigins.win/get?url=${encodeURIComponent(rss)}`
+    try{
+      const r    = await fetch(url, {signal:AbortSignal.timeout(5000)})
+      const json = await r.json()
+      const parser = new DOMParser()
+      const doc    = parser.parseFromString(json.contents, "text/xml")
+      return Array.from(doc.querySelectorAll("item")).slice(0,3).map(item => ({
+        title:  item.querySelector("title")?.textContent || "",
+        link:   item.querySelector("link")?.textContent || "",
+        date:   item.querySelector("pubDate")?.textContent || ""
+      }))
+    }catch(e){ return [] }
+  }
+
+  try{
+    const results = await Promise.all(tickers.slice(0,5).map(t => fetchRSS(t)))
+    const allNews = results.flat().filter(n=>n.title)
+
+    if(!allNews.length){
+      el.innerHTML = `<p class="intel-empty">No news found. Try again later.</p>`
       return
     }
 
-    /* Group by verdict for sectioned display */
-    const byVerdict = { BUY:[], TRIM:[], SELL:[] }
-    recs.forEach(r => { const v = (r.verdict || "").toUpperCase(); if(byVerdict[v]) byVerdict[v].push(r) })
+    const html = `<div class="news-grid">${allNews.map(n=>`
+      <a class="news-item" href="${n.link}" target="_blank" rel="noopener">
+        <div class="news-title">${n.title}</div>
+        <div class="news-date">${n.date ? new Date(n.date).toLocaleDateString("de-DE") : ""}</div>
+      </a>`).join("")}</div>
+      <div class="news-footer">Source: Google News RSS · No AI processing · <strong>FREE</strong></div>`
 
-    const verdictConfig = {
-      BUY:  { label:"📈 Buy More", cls:"rec-buy"  },
-      TRIM: { label:"✂️ Trim",     cls:"rec-trim" },
-      SELL: { label:"🔴 Sell",     cls:"rec-sell" }
-    }
-
-    /* Compact accordion: each pick is a single row (name + badges).
-       Clicking a row expands the detail panel inline. Only one open at a time. */
-    let pickIdCounter = 0
-    const renderRec = r => {
-      const v       = (r.verdict || "").toUpperCase()
-      const cfg     = verdictConfig[v] || verdictConfig.BUY
-      const confCls = `conf-${(r.confidence || "").toLowerCase()}`
-      const id      = `pick-detail-${pickIdCounter++}`
-      return `<div class="pick-row" onclick="togglePickDetail('${id}')">
-        <div class="pick-row-main">
-          <span class="pick-row-chevron">›</span>
-          <span class="pick-row-name">${r.name}</span>
-          <div class="pick-row-badges">
-            <span class="rec-badge ${cfg.cls}">${r.verdict}</span>
-            ${r.confidence ? `<span class="rec-conf ${confCls}">${r.confidence}</span>` : ""}
-            ${r.urgency === "Immediate" ? `<span class="rec-urgent">⚡ Now</span>` : ""}
-          </div>
-        </div>
-        <div class="pick-detail" id="${id}">
-          <div class="rec-reason">${r.reason}</div>
-          <div class="rec-tax">🧾 ${r.taxNote}</div>
-          ${r.urgency ? `<div class="rec-meta"><span class="rec-urgency">⏱ ${r.urgency}</span>${r.targetWeight ? `<span class="rec-target">→ ${r.targetWeight}</span>` : ""}</div>` : ""}
-        </div>
-      </div>`
-    }
-
-    const sections = Object.entries(byVerdict)
-      .filter(([, items]) => items.length > 0)
-      .map(([verdict, items]) => {
-        const cfg = verdictConfig[verdict]
-        return `<div class="picks-section">
-          <div class="picks-section-title">${cfg.label} <span class="picks-count">${items.length}</span></div>
-          <div class="picks-accordion">${items.map(renderRec).join("")}</div>
-        </div>`
-      }).join("")
-
-    disc.style.display = "none"
-    result.innerHTML   = `
-      <div class="picks-timestamp">${recs.length} actionable picks across ${portfolioPayload.length} positions (stocks + funds) · ${new Date().toLocaleString()} · Knowledge-based</div>
-      <div class="picks-grid">${sections}</div>`
-    result.style.display = "block"
-    trackApiCall("smart_picks")
-    try{ localStorage.setItem("capintel_picks_last", JSON.stringify({ html: result.innerHTML, ts: Date.now() })) }catch(e){}
+    el.innerHTML = html
+    try{ localStorage.setItem(cKey, html) }catch(e){}
 
   }catch(e){
-    result.innerHTML     = `<p class="intel-error">❌ ${e.message}</p>`
-    result.style.display = "block"
+    el.innerHTML = `<p class="intel-empty">Could not load news: ${e.message}</p>`
   }finally{
-    btnText.textContent = "🎯 Analyse My Picks"
-    btn.disabled        = false
+    if(btn) btn.disabled = false
+    if(txt) txt.textContent = "🔄 Refresh News"
   }
 }
 
-/* Toggles a single pick's detail panel open/closed.
-   Rotates the chevron › → ↓ to signal state. */
-function togglePickDetail(id){
-  const detail = document.getElementById(id)
-  if(!detail) return
-  const row     = detail.closest(".pick-row")
-  const chevron = row?.querySelector(".pick-row-chevron")
-  const isOpen  = detail.classList.contains("open")
-  detail.classList.toggle("open", !isOpen)
-  if(chevron) chevron.textContent = isOpen ? "›" : "↓"
+function restoreLastAnalysis(){
+  /* Only restore Smart Picks from technicals cache — no more Claude cache restore */
+  const cache = getTechCache()
+  if(cache) applyTechnicalsToUI(cache.data)
 }
-
-async function runMarketIntelligence(){
-  if(!lastPortfolio || !lastPortfolio.length){ alert("Load your portfolio first."); return }
-
-  const btn     = document.getElementById("runIntelBtn")
-  const btnText = document.getElementById("intelBtnText")
-  const result  = document.getElementById("intelResult")
-  const disc    = document.getElementById("intelDisclaimer")
-
-  btn.disabled         = true
-  result.style.display = "none"
-
-  /* Rotate step labels every 7 seconds while waiting for the API (~45–60s) */
-  const steps = [
-    "🔍 Searching live market data…",
-    "📊 Fetching P/E ratios & fundamentals…",
-    "📈 Gathering technical indicators…",
-    "🌍 Reading macro & geopolitical news…",
-    "🧠 Running deep portfolio analysis…",
-    "⚖️ Applying tax-aware optimisation…"
-  ]
-  let stepIdx = 0
-  btnText.textContent = steps[0]
-  const stepTimer = setInterval(() => {
-    stepIdx = (stepIdx + 1) % steps.length
-    btnText.textContent = steps[stepIdx]
-  }, 7000)
-
-  let invested = 0, current = 0
-  lastPortfolio.forEach(p => { invested += p.totalBuyEUR; current += p.totalCurrentEUR })
-  const totalReturn = invested > 0 ? ((current - invested) / invested) * 100 : 0
-
-  const payload = {
-    portfolio: lastPortfolio.map(p => ({
-      name:            resolveDisplayName(p),
-      key:             p.key,
-      type:            p.type,
-      currency:        p.currency,
-      totalBuyEUR:     p.totalBuyEUR,
-      totalCurrentEUR: p.totalCurrentEUR,
-      growth:          p.growth,
-      profitEUR:       p.profitEUR
-    })),
-    totalValue:  current,
-    totalReturn
-  }
-
-  try{
-    /* Step 1: Gather live data via Claude web_search (~20–25s) */
-    result.innerHTML     = `<div class="intel-step">🔍 Step 1 of 2 — Gathering live market data, technicals & fundamentals…</div>`
-    result.style.display = "block"
-
-    const searchRes = await fetch("/api/market-search", {
-      method:  "POST",
-      headers: { "Content-Type":"application/json" },
-      body:    JSON.stringify(payload)
-    })
-    const searchRaw = await searchRes.text()
-    let searchData
-    try{ searchData = JSON.parse(searchRaw) }
-    catch(e){ throw new Error("Market search bad response: " + searchRaw.slice(0, 200)) }
-    if(!searchRes.ok || searchData.error){
-      throw new Error("Market search failed: " + JSON.stringify(searchData.error || searchData.detail))
-    }
-    const { marketData } = searchData
-
-    /* Step 2: Deep analysis from gathered data (~25–30s) */
-    stepIdx             = 4
-    btnText.textContent = steps[4]
-    result.innerHTML    = `<div class="intel-step">🧠 Step 2 of 2 — Running deep fundamental + technical analysis…</div>`
-
-    const analyseRes = await fetch("/api/analyse", {
-      method:  "POST",
-      headers: { "Content-Type":"application/json" },
-      body:    JSON.stringify({ ...payload, marketData })
-    })
-    const analyseRaw = await analyseRes.text()
-    let analyseData
-    try{ analyseData = JSON.parse(analyseRaw) }
-    catch(e){ throw new Error("Analysis bad response: " + analyseRaw.slice(0, 200)) }
-    if(!analyseRes.ok || analyseData.error){
-      throw new Error("Analysis failed: " + JSON.stringify(analyseData.error || analyseData.detail))
-    }
-
-    /* Convert Claude's markdown output to HTML for display */
-    const html = analyseData.analysis
-      .split("\n")
-      .map(line => {
-        if(line.startsWith("## "))  return `<h2 class="intel-h2">${line.slice(3)}</h2>`
-        if(line.startsWith("### ")) return `<h3 class="intel-h3">${line.slice(4)}</h3>`
-        if(line.startsWith("**") && line.endsWith("**")) return `<p class="intel-bold">${line.slice(2,-2)}</p>`
-        if(line.startsWith("- "))   return `<li>${line.slice(2).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")}</li>`
-        if(line.startsWith("| ") || line.startsWith("|--")) return `<p class="intel-table-row">${line}</p>`
-        if(line.trim() === "")      return "<br>"
-        return `<p>${line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")}</p>`
-      })
-      .join("")
-      .replace(/(<li>.*?<\/li>\s*<br>\s*)+/gs, m => `<ul>${m.replace(/<br>/g, "")}</ul>`)
-      .replace(/(<li>.*?<\/li>\n?)+/gs, m => `<ul>${m}</ul>`)
-
-    disc.style.display = "none"
-    result.innerHTML   = `
-      <div class="intel-timestamp">Analysis generated ${new Date().toLocaleString()} · Powered by Claude with live web search + extended thinking</div>
-      ${html}`
-    /* Persist so the user can return without re-running the expensive API call */
-    trackApiCall("ai_intel")
-    try{ localStorage.setItem("capintel_intel_last", JSON.stringify({ html: result.innerHTML, ts: Date.now() })) }catch(e){}
-
-  }catch(e){
-    result.innerHTML = `<p class="intel-error">❌ ${e.message}</p><p class="intel-error" style="font-size:12px;margin-top:8px">Check Vercel logs for details.</p>`
-  }finally{
-    clearInterval(stepTimer)
-    btnText.textContent  = "⚡ Analyse Portfolio"
-    btn.disabled         = false
-    result.style.display = "block"
-  }
-}
-
 
 /* ── EXPORT CSV ───────────────────────────────────────────
    Generates a downloadable CSV of all raw asset records.
@@ -2919,8 +2925,10 @@ function bindTabs(){
         drawCharts(lastPortfolio)
         renderInsightsSummary(lastPortfolio)
         renderTopMovers(lastPortfolio)
-        /* Daily Insights no longer auto-runs — click the refresh button to load */
         restoreLastAnalysis()
+        /* Auto-fetch free news on first Insights tab visit each day */
+        const todayKey = "capintel_news_" + new Date().toISOString().slice(0,10)
+        if(!localStorage.getItem(todayKey)) fetchFreeMarketNews()
       }
       if(tabId === "goalsTab"){
         renderGoalsTab()
@@ -3759,10 +3767,13 @@ async function runGoalsAdvisor(force = false){
       profitEUR:      p.profitEUR
     }))
 
+    /* Pass pre-computed technicals so goals-advisor doesn't re-fetch Yahoo Finance */
+    const techPayload = Object.keys(window._techMap||{}).length > 0 ? window._techMap : null
+
     const r = await fetch("/api/goals-advisor", {
       method:  "POST",
       headers: { "Content-Type":"application/json" },
-      body:    JSON.stringify({ portfolio: portfolioPayload, goals })
+      body:    JSON.stringify({ portfolio: portfolioPayload, goals, techMap: techPayload })
     })
 
     clearInterval(stepTimer)
@@ -3945,10 +3956,12 @@ async function runPortfolioAdvisor(force = false){
       profitEUR:       p.profitEUR
     }))
 
+    const techPayload = Object.keys(window._techMap||{}).length > 0 ? window._techMap : null
+
     const r = await fetch("/api/goals-advisor", {
       method:  "POST",
       headers: { "Content-Type":"application/json" },
-      body:    JSON.stringify({ portfolio:portfolioPayload, goals })
+      body:    JSON.stringify({ portfolio:portfolioPayload, goals, techMap: techPayload })
     })
 
     if(!r.ok){
@@ -4008,9 +4021,14 @@ function applyAdvisorResults(data){
     const redeployHtml = (a.redeploy && a.redeploy !== "N/A")
       ? `<div class="action-redeploy">↪ ${a.redeploy}</div>` : ""
 
+    /* Merge free technical score with Claude verdict */
+    const freeScore = window._techMap?.[a.ticker]?.score
+    const scoreHtml = freeScore != null ? `<span class="action-score">${freeScore}</span>` : ""
+
     cell.innerHTML = `
       <div class="action-badge-wrap">
         <span class="action-badge ${vCls}">${a.verdict}</span>
+        ${scoreHtml}
         ${a.urgency === "This week" ? `<span class="action-urgent-dot"></span>` : ""}
       </div>
       <div class="action-detail">
