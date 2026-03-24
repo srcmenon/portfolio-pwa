@@ -326,7 +326,9 @@ async function loadAssets(){
     /* Re-apply cached advisor results to Action column after table re-renders */
     const cache = getAdvisorCache()
     if(cache && cache.data) applyAdvisorResults(cache.data)
-    /* Advisor no longer auto-runs — user must click Refresh Analysis button */
+
+    /* Apply free technicals AFTER table is rendered so cells exist in DOM */
+    runFreeTechnicals(false)
 
     /* Only redraw Insights charts if that tab is currently visible */
     if(document.getElementById("insightsTab")?.classList.contains("active")){
@@ -931,7 +933,6 @@ async function updatePrices(){
   await recordPortfolioSnapshot()
   loadAssets()
   checkTradeReminders()
-  runFreeTechnicals(false)  /* free — no credits, updates action column */
 
   /* Redraw growth chart so the latest data point reflects live prices */
   if(document.getElementById("portfolioGrowthChart")){
