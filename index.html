@@ -501,6 +501,11 @@
           <label>Plan Start Date</label>
           <input type="date" id="goalStartDate">
         </div>
+        <div class="goals-setup-field">
+          <label>Anthropic API Budget ($)</label>
+          <input type="number" id="goalApiBudget" placeholder="13.75" min="0" step="0.01">
+          <span class="goals-setup-hint">Enter your current console.anthropic.com balance. App tracks spend and warns when low.</span>
+        </div>
       </div>
       <button class="goals-save-btn" onclick="saveGoals()">Save Goals</button>
     </div>
@@ -541,7 +546,9 @@
     <div class="card goals-proj-card" id="goalsProjCard" style="display:none">
       <h3>Corpus Projection</h3>
       <p class="goals-checklist-sub">Blue = projected growth path · Orange dot = your portfolio today</p>
-      <canvas id="goalsProjectionChart" style="height:260px"></canvas>
+      <div style="position:relative; height:260px; width:100%">
+        <canvas id="goalsProjectionChart"></canvas>
+      </div>
     </div>
 
     <!-- AI Goals Advisor — daily auto-refresh, goal-aware, market-aware -->
