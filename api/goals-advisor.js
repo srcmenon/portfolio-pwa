@@ -93,7 +93,7 @@ export default async function handler(req, res) {
   const targets = portfolio
     .filter(p => p.type !== "MutualFund" && resolveYahooTicker(p))
     .sort((a, b) => (b.totalCurrentEUR || 0) - (a.totalCurrentEUR || 0))
-    .slice(0, 40)
+    .slice(0, 35)  /* top 35 non-MF by value — keeps response within 8192 tokens */
 
   const techMap = {}
   await Promise.all(targets.map(async pos => {
@@ -125,9 +125,12 @@ export default async function handler(req, res) {
     }
   }))
 
-  /* Build prompt lines */
-  const positionLines = portfolio
+  /* Build prompt lines — top 30 by EUR value to stay within token budget */
+  const topPositions = portfolio
     .sort((a, b) => (b.totalCurrentEUR || 0) - (a.totalCurrentEUR || 0))
+    .slice(0, 30)
+
+  const positionLines = topPositions
     .map(pos => {
       const wt   = totalEUR > 0 ? ((pos.totalCurrentEUR || 0) / totalEUR * 100).toFixed(1) : "0"
       const sign = (pos.growth || 0) >= 0 ? "+" : ""
@@ -138,6 +141,13 @@ export default async function handler(req, res) {
       return `${pos.name} | ${pos.key} | €${(pos.totalCurrentEUR||0).toFixed(0)} | wt=${wt}% | ${sign}${(pos.growth||0).toFixed(1)}% | PL=€${(pos.profitEUR||0).toFixed(0)} | qty=${pos.qty||0} | ${techStr}`
     })
     .join("\n")
+
+  /* Noise positions (under €100) — summarised, not individually listed */
+  const noisePositions = portfolio
+    .filter(p => (p.totalCurrentEUR||0) < 100 && p.type !== "MutualFund")
+  const noiseLine = noisePositions.length
+    ? `\nNOISE POSITIONS (${noisePositions.length} positions under €100, combined €${noisePositions.reduce((s,p)=>s+(p.totalCurrentEUR||0),0).toFixed(0)}): ${noisePositions.map(p=>p.key).join(", ")} — verdict SELL ALL, reason: too small to impact portfolio, sell and consolidate.`
+    : ""
 
   const homeYrs = (goals.homeYear || 2030) - new Date().getFullYear()
   const retYrs  = (goals.retireAge || 50) - 36
@@ -163,130 +173,158 @@ INVESTOR — READ THIS CAREFULLY BEFORE ADVISING:
 - Philosophy: Every rupee sitting in an underperforming position is a wasted rupee. Time IS money.
 
 MANDATE:
-This investor does not want to hear "be careful" or "consider the risks".
-They want to know: What to DO, exactly, TODAY — to grow this portfolio to €${(goals.corpus||270000).toLocaleString()} by age ${goals.retireAge}
+This investor wants to know: What to DO, exactly, TODAY — to grow this portfolio to €${(goals.corpus||270000).toLocaleString()} by age ${goals.retireAge}
 and accumulate ₹${goals.homeBudget} lakhs for a home by ${goals.homeYear}.
 
-CURRENT ALLOCATION ANALYSIS (identify imbalances):
-- If India MF weight > 40%: over-concentrated in one geography, recommend rebalancing
-- If small-cap MF weight > 20%: redundant cluster, consolidate aggressively
-- If EUR/global weight < 30%: under-invested globally, this investor earns EUR — must grow EUR corpus
-- If commodities/gold < 5%: underweight as inflation hedge
-- If single position > 8%: concentration risk unless it's a core world ETF
-
-ALL ${portfolio.length} POSITIONS WITH REAL TECHNICALS:
-(Format: Name | Ticker | EUR Value | Weight | Growth | P&L | Qty | RSI14 | Trend | vs50DMA | vs200DMA | 52wkHigh% | 52wkLow% | 6M momentum | 1Y momentum)
-
+TOP ${topPositions.length} POSITIONS BY VALUE WITH REAL TECHNICALS:
+(Name | Ticker | EUR Value | Weight | Growth | P&L | Qty | RSI14 | Trend | vs50DMA | vs200DMA | 52wkHigh% | 52wkLow% | 6M momentum | 1Y momentum)
 ${positionLines}
+${noiseLine}
 
 TECHNICAL DECISION RULES — apply strictly:
-RSI < 35 + ABOVE_200DMA + strong fundamentals = STRONG BUY opportunity
-RSI 35-50 + ABOVE_200DMA = BUY on dips, accumulate
+RSI < 35 + ABOVE_200DMA = STRONG BUY
+RSI 35-50 + ABOVE_200DMA = BUY on dips
 RSI 50-65 + ABOVE_200DMA = HOLD, let it run
-RSI 65-75 + near 52wk high = TRIM 30-50% to lock profits
+RSI 65-75 + near 52wk high = TRIM 30-50%
 RSI > 75 OR BELOW_200DMA + broken thesis = SELL
-BELOW_200DMA + RSI < 40 + strong long-term thesis = HOLD (do not panic sell)
-EUR value < €100 = SELL immediately — noise positions destroy focus
-Weight > 6% (non-ETF) = TRIM to 3-4% to free capital for better opportunities
+Weight > 6% non-ETF = TRIM to 3-4%
+EUR value < €100 = SELL (noise)
 
-ADVICE REQUIREMENTS:
-1. Give verdict for EVERY position. No position left unadvised.
-2. For TRIM: state exact number of shares AND what to do with proceeds (which asset to buy)
-3. For BUY: state exact entry price, position size in EUR/INR, and which goal it serves
-4. For HOLD: state a specific numeric trigger to reassess (not "monitor") — e.g. "Hold until RSI>72 then trim 30%" or "Hold until price recovers to ₹X, then exit"
-5. For SELL: state where to redeploy the proceeds immediately
-6. Flag any REBALANCING needed: if too much India, push to EUR. If too much small-cap MF, push to index.
+REQUIRED: Generate advice for all top ${topPositions.length} positions + a bulk SELL verdict for the ${noisePositions.length} noise positions.
+For TRIM: state exact share count AND where to redeploy proceeds.
+For BUY: state entry price and amount.
+For HOLD: state specific numeric trigger to reassess.
+For SELL: state where to redeploy.
 
-NEW OPPORTUNITIES — what this portfolio is MISSING relative to goals:
-- Consider: Nifty 50 index fund (if not enough India index exposure), S&P 500 ETF or MSCI World, European mid-cap, gold ETF increase, semiconductor ETF, healthcare ETF, emerging market ex-India
-- For each: specify monthly SIP amount from the €${goals.monthly||600}/month budget OR one-time amount from SELL/TRIM proceeds
-- Be specific about WHICH ETF/fund, on WHICH exchange, and WHAT amount monthly
+Also suggest 4-5 NEW OPPORTUNITIES missing from portfolio relative to goals.
 
-Return ONLY this JSON (every field required, no nulls):
+Return ONLY this JSON (keep each field concise — max 2 sentences per field):
 {
   "portfolioHealth": {
     "indiaWeight": "X%",
     "globalWeight": "X%",
     "commodityWeight": "X%",
-    "biggestConcentration": "position name at X%",
+    "biggestConcentration": "name at X%",
     "rebalanceUrgency": "Critical|High|Normal",
-    "summary": "2 sentences: what is the single biggest structural problem and the single biggest opportunity in this portfolio TODAY"
+    "summary": "2 sentences max"
   },
-  "marketSummary": "3 sentences: aggregate RSI signal across portfolio, how many positions above vs below 200DMA, and the single most important market-level action to take this week",
+  "marketSummary": "2 sentences: aggregate RSI signal and key action this week",
   "advice": [
     {
       "ticker": "TICKER",
-      "name": "Full name",
+      "name": "Name",
       "verdict": "BUY|HOLD|TRIM|SELL",
       "currentPrice": "₹X or €X",
       "weight": "X.X%",
-      "growth": "+X% or -X%",
+      "growth": "+X%",
       "rsi": 45,
       "trend": "ABOVE_200DMA|BELOW_200DMA|UNKNOWN",
-      "action": "Precise: e.g. 'Trim 43 of 86 shares at ₹1,270. Proceeds ₹54,610 → deploy into HDFCBANK (RSI=42, near 52wk low). Reduces SOBHA weight from 2.8% to 1.4%' OR 'Buy ₹30,000 at ₹780 or below. RSI=38, price is 31% below 52-week high, 200DMA at ₹760 holding as support. Grows HDFCBANK to meaningful ₹58k position.' OR 'Hold. RSI=52, ABOVE_200DMA, 6M momentum +18%. Reassess only if RSI exceeds 73 or drops below 200DMA (currently at ₹X).'",
-      "reason": "2 sentences: technical basis (cite actual numbers) + goal basis (which goal and how much closer it gets you)",
-      "redeploy": "Where proceeds go if SELL or TRIM. 'N/A' for BUY/HOLD.",
+      "action": "Precise 1-sentence instruction with exact qty/price/amount",
+      "reason": "1-2 sentences: technical basis (cite RSI/DMA numbers) + which goal",
+      "redeploy": "Where proceeds go if SELL/TRIM, else N/A",
       "goalAlignment": "HOME_FUND|RETIREMENT|CLEANUP|REBALANCE",
-      "taxNote": "Specific: e.g. 'Held >1yr — LTCG at 12.5%, gain ₹X is within ₹1.25L annual exemption' or 'STCG applies if sold now — wait 3 months for LTCG threshold'",
+      "taxNote": "1 sentence specific tax implication",
       "urgency": "This week|This month|Next quarter|No rush"
     }
   ],
   "newOpportunities": [
     {
-      "name": "Full asset name",
+      "name": "Full name",
       "ticker": "TICKER.EXCHANGE",
-      "exchange": "NSE|LSE|XETRA|NYSE|BSE",
-      "suggestedAmount": "€X/month SIP" or "One-time €X from [POSITION] trim proceeds",
-      "reason": "2 sentences: what gap it fills + specific return expectation or historical performance + which goal",
+      "exchange": "NSE|LSE|XETRA|NYSE",
+      "suggestedAmount": "€X/month SIP or €X lump sum",
+      "reason": "2 sentences: gap it fills + goal",
       "goalAlignment": "HOME_FUND|RETIREMENT|REBALANCE",
-      "urgency": "Start now|Start this month|Start next quarter"
+      "urgency": "Start now|Start this month|Next quarter"
     }
   ],
   "generatedAt": "${new Date().toISOString()}"
 }`
 
-  try {
+  /* ── TWO-MODEL PIPELINE (cost optimisation) ──────────────────
+     Stage 1 (Haiku — cheap): Summarise ALL positions into compact flags
+     Stage 2 (Sonnet — quality): Strategic advice using Stage 1 summary
+     This cuts cost ~65% vs sending full data directly to Sonnet */
+
+  const callAnthropic = async (model, system, user, maxTokens) => {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method:  "POST",
-      headers: {
-        "Content-Type":      "application/json",
-        "x-api-key":         apiKey,
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 8192,
-        system:  systemPrompt,
-        messages: [{ role: "user", content: userPrompt }]
-      })
+      headers: { "Content-Type":"application/json", "x-api-key":apiKey, "anthropic-version":"2023-06-01" },
+      body: JSON.stringify({ model, max_tokens: maxTokens, system, messages: [{ role:"user", content:user }] })
     })
+    const raw = await r.text()
+    if (!r.ok) throw new Error(`API ${r.status}: ${raw.slice(0,200)}`)
+    const d = JSON.parse(raw)
+    if (d.error) throw new Error(d.error.message)
+    return (d.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n").trim()
+  }
 
-    const rawText = await r.text()
-    if (!r.ok) return res.status(500).json({ error: `API error ${r.status}`, detail: rawText.slice(0,500) })
-
-    let data
-    try { data = JSON.parse(rawText) }
-    catch (e) { return res.status(500).json({ error: "Failed to parse Anthropic response" }) }
-
-    if (data.error) return res.status(500).json({ error: data.error.message || "API error" })
-
-    const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("\n").trim()
-    if (!text) return res.status(500).json({ error: "Empty response" })
-
-    const start = text.indexOf("{")
-    if (start === -1) return res.status(500).json({ error: "No JSON", raw: text.slice(0,400) })
-
+  const extractJSON = (text, bracket="{") => {
+    const close = bracket === "{" ? "}" : "]"
+    const start = text.indexOf(bracket)
+    if (start === -1) throw new Error("No JSON found")
     let depth = 0, end = -1
     for (let i = start; i < text.length; i++) {
-      if (text[i] === "{")       depth++
-      else if (text[i] === "}") { depth--; if (depth === 0) { end = i; break } }
+      if (text[i] === bracket) depth++
+      else if (text[i] === close) { depth--; if (depth === 0) { end = i; break } }
     }
-    if (end === -1) return res.status(500).json({ error: "JSON truncated" })
+    if (end === -1) throw new Error("JSON truncated")
+    return JSON.parse(text.slice(start, end + 1))
+  }
 
-    let result
-    try { result = JSON.parse(text.slice(start, end + 1)) }
-    catch (e) { return res.status(500).json({ error: "Parse failed: " + e.message }) }
+  try {
+    /* ── STAGE 1: Haiku pre-processes ALL positions cheaply ── */
+    const haiku = "claude-haiku-4-5-20251001"
+    const allLines = portfolio
+      .sort((a,b)=>(b.totalCurrentEUR||0)-(a.totalCurrentEUR||0))
+      .map(pos => {
+        const wt = totalEUR>0?((pos.totalCurrentEUR||0)/totalEUR*100).toFixed(1):"0"
+        const t  = techMap[pos.key]
+        const tech = t ? `RSI=${t.rsi14},${t.trend},vs200=${t.vsS200},52wkH=${t.pctFrom52High},mom6m=${t.momentum6m}` : `type=${pos.type},NAV`
+        return `${pos.key}|€${(pos.totalCurrentEUR||0).toFixed(0)}|wt=${wt}%|${(pos.growth||0).toFixed(1)}%|qty=${pos.qty||0}|${tech}`
+      }).join("\n")
 
+    const haiku_summary = await callAnthropic(haiku,
+      "You are a portfolio screener. Output ONLY a JSON array. No text outside JSON.",
+      `Scan these ${portfolio.length} positions and classify each.
+Rules: RSI<35+ABOVE_200DMA=BUY, RSI35-50+ABOVE=BUY_DIP, RSI50-65+ABOVE=HOLD, RSI65-75+near52wkHigh=TRIM, RSI>75 OR BELOW_200DMA=SELL, EUR<100=SELL_NOISE, wt>6%nonETF=TRIM_HEAVY
+${allLines}
+Return JSON array: [{"ticker":"X","flag":"BUY|BUY_DIP|HOLD|TRIM|TRIM_HEAVY|SELL|SELL_NOISE","rsi":45,"trend":"ABOVE_200DMA","weight":"X%","growth":"+X%","eurValue":"€X"}]`,
+      4096
+    )
+
+    let flags
+    try { flags = extractJSON(haiku_summary, "[") }
+    catch(e) { flags = [] }
+
+    /* Build compact summary for Sonnet — only actionable positions in full */
+    const actionable = flags.filter(f => f.flag !== "HOLD") // Sonnet focuses on non-holds
+    const holds = flags.filter(f => f.flag === "HOLD")
+    const sellNoise = flags.filter(f => f.flag === "SELL_NOISE")
+
+    const sonnetLines = actionable.map(f => {
+      const pos = portfolio.find(p => p.key === f.ticker) || {}
+      const t   = techMap[f.ticker]
+      return `${f.ticker}|${pos.name||f.ticker}|${f.eurValue}|wt=${f.weight}|${f.growth}|qty=${pos.qty||0}|RSI=${f.rsi}|${f.trend}|vs50=${t?.vsS50||"N/A"}|vs200=${t?.vsS200||"N/A"}|52wkH=${t?.pctFrom52High||"N/A"}|mom6m=${t?.momentum6m||"N/A"}|FLAG=${f.flag}`
+    }).join("\n")
+
+    const holdSummary = holds.length
+      ? `\nHOLD positions (${holds.length}, no immediate action needed): ${holds.map(f=>`${f.ticker}(${f.weight},RSI=${f.rsi})`).join(", ")}`
+      : ""
+
+    /* ── STAGE 2: Sonnet strategic advice on actionable positions only ── */
+    const text2 = await callAnthropic(model, systemPrompt,
+      userPrompt.replace(
+        `TOP ${topPositions.length} POSITIONS BY VALUE WITH REAL TECHNICALS:\n(Name | Ticker | EUR Value | Weight | Growth | P&L | Qty | RSI14 | Trend | vs50DMA | vs200DMA | 52wkHigh% | 52wkLow% | 6M momentum | 1Y momentum)\n${positionLines}\n${noiseLine}`,
+        `PRE-SCREENED ACTIONABLE POSITIONS (${actionable.length} positions requiring action):
+${sonnetLines}
+${holdSummary}
+BULK SELL NOISE (${sellNoise.length} positions under €100, combined ≈€${sellNoise.reduce((s,f)=>{const p=portfolio.find(x=>x.key===f.ticker);return s+(p?.totalCurrentEUR||0)},0).toFixed(0)}): ${sellNoise.map(f=>f.ticker).join(", ")} — verdict SELL ALL, redeploy to IWDA or HDFCBANK.`
+      ),
+      6144
+    )
+
+    const result = extractJSON(text2, "{")
     return res.status(200).json(result)
 
   } catch (e) {
