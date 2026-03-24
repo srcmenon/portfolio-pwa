@@ -326,8 +326,7 @@ async function loadAssets(){
     /* Re-apply cached advisor results to Action column after table re-renders */
     const cache = getAdvisorCache()
     if(cache && cache.data) applyAdvisorResults(cache.data)
-    /* Auto-run once per day if goals are configured */
-    runPortfolioAdvisor(false)
+    /* Advisor no longer auto-runs — user must click Refresh Analysis button */
 
     /* Only redraw Insights charts if that tab is currently visible */
     if(document.getElementById("insightsTab")?.classList.contains("active")){
@@ -2165,7 +2164,7 @@ async function runMoversAnalysis(){
       <div class="picks-timestamp">${recs.length} actionable picks across ${portfolioPayload.length} positions (stocks + funds) · ${new Date().toLocaleString()} · Knowledge-based</div>
       <div class="picks-grid">${sections}</div>`
     result.style.display = "block"
-    /* Persist so the user can return to this analysis without regenerating */
+    trackApiCall("smart_picks")
     try{ localStorage.setItem("capintel_picks_last", JSON.stringify({ html: result.innerHTML, ts: Date.now() })) }catch(e){}
 
   }catch(e){
@@ -2293,6 +2292,7 @@ async function runMarketIntelligence(){
       <div class="intel-timestamp">Analysis generated ${new Date().toLocaleString()} · Powered by Claude with live web search + extended thinking</div>
       ${html}`
     /* Persist so the user can return without re-running the expensive API call */
+    trackApiCall("ai_intel")
     try{ localStorage.setItem("capintel_intel_last", JSON.stringify({ html: result.innerHTML, ts: Date.now() })) }catch(e){}
 
   }catch(e){
@@ -2919,7 +2919,7 @@ function bindTabs(){
         drawCharts(lastPortfolio)
         renderInsightsSummary(lastPortfolio)
         renderTopMovers(lastPortfolio)
-        fetchDailyInsights(lastPortfolio, false)
+        /* Daily Insights no longer auto-runs — click the refresh button to load */
         restoreLastAnalysis()
       }
       if(tabId === "goalsTab"){
@@ -2969,24 +2969,90 @@ function applyFilters(rows){
      the next pending step is highlighted
    - Shows delay in days from goalStartDate if plan hasn't started  */
 
-/* The 4-phase restructuring checklist — sequential, ordered */
+/* The 4-phase restructuring checklist — sequential, ordered.
+   Step p1_1 is dynamically expanded from live portfolio data when rendered. */
+/* Generates the dynamic sell list for Step p1_1 from live portfolio data */
+function getDynamicSellList(){
+  if(!lastPortfolio?.length) return null
+  const small = lastPortfolio
+    .filter(p => p.currency === "INR" && p.type !== "MutualFund" && (p.totalCurrentEUR||0) < 100)
+    .sort((a,b) => (a.totalCurrentEUR||0) - (b.totalCurrentEUR||0))
+  if(!small.length) return null
+  const totalEUR = small.reduce((s,p) => s+(p.totalCurrentEUR||0), 0)
+  const totalINR = small.reduce((s,p) => s+(p.totalCurrentLocal||0), 0)
+  return { positions: small, totalEUR, totalINR }
+}
+
+function buildDynamicSellListHTML(){
+  const data = getDynamicSellList()
+  if(!data) return "No positions under €100 found — this step may already be complete."
+
+  const rows = data.positions.map(p => {
+    const cur    = p.currentPrice || 0
+    const buy    = p.avgBuy || 0
+    const chg    = buy > 0 ? ((cur - buy) / buy * 100) : 0
+    const chgCls = chg >= 0 ? "profit" : "loss"
+    const chgStr = (chg >= 0 ? "+" : "") + chg.toFixed(1) + "%"
+    const reason = chg < -30
+      ? "Deep loss — book loss for tax offset against future gains"
+      : chg > 50
+        ? "Strong gain — lock in profit, too small to compound meaningfully"
+        : (p.totalCurrentEUR||0) < 20
+          ? "Effectively zero — exit immediately, not worth tracking"
+          : "Too small to impact portfolio — sell and redeploy to quality positions"
+    return `<div class="dsl-row">
+      <span class="dsl-ticker">${p.key}</span>
+      <span class="dsl-name">${resolveDisplayName(p)}</span>
+      <span class="dsl-qty">${p.qty?.toFixed ? p.qty.toFixed(0) : p.qty} shares</span>
+      <span class="dsl-buy">Bought @ ${formatCurrency(buy, "INR")}</span>
+      <span class="dsl-cur">Now ${formatCurrency(cur, "INR")}</span>
+      <span class="dsl-chg ${chgCls}">${chgStr}</span>
+      <span class="dsl-val">≈€${(p.totalCurrentEUR||0).toFixed(0)}</span>
+      <div class="dsl-reason">${reason}</div>
+    </div>`
+  }).join("")
+
+  return `<div class="dsl-header">
+    <strong>${data.positions.length} positions to exit · Combined ≈€${data.totalEUR.toFixed(0)} (₹${(data.totalINR/1000).toFixed(1)}k)</strong>
+    <span style="color:var(--dim);font-size:11px"> · Sell via Kite · Redeploy proceeds to IWDA or HDFCBANK</span>
+  </div>
+  <div class="dsl-list">${rows}</div>
+  <div class="dsl-footer">Tax note: Most lots are small gains/losses. Each transaction &lt; ₹5,000 — well within LTCG ₹1.25L annual exemption. Losses can be carried forward 8 years to offset future gains.</div>`
+}
+
 const CHECKLIST_STEPS = [
-  { id:"p1_1", phase:1, text:"Exit all 25 Indian stock positions under €70 (KWIL, RPOWER, LTFOODS, SAIL, PATELENG, MAANALU, KWIL, NMDC, RPOWER, TATACHEM tiny lots, etc.)",        detail:"Combined value ~€1,033. Sell via Kite. Target near break-even. Each sale < ₹5,000 — minimal tax.", deadline:"3 months" },
-  { id:"p1_2", phase:1, text:"Stop all Indian MF SIPs if any are still running",                                    detail:"Freeze small cap allocation. Do not add new money to any small cap fund.", deadline:"1 week" },
-  { id:"p1_3", phase:1, text:"Move proceeds from tiny exits into IWDA on Scalable Capital",                         detail:"€1,033 from exits → buy IWDA. This starts your EUR compounding engine.", deadline:"3 months" },
-  { id:"p2_1", phase:2, text:"Set up €600/month auto-invest: 60% IWDA, 20% SEMI, 20% DFNS",                         detail:"Use Scalable Capital savings plans. Automate — don't time the market.", deadline:"1 month" },
-  { id:"p2_2", phase:2, text:"Grow ISRG (Intuitive Surgical) position to €2,000–€2,500",                            detail:"Current: €751. Add €200–300/month on any dip. Long-term surgical robotics monopoly.", deadline:"12 months" },
-  { id:"p2_3", phase:2, text:"Grow GE Aerospace position to €2,000",                                                detail:"Current: €597. Aviation supercycle play. Add on weakness.", deadline:"12 months" },
-  { id:"p2_4", phase:2, text:"Exit EIMI (iShares EM ETF) — consolidate into IWDA",                                  detail:"EIMI overlaps with IWDA's EM component. Sell and reinvest into IWDA. German tax: if in loss, this offsets gains.", deadline:"3 months" },
-  { id:"p2_5", phase:2, text:"Exit WTAI (AI ETF) — consolidate into SEMI",                                          detail:"Overlapping exposure. SEMI (Amundi Semiconductors) is the purer vehicle.", deadline:"3 months" },
-  { id:"p3_1", phase:3, text:"Exit UTI Small Cap Fund (using ₹1.25L LTCG exemption — Year 1)",                      detail:"Check if held >1yr. Sell when near cost price. Use India FY2026-27 exemption.", deadline:"18 months" },
-  { id:"p3_2", phase:3, text:"Exit Canara Robeco Small Cap Fund (using ₹1.25L LTCG — Year 2)",                      detail:"Spread across a second financial year to stay within free exemption.", deadline:"30 months" },
-  { id:"p3_3", phase:3, text:"Exit Edelweiss Small Cap Regular Plan — switch to Direct or consolidate",              detail:"Regular plan = higher expense ratio. Exit and reinvest into Nippon India Small Cap Direct.", deadline:"36 months" },
-  { id:"p3_4", phase:3, text:"Start STP from small cap exits into Balanced Advantage Fund (BAF)",                   detail:"Start a Systematic Transfer Plan from exited small cap proceeds into SBI/HDFC Balanced Advantage Fund. This is your home purchase corpus.", deadline:"18 months" },
-  { id:"p3_5", phase:3, text:"Exit PSU cluster: COALINDIA, ONGC, PTC, NLCINDIA, POWERGRID",                         detail:"Exit when near cost or slightly up. Reduce PSU energy concentration from 11 stocks to 2-3 max.", deadline:"24 months" },
-  { id:"p4_1", phase:4, text:"Trim SOBHA Ltd by 30-40% — lock in gains",                                            detail:"Up 144%. Too concentrated for a single real estate developer. Trim while in profit. LTCG if >1yr.", deadline:"6 months" },
-  { id:"p4_2", phase:4, text:"IWDA corpus reaches €50,000 milestone",                                               detail:"At €600/month + starting €1,114, this takes ~5 years. Track monthly.", deadline:"60 months" },
-  { id:"p4_3", phase:4, text:"Total EUR portfolio reaches €100,000",                                                detail:"The inflection point. Compounding becomes very visible after this.", deadline:"84 months" },
+  { id:"p1_1", phase:1, text:"Exit all small Indian stock positions under €100",
+    detail:"DYNAMIC — see live list below", deadline:"3 months", dynamic:true },
+  { id:"p1_2", phase:1, text:"Stop all Indian MF SIPs if running",
+    detail:"Freeze small cap allocation now. At current valuations (small cap PE ~26x vs Nifty 22x), adding more capital is suboptimal. The 7 small cap funds you hold are already redundant — do not compound the problem.", deadline:"1 week" },
+  { id:"p1_3", phase:1, text:"Deploy proceeds from exits → IWDA on Scalable Capital",
+    detail:"Every ₹ freed from noise positions → IWDA (iShares Core MSCI World, ticker IWDA.L on LSE). 1,500 global quality companies in one instrument. Compounding €1,033 at 8% p.a. = €2,230 in 10 years. Do it this week — delay costs money.", deadline:"1 month" },
+  { id:"p2_1", phase:2, text:"Set up €600/month savings plan: 60% IWDA · 20% SEMI · 20% DFNS",
+    detail:"On Scalable Capital: IWDA.L €360/month, CHIP.PA (Amundi Semiconductors) €120/month, DFNS (VanEck Defence) €120/month. Automated savings plans remove emotion. This is your retirement engine — every month you delay is €600 not compounding.", deadline:"1 month" },
+  { id:"p2_2", phase:2, text:"Grow ISRG (Intuitive Surgical) to €2,500",
+    detail:"ISRG: surgical robotics monopoly, 80%+ gross margins, 30%+ recurring revenue. Add €200–300 on dips below 200DMA. Target €2,500 within 12 months. Long-term this compounds to €10,000+ by retirement — do not trade it, accumulate it.", deadline:"12 months" },
+  { id:"p2_3", phase:2, text:"Grow GE Aerospace to €2,000",
+    detail:"GE Aerospace: aviation engine aftermarket is pure recurring high-margin revenue regardless of new aircraft orders. Multi-decade tailwind. Add on weakness. Target €2,000. Never sell unless aviation thesis fundamentally breaks.", deadline:"12 months" },
+  { id:"p2_4", phase:2, text:"Exit EIMI → add proceeds to IWDA",
+    detail:"EIMI (iShares EM ETF) duplicates IWDA's EM component while adding extra fees. Exit entirely. If EIMI is at a loss in Germany → capital loss offsets future gains (valuable). If at profit → time to year-end to batch with other losses.", deadline:"3 months" },
+  { id:"p2_5", phase:2, text:"Exit WTAI → add proceeds to SEMI",
+    detail:"WTAI (WisdomTree AI) and SEMI both hold Nvidia, TSMC, ASML, Broadcom. Duplicate exposure, double fees. SEMI has lower TER and is more liquid on Euronext Paris. Sell WTAI, add to SEMI.", deadline:"3 months" },
+  { id:"p3_1", phase:3, text:"Exit UTI Small Cap Fund — FY2026-27 LTCG harvest",
+    detail:"Use India's ₹1.25L annual LTCG exemption in FY2026-27. UTI Small Cap: if near or above cost price, sell all units. If below cost: sell anyway — capital loss carries forward 8 years to offset future LTCG. Reinvest into Parag Parikh Flexi Cap (already held) for better risk-adjusted returns.", deadline:"18 months" },
+  { id:"p3_2", phase:3, text:"Exit Canara Robeco Small Cap — FY2027-28 LTCG harvest",
+    detail:"Year 2 of 3 for MF consolidation. Use next FY's ₹1.25L exemption. Goal: reduce from 7 small cap funds to 2 (Nippon India Small Cap + Quant Small Cap). Less redundancy, same exposure, lower tracking overhead.", deadline:"30 months" },
+  { id:"p3_3", phase:3, text:"Exit Edelweiss Small Cap Regular Plan — switch to Direct",
+    detail:"'Regular' plan charges ~0.5-0.8% extra annual expense ratio vs Direct. On ₹3.6L corpus this wastes ₹1,800–2,900/year unnecessarily. Exit Regular, reinvest into Nippon India Small Cap Direct. FY2028-29 LTCG exemption.", deadline:"36 months" },
+  { id:"p3_4", phase:3, text:"Start STP from small cap exits into Balanced Advantage Fund",
+    detail:"As you exit small cap funds, redirect via Systematic Transfer Plan into SBI Balanced Advantage or HDFC Balanced Advantage. BAF auto-shifts between 30–80% equity based on market valuations — capital preservation with growth. This becomes your ₹40–50L home purchase corpus by 2029.", deadline:"18 months" },
+  { id:"p3_5", phase:3, text:"Exit PSU energy cluster: COALINDIA · ONGC · PTC · NLCINDIA · POWERGRID",
+    detail:"These 5 stocks + OIL + SAIL + BEL + LICI + RECLTD + PFC = 11 PSU/energy positions moving in lockstep. Keep only PFC and RECLTD (infrastructure NBFC thesis). Exit the rest when near cost price to minimise STCG. Redeploy into HDFCBANK and CDSL — better compounders.", deadline:"24 months" },
+  { id:"p4_1", phase:4, text:"Trim SOBHA Ltd 25–35 shares — lock in 137% gains",
+    detail:"SOBHA: up 137% from ₹531 buy price. Currently ₹1,263. Trim 25–35 of your 86 shares = ₹31k–44k profit realised. Since held >1 year: LTCG at 12.5% — likely within ₹1.25L exemption. Redeploy to CDSL or IRCTC to build meaningful positions. Keep 51–61 shares for long-term ride.", deadline:"6 months" },
+  { id:"p4_2", phase:4, text:"IWDA position reaches €50,000",
+    detail:"At €360/month into IWDA + 8% p.a. compounding from current base, this milestone arrives in approximately 5–6 years. It marks the point where IWDA alone generates more annual return (€4,000/yr) than 6 months of your SIP contribution. The compounding becomes self-reinforcing.", deadline:"60 months" },
+  { id:"p4_3", phase:4, text:"Total EUR portfolio reaches €100,000",
+    detail:"The inflection point: at €100k compounding at 8%, the portfolio earns €8,000/year — more than you invest monthly. From here, time does more work than your contributions. Target: 2033–2034. Once here, early retirement at 50 becomes mathematical certainty.", deadline:"96 months" },
 ]
 
 function saveGoals(){
@@ -2997,6 +3063,7 @@ function saveGoals(){
     retireAge:  parseInt(document.getElementById("goalRetireAge")?.value)  || 50,
     corpus:     parseFloat(document.getElementById("goalCorpus")?.value)   || 270000,
     startDate:  document.getElementById("goalStartDate")?.value || new Date().toISOString().slice(0,10),
+    apiBudget:  parseFloat(document.getElementById("goalApiBudget")?.value) || 0,
     savedAt:    Date.now()
   }
   try{ localStorage.setItem("capintel_goals", JSON.stringify(goals)) }catch(e){}
@@ -3005,6 +3072,80 @@ function saveGoals(){
 
 function loadGoals(){
   try{ return JSON.parse(localStorage.getItem("capintel_goals")) || null }catch(e){ return null }
+}
+
+/* ── API BUDGET TRACKER ───────────────────────────────────
+   Tracks estimated Anthropic API spend in localStorage.
+   Goals Advisor (two-model): ~$0.059/call
+   Smart Picks: ~$0.08/call
+   AI Intelligence: ~$0.12/call
+   Warns when remaining budget < $2 or < 30 days of daily use */
+
+const COST_PER_CALL = {
+  goals_advisor: 0.059,
+  smart_picks:   0.08,
+  ai_intel:      0.12
+}
+const BUDGET_KEY = "capintel_api_spend"
+
+function getApiSpend(){
+  try{ return parseFloat(localStorage.getItem(BUDGET_KEY)) || 0 }catch(e){ return 0 }
+}
+function trackApiCall(type){
+  const cost = COST_PER_CALL[type] || 0.05
+  const spent = getApiSpend() + cost
+  try{ localStorage.setItem(BUDGET_KEY, spent.toFixed(4)) }catch(e){}
+  checkBudgetWarning()
+}
+function checkBudgetWarning(){
+  const goals = loadGoals()
+  if(!goals?.apiBudget) return  /* no budget set — skip */
+  const spent     = getApiSpend()
+  const remaining = goals.apiBudget - spent
+  const daysLeft  = Math.floor(remaining / COST_PER_CALL.goals_advisor)
+  const expiry    = new Date(goals.savedAt || Date.now())
+  expiry.setFullYear(expiry.getFullYear() + 1)  /* credits expire ~1yr after purchase */
+  const daysToExpiry = Math.floor((expiry - Date.now()) / 86400000)
+
+  /* Show warning if < $2 remaining OR < 30 days of daily use */
+  if(remaining < 2 || daysLeft < 30){
+    showBudgetWarning(remaining, daysLeft, daysToExpiry)
+  } else {
+    hideBudgetWarning()
+  }
+}
+function showBudgetWarning(remaining, daysLeft, daysToExpiry){
+  let el = document.getElementById("apiBudgetWarning")
+  if(!el){
+    el = document.createElement("div")
+    el.id = "apiBudgetWarning"
+    el.className = "api-budget-warning"
+    document.getElementById("appScroll")?.prepend(el)
+  }
+  const urgency = remaining < 0.5 ? "🔴" : remaining < 2 ? "🟠" : "🟡"
+  el.innerHTML = `${urgency} <strong>API Credits Low:</strong> ~$${remaining.toFixed(2)} remaining
+    (~${daysLeft} advisor runs · credits expire in ${daysToExpiry} days).
+    <a href="https://console.anthropic.com/billing" target="_blank" class="budget-topup-link">Top up →</a>
+    <button onclick="hideBudgetWarning()" class="budget-dismiss">✕</button>`
+  el.style.display = "flex"
+}
+function hideBudgetWarning(){
+  const el = document.getElementById("apiBudgetWarning")
+  if(el) el.style.display = "none"
+}
+function resetApiSpend(){
+  /* Called when user tops up — resets spend tracker */
+  const goals = loadGoals()
+  if(!goals) return
+  const newBudget = parseFloat(prompt("Enter your new Anthropic credit balance ($):", goals.apiBudget || ""))
+  if(isNaN(newBudget) || newBudget <= 0) return
+  goals.apiBudget = newBudget
+  try{
+    localStorage.setItem("capintel_goals", JSON.stringify(goals))
+    localStorage.setItem(BUDGET_KEY, "0")
+  }catch(e){}
+  hideBudgetWarning()
+  alert(`Budget reset to $${newBudget}. Spend tracker reset to $0.`)
 }
 
 function getChecklistState(){
@@ -3039,6 +3180,9 @@ function renderGoalsTab(){
     set("goalRetireAge",  goals.retireAge)
     set("goalCorpus",     goals.corpus)
     set("goalStartDate",  goals.startDate)
+    set("goalApiBudget",  goals.apiBudget || "")
+    /* Check and show budget warning whenever Goals tab opens */
+    checkBudgetWarning()
   } else {
     /* Set default start date to tomorrow */
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1)
@@ -3059,10 +3203,9 @@ function renderGoalsTab(){
 
   renderTradeReminders()
 
-  /* Show advisor card and auto-run if not already cached today */
+  /* Show advisor card — user must click Refresh to run analysis */
   const advisorCard = document.getElementById("goalsAdvisorCard")
   if(advisorCard) advisorCard.style.display = "block"
-  runGoalsAdvisor(false)  /* false = use cache if today's already loaded */
 
   /* ── Progress calculations ── */
   const totalEUR     = lastPortfolio.reduce((s,p) => s + p.totalCurrentEUR, 0)
@@ -3167,7 +3310,11 @@ function renderChecklist(state, daysActive){
             ${done ? `<span class="cl-done-date">✓ Done ${doneStr}</span>` : ""}
             ${overdue && !done ? `<span class="cl-overdue-badge">OVERDUE by ${Math.floor(daysActive - deadlineDays)} days</span>` : ""}
           </div>
-          ${(isNext || overdue) && !done ? `<div class="cl-detail">${step.detail}</div>` : ""}
+          ${(isNext || overdue) && !done ? `<div class="cl-detail">${
+            step.dynamic && step.id === "p1_1"
+              ? buildDynamicSellListHTML()
+              : step.detail
+          }</div>` : ""}
         </div>
       </div>
     </div>`
@@ -3198,26 +3345,31 @@ function renderProjectionChart(goals, currentTotal){
   const projected   = []
   const conservative= []
 
-  /* Project year by year */
+  /* Use ACTUAL current portfolio value as the starting point */
+  const actualTotal = currentTotal || 42000
+  /* Split actual total proportionally: assume ~22% EUR, ~78% India (from real portfolio) */
+  const actualEUR   = actualTotal * 0.22
+  const actualIndia = actualTotal * 0.78
+
   for(let y = 0; y <= retireYear - currentYear; y++){
     const yr = currentYear + y
     years.push(yr.toString())
-    const r     = 0.08 / 12
-    const n     = y * 12
-    const base  = 9446  /* EUR start */
-    const india = 32710 /* India start in EUR */
-    const fvEUR   = base  * Math.pow(1+r,n) + goals.monthly * (Math.pow(1+r,n)-1)/r
-    const fvIndia = india * Math.pow(1+0.09/12, n)
+    const r      = 0.08 / 12
+    const n      = y * 12
+    const monthly = goals.monthly || 600
+    const fvEUR   = actualEUR   * Math.pow(1+r,n) + monthly * (Math.pow(1+r,n)-1)/r
+    const fvIndia = actualIndia * Math.pow(1+0.09/12, n)
     projected.push(Math.round(fvEUR + fvIndia))
 
     const rC = 0.06/12
-    const fvEURC   = base * Math.pow(1+rC,n) + (goals.monthly*0.7) * (Math.pow(1+rC,n)-1)/rC
-    const fvIndiaC = india * Math.pow(1+0.07/12,n)
+    const fvEURC   = actualEUR   * Math.pow(1+rC,n) + (monthly*0.7) * (Math.pow(1+rC,n)-1)/rC
+    const fvIndiaC = actualIndia * Math.pow(1+0.07/12,n)
     conservative.push(Math.round(fvEURC + fvIndiaC))
   }
 
-  /* Today dot index */
-  const todayIdx = 0
+  const maxVal = Math.max(...projected, goals.corpus || 270000)
+  const yMax   = Math.ceil(maxVal / 50000) * 50000  /* round up to nearest 50k */
+  const yMin   = Math.floor(actualTotal / 10000) * 10000  /* start near current value */
 
   _goalsChartInstance = new Chart(canvas, {
     type: "line",
@@ -3225,45 +3377,42 @@ function renderProjectionChart(goals, currentTotal){
       labels: years,
       datasets: [
         {
-          label: "Base Case (8% EUR + 9% India)",
+          label: "Base Case",
           data: projected,
           borderColor: "#5b9cf6",
           borderWidth: 2.5,
           fill: true,
           backgroundColor: ctx => {
             const g = ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height)
-            g.addColorStop(0,"rgba(91,156,246,0.2)"); g.addColorStop(1,"rgba(91,156,246,0.01)"); return g
+            g.addColorStop(0,"rgba(91,156,246,0.15)"); g.addColorStop(1,"rgba(91,156,246,0.01)"); return g
           },
-          tension: 0.4,
-          pointRadius: 0, pointHoverRadius: 5
+          tension: 0.4, pointRadius: 0, pointHoverRadius: 5
         },
         {
-          label: "Conservative (6% EUR + 7% India)",
+          label: "Conservative",
           data: conservative,
           borderColor: "#f0a535",
           borderWidth: 1.5,
           borderDash: [5,4],
           fill: false,
-          tension: 0.4,
-          pointRadius: 0, pointHoverRadius: 5
+          tension: 0.4, pointRadius: 0, pointHoverRadius: 5
         },
         {
           label: "Today",
-          data: years.map((_,i) => i===todayIdx ? currentTotal : null),
+          data: years.map((_,i) => i===0 ? actualTotal : null),
           borderColor: "#22d17a",
           backgroundColor: "#22d17a",
-          pointRadius: years.map((_,i) => i===todayIdx ? 8 : 0),
+          pointRadius: years.map((_,i) => i===0 ? 8 : 0),
           pointHoverRadius: 10,
           showLine: false
         },
         {
-          label: "Target corpus",
-          data: years.map(() => goals.corpus),
-          borderColor: "rgba(244,80,106,0.4)",
-          borderWidth: 1,
+          label: `Target €${(goals.corpus||270000).toLocaleString()}`,
+          data: years.map(() => goals.corpus || 270000),
+          borderColor: "rgba(244,80,106,0.5)",
+          borderWidth: 1.5,
           borderDash: [3,3],
-          fill: false,
-          pointRadius: 0
+          fill: false, pointRadius: 0
         }
       ]
     },
@@ -3272,7 +3421,7 @@ function renderProjectionChart(goals, currentTotal){
       devicePixelRatio: window.devicePixelRatio || 2,
       interaction: { mode:"index", intersect:false },
       plugins: {
-        legend: { labels: { color:"#8fa3c4", font:{ family:"Outfit", size:11 }, padding:16, boxWidth:20 } },
+        legend: { labels: { color:"#8fa3c4", font:{ size:11 }, padding:14, boxWidth:16 } },
         tooltip: {
           backgroundColor:"rgba(8,16,40,0.97)", titleColor:"#8faac8", bodyColor:"#dce8ff",
           callbacks: {
@@ -3281,9 +3430,12 @@ function renderProjectionChart(goals, currentTotal){
         }
       },
       scales: {
-        x: { ticks:{ color:"#8fa3c4", font:{size:11} }, grid:{ color:"rgba(91,156,246,0.06)" }, border:{display:false} },
+        x: { ticks:{ color:"#8fa3c4", font:{size:11}, maxTicksLimit:8 }, grid:{ color:"rgba(91,156,246,0.06)" }, border:{display:false} },
         y: {
-          ticks:{ color:"#8fa3c4", font:{size:11},
+          min: yMin,
+          max: yMax,
+          ticks:{
+            color:"#8fa3c4", font:{size:11}, maxTicksLimit:7,
             callback: v => v >= 1000000 ? "€"+(v/1000000).toFixed(1)+"M" : "€"+(v/1000).toFixed(0)+"k"
           },
           grid:{ color:"rgba(91,156,246,0.06)" }, border:{display:false}
@@ -3806,6 +3958,7 @@ async function runPortfolioAdvisor(force = false){
 
     const data = await r.json()
     setAdvisorCache(data)
+    trackApiCall("goals_advisor")  /* deduct estimated cost from budget tracker */
     applyAdvisorResults(data)
 
   }catch(e){
