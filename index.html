@@ -271,7 +271,8 @@
   <div id="advisorBanner" class="advisor-banner" style="display:none">
     <div id="advisorBannerContent"></div>
     <button class="advisor-refresh-btn" id="advisorRefreshBtn" onclick="runPortfolioAdvisor(true)">
-      <span id="advisorRefreshBtnText">🔄 Refresh Analysis</span>
+      <span id="advisorRefreshBtnText">🧠 Run Full Analysis</span>
+      <span class="advisor-cost-label">~$0.06</span>
     </button>
   </div>
 
@@ -428,40 +429,32 @@
       </div>
     </div>
 
-    <!-- Smart Picks for Top Movers -->
+    <!-- Smart Picks — FREE, computed from technical indicators -->
     <div class="card intel-card" id="picksCard">
       <div class="intel-header">
         <div>
-          <h3>Smart Picks — Your Top Movers</h3>
-          <p class="intel-sub">Tax-aware Buy · Trim · Sell for your whole portfolio · MF clusters pre-aggregated · HOLD positions not shown</p>
+          <h3>📊 Smart Picks</h3>
+          <p class="intel-sub">BUY / HOLD / TRIM / SELL — computed from RSI, MACD, Bollinger Bands, ADX, Volume & 52-week position · <strong class="free-badge">FREE</strong></p>
         </div>
-        <button id="runPicksBtn" onclick="runMoversAnalysis()">
-          <span id="picksBtnText">🎯 Analyse My Picks</span>
+        <button id="runPicksBtn" onclick="renderFreeSmartPicks()">
+          <span id="picksBtnText">🎯 Refresh Picks</span>
         </button>
-      </div>
-      <div id="picksDisclaimer" class="intel-disclaimer">
-        <span>⚠️</span>
-        <span>Recommendations are for informational purposes only and not financial advice. Based on training data — not live market data. Always do your own research before acting.</span>
       </div>
       <div id="picksResult" class="picks-result" style="display:none"></div>
     </div>
 
-    <!-- AI Market Intelligence -->
-    <div class="card intel-card" id="intelCard">
+    <!-- Market Insights — FREE, live RSS headlines -->
+    <div class="card intel-card" id="dailyInsightsCard">
       <div class="intel-header">
         <div>
-          <h3>AI Market Intelligence</h3>
-          <p class="intel-sub">Deep analysis · Live market data · Tax-aware advice</p>
+          <h3>📰 Market News</h3>
+          <p class="intel-sub">Live headlines for your holdings from Google News · <strong class="free-badge">FREE</strong></p>
         </div>
-        <button id="runIntelBtn" onclick="runMarketIntelligence()">
-          <span id="intelBtnText">⚡ Analyse Portfolio</span>
+        <button id="refreshInsightsBtn" onclick="fetchFreeMarketNews()">
+          <span id="insightsBtnText">🔄 Refresh News</span>
         </button>
       </div>
-      <div id="intelDisclaimer" class="intel-disclaimer">
-        <span>⚠️</span>
-        <span>This analysis is for informational purposes only and does not constitute financial advice. Always do your own research and consult a qualified financial advisor before making investment decisions. Past performance does not guarantee future results.</span>
-      </div>
-      <div id="intelResult" class="intel-result" style="display:none"></div>
+      <div id="dailyInsightsResult"></div>
     </div>
 
   </div>
@@ -559,7 +552,8 @@
           <p class="goals-checklist-sub">Analyses your live portfolio against your goals using today's market data. Auto-refreshes once per day.</p>
         </div>
         <button class="goals-advisor-btn" id="goalsAdvisorBtn" onclick="runGoalsAdvisor(true)">
-          <span id="goalsAdvisorBtnText">🔄 Refresh Now</span>
+          <span id="goalsAdvisorBtnText">🧠 Run Full Analysis</span>
+          <span class="advisor-cost-label">~$0.06</span>
         </button>
       </div>
       <!-- Market Context Banner -->
