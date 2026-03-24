@@ -81,20 +81,18 @@ body {
   align-items: center;
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding: 0 16px 0 24px;
-  /* On iOS standalone mode with viewport-fit=cover, the status bar overlaps
-     the top of the app. env(safe-area-inset-top) adds the correct padding. */
+  padding: 0 12px 0 16px;
   padding-top: max(0px, env(safe-area-inset-top));
   gap: 0;
   min-height: 52px;
   z-index: 100;
 }
 .tabBtn {
-  padding: 16px 24px;
+  padding: 14px 16px;
   border: none; background: transparent;
   color: var(--dim); cursor: pointer;
-  font-family: var(--font); font-size: 14px; font-weight: 500;
-  letter-spacing: 0.4px;
+  font-family: var(--font); font-size: 13px; font-weight: 500;
+  letter-spacing: 0.3px;
   border-bottom: 2px solid transparent;
   transition: all 0.2s;
   flex-shrink: 0;
@@ -103,17 +101,22 @@ body {
 .tabBtn:hover { color: var(--text); }
 .tabBtn.active { color: var(--blue); border-bottom-color: var(--blue); }
 
-/* Ticker lives between tabs and brand, takes remaining space */
+/* Ticker lives between tabs and brand — scrollable, no wrap */
 .tab-ticker {
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   flex-wrap: nowrap;
-  overflow: hidden;
-  padding: 0 12px;
-  justify-content: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0 8px;
+  justify-content: flex-start;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  min-width: 0; /* allow shrinking */
 }
+.tab-ticker::-webkit-scrollbar { display: none; }
 
 /* Brand on far right */
 .tab-brand {
@@ -1773,3 +1776,52 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
 .action-reason  { font-size:10.5px; color:var(--dim); line-height:1.4; }
 .action-tax     { font-size:10px; color:var(--muted); margin-top:2px; }
 .action-hold    { font-size:10px; color:var(--blue); margin-top:2px; }
+
+/* Portfolio health chips in advisor banner */
+.ph-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:6px; }
+.ph-chip {
+  font-size:11px; padding:3px 10px; border-radius:4px;
+  background:rgba(255,255,255,0.04); border:1px solid var(--border); color:var(--dim);
+}
+.ph-chip strong { color:var(--text); }
+.ph-critical { background:rgba(244,80,106,0.12); color:var(--red);   border-color:rgba(244,80,106,0.3); }
+.ph-high     { background:rgba(240,165,53,0.12); color:var(--gold);  border-color:rgba(240,165,53,0.3); }
+.ph-normal   { background:rgba(34,209,122,0.1);  color:var(--green); border-color:rgba(34,209,122,0.25);}
+.action-redeploy { font-size:10.5px; color:var(--blue); margin-top:2px; font-style:italic; }
+
+/* ── Dynamic sell list in Goals checklist step p1_1 ── */
+.dsl-header { font-size:12px; margin-bottom:8px; color:var(--text); }
+.dsl-list   { display:flex; flex-direction:column; gap:4px; }
+.dsl-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 6px 8px; background: rgba(255,255,255,0.02);
+  border-radius: 4px; border: 1px solid rgba(26,45,80,0.5);
+}
+.dsl-ticker { font-family:var(--mono); font-size:11px; font-weight:700; color:var(--blue); min-width:80px; }
+.dsl-name   { font-size:11px; color:var(--text); flex:1; min-width:100px; }
+.dsl-qty    { font-size:10px; color:var(--muted); }
+.dsl-buy    { font-size:10px; color:var(--dim); }
+.dsl-cur    { font-size:10px; font-weight:600; color:var(--text); }
+.dsl-chg    { font-size:11px; font-weight:700; font-family:var(--mono); min-width:50px; }
+.dsl-val    { font-size:11px; font-family:var(--mono); color:var(--dim); margin-left:auto; }
+.dsl-reason { width:100%; font-size:10.5px; color:var(--muted); padding-top:2px; font-style:italic; }
+.dsl-footer { font-size:10.5px; color:var(--muted); margin-top:8px; padding-top:6px; border-top:1px solid rgba(26,45,80,0.4); }
+
+/* ── API Budget Warning ─────────────────────────────────── */
+.api-budget-warning {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: rgba(240,165,53,0.1); border-bottom: 1px solid rgba(240,165,53,0.3);
+  color: var(--gold); font-size: 12.5px; padding: 10px 20px;
+}
+.api-budget-warning strong { color: var(--text); }
+.budget-topup-link {
+  color: var(--blue); text-decoration: underline; font-weight: 600; font-size: 12px;
+}
+.budget-dismiss {
+  background: none; border: none; color: var(--gold);
+  font-size: 16px; cursor: pointer; margin-left: auto; padding: 0 4px;
+}
+.goals-setup-hint {
+  display: block; font-size: 10.5px; color: var(--muted);
+  margin-top: 4px; line-height: 1.4;
+}
