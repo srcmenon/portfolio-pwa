@@ -3692,10 +3692,10 @@ function switchToGoals(){
 
 const GA_CACHE_KEY = "capintel_goals_advisor"
 
-function getAdvisorCache(){
+function getGoalsAdvisorCache(){
   try{ return JSON.parse(localStorage.getItem(GA_CACHE_KEY)) || null }catch(e){ return null }
 }
-function setAdvisorCache(data){
+function setGoalsAdvisorCache(data){
   try{ localStorage.setItem(GA_CACHE_KEY, JSON.stringify({ data, date: new Date().toDateString() })) }catch(e){}
 }
 
@@ -3713,7 +3713,7 @@ async function runGoalsAdvisor(force = false){
   if(card) card.style.display = "block"
 
   /* Check cache — skip API call if already ran today */
-  const cache = getAdvisorCache()
+  const cache = getGoalsAdvisorCache()
   if(!force && cache && cache.date === new Date().toDateString()){
     renderAdvisorResult(cache.data, true)
     return
@@ -3784,7 +3784,7 @@ async function runGoalsAdvisor(force = false){
     }
 
     const data = await r.json()
-    setAdvisorCache(data)
+    setGoalsAdvisorCache(data)
     renderAdvisorResult(data, false)
 
   }catch(e){
