@@ -9,7 +9,12 @@ export default async function handler(req, res) {
   if (!positions?.length) return res.status(400).json({ error: "positions required" })
 
   /* Dynamic import — defers to runtime, bypasses Vercel bundling issues */
-  const { default: yahooFinance } = await import("yahoo-finance2")
+  const yf2module = await import("yahoo-finance2")
+  console.log("[yf2 keys]", Object.keys(yf2module), typeof yf2module.default, typeof yf2module.default?.quoteSummary, typeof yf2module.quoteSummary)
+  const yahooFinance = yf2module.default?.quoteSummary ? yf2module.default
+                     : yf2module.quoteSummary           ? yf2module
+                     : yf2module.default?.default       ? yf2module.default.default
+                     : yf2module
 
   const results = {}
   const BATCH = 3
