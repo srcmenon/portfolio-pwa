@@ -3248,13 +3248,13 @@ function getDynamicSellList(){
    Cached 4 hours — fundamentals don't change hourly.
    Completely free — Yahoo Finance only, no Claude. */
 
-const FUND_CACHE_KEY = "capintel_fundamentals_v2"
+const FUND_CACHE_KEY = "capintel_fundamentals_v3"
 
 function getFundCache(){
   try{
     const c = JSON.parse(localStorage.getItem(FUND_CACHE_KEY))
     if(!c) return null
-    return (Date.now() - c.ts) < 4*60*60*1000 ? c.data : null  /* 4hr TTL */
+    return (Date.now() - c.ts) < 7*24*60*60*1000 ? c.data : null  /* 7-day TTL — fundamentals are quarterly */
   }catch(e){ return null }
 }
 function setFundCache(data){
