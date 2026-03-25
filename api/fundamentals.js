@@ -32,28 +32,82 @@
    ============================================================ */
 
 /* ── TICKER RESOLVER ── */
+/* Known mismatches: NSE display ticker → Finnhub symbol */
+const NSE_TICKER_MAP = {
+  "LTFOODS":     "NSE:LTOL",
+  "ENGINERSIN":  "NSE:ENGINERSIN",  /* verify */
+  "KIRLPNU":     "NSE:KIRLPNU",
+  "BERGEPAINT":  "NSE:BRGR",
+  "SUNDARMFIN":  "NSE:SFL",
+  "HDFCBANK":    "NSE:HDFCB",
+  "HINDUNILVR":  "NSE:HLL",
+  "SHRIRAMFIN":  "NSE:SHFL",
+  "PERSISTENT":  "NSE:PSYS",
+  "NATIONALUM":  "NSE:NATL",
+  "CRISIL":      "NSE:CRISIL",
+  "NMDC":        "NSE:NMDC",
+  "POWERGRID":   "NSE:PGRD",
+  "IDFCFIRSTB":  "NSE:IDFCFB",
+  "RECLTD":      "NSE:RECL",
+  "SBIN":        "NSE:SBI",
+  "CDSL":        "NSE:CDSL",
+  "OFSS":        "NSE:OFSS",
+}
+
+async function resolveNSETicker(nseTicker, apiKey) {
+  /* First try the known mapping */
+  if (NSE_TICKER_MAP[nseTicker]) return NSE_TICKER_MAP[nseTicker]
+
+  /* Fall back: use Finnhub symbol search to find the correct symbol */
+  try {
+    const r = await fetch(
+      `https://finnhub.io/api/v1/search?q=${encodeURIComponent(nseTicker)}&exchange=NS`,
+      { headers: { "X-Finnhub-Token": apiKey, "Accept": "application/json" } }
+    )
+    if (!r.ok) return `NSE:${nseTicker}`  /* fallback to direct format */
+    const d = await r.json()
+    const results = d.result || []
+
+    /* Find exact match on displaySymbol or description */
+    const exact = results.find(r =>
+      r.displaySymbol === nseTicker ||
+      r.symbol === `NSE:${nseTicker}` ||
+      r.symbol?.endsWith(`:${nseTicker}`)
+    )
+    if (exact?.symbol) return exact.symbol
+
+    /* Best partial match */
+    const partial = results.find(r =>
+      r.type === "Common Stock" &&
+      (r.displaySymbol?.includes(nseTicker) || r.description?.toUpperCase().includes(nseTicker))
+    )
+    if (partial?.symbol) return partial.symbol
+
+    return `NSE:${nseTicker}`  /* fallback */
+  } catch(e) {
+    return `NSE:${nseTicker}`
+  }
+}
+
 function toFinnhubTicker(pos) {
-  const t = (pos.key || "").replace(/\.(NS|BO)$/, "")  /* strip Yahoo suffix */
+  const t = (pos.key || "").replace(/\.(NS|BO)$/, "")
   if (!t || pos.type === "MutualFund") return null
 
-  if (pos.currency === "INR") {
-    return `NSE:${t}`
+  /* EUR/USD — map known ETF/stock symbols */
+  if (pos.currency !== "INR") {
+    if (t === "SEMI")  return "CHIP.PA"
+    if (t === "EWG2")  return "EWG2.SG"
+    if (t === "DFNS")  return "DFNS.L"
+    if (t === "IWDA")  return "IWDA.L"
+    if (t === "EIMI")  return "EIMI.L"
+    if (t === "SSLV")  return "SSLV.L"
+    if (t === "SGLN")  return "SGLN.L"
+    if (t.includes("-USD")) return null
+    return t
   }
 
-  /* EUR/USD — keep exact symbol as-is (already has exchange suffix if needed) */
-  if (t === "SEMI")  return "CHIP.PA"
-  if (t === "EWG2")  return "EWG2.SG"
-  if (t === "DFNS")  return "DFNS.L"
-  if (t === "IWDA")  return "IWDA.L"
-  if (t === "EIMI")  return "EIMI.L"
-  if (t === "SSLV")  return "SSLV.L"
-  if (t === "SGLN")  return "SGLN.L"
-
-  /* Crypto */
-  if (t.includes("-USD")) return null  /* Finnhub free tier doesn't cover crypto fundamentals */
-
-  /* Everything else — US stocks, EUR stocks with exchange suffix already */
-  return t
+  /* INR — return the key for async resolution */
+  return t  /* will be resolved via resolveNSETicker() */
 }
 
 /* ── FINNHUB API FETCH ── */
@@ -387,8 +441,16 @@ export default async function handler(req, res) {
     const batch = positions.slice(i, i + BATCH)
 
     await Promise.all(batch.map(async pos => {
-      const ticker = toFinnhubTicker(pos)
-      if (!ticker) return  /* MutualFund or crypto — skip */
+      const baseKey = toFinnhubTicker(pos)
+      if (!baseKey) return  /* MutualFund or crypto — skip */
+
+      /* Resolve final Finnhub symbol */
+      let ticker
+      if (pos.currency === "INR") {
+        ticker = await resolveNSETicker(baseKey, apiKey)
+      } else {
+        ticker = baseKey
+      }
 
       const f = await fetchFinnhub(ticker, apiKey)
       const { score: fundScore, signals: fundSigs, grade, hasData, display } = scoreFundamentals(f)
