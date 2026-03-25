@@ -58,8 +58,16 @@ async function fetchFinnhub(symbol, apiKey) {
       fetch(`${BASE}/stock/profile2?symbol=${encodeURIComponent(symbol)}`, { headers: h }),
       fetch(`${BASE}/stock/metric?symbol=${encodeURIComponent(symbol)}&metric=all`, { headers: h })
     ])
-    const profile  = r1.ok ? await r1.json() : {}
-    const metricR  = r2.ok ? await r2.json() : {}
+
+    const profileText = await r1.text()
+    const metricText  = await r2.text()
+
+    /* Log raw for diagnosis — will show in Vercel function logs */
+    console.log(`[Finnhub] ${symbol} profile HTTP:${r1.status} body:${profileText.slice(0,200)}`)
+    console.log(`[Finnhub] ${symbol} metric  HTTP:${r2.status} body:${metricText.slice(0,200)}`)
+
+    const profile  = r1.ok ? JSON.parse(profileText) : {}
+    const metricR  = r2.ok ? JSON.parse(metricText)  : {}
     const m = metricR.metric || {}
 
     const metricCount = Object.keys(m).length
