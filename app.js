@@ -2998,11 +2998,11 @@ function applyFilters(rows){
 function getDynamicSellList(){
   if(!lastPortfolio?.length) return null
   const small = lastPortfolio
-    .filter(p => p.currency === "INR" && p.type !== "MutualFund" && (p.totalCurrentEUR||0) < 100)
+    .filter(p => p.type !== "MutualFund" && (p.totalCurrentEUR||0) < 100)
     .sort((a,b) => (a.totalCurrentEUR||0) - (b.totalCurrentEUR||0))
   if(!small.length) return null
   const totalEUR = small.reduce((s,p) => s+(p.totalCurrentEUR||0), 0)
-  const totalINR = small.reduce((s,p) => s+(p.totalCurrentLocal||0), 0)
+  const totalINR = small.filter(p=>p.currency==="INR").reduce((s,p) => s+(p.totalCurrentLocal||0), 0)
   return { positions: small, totalEUR, totalINR }
 }
 
@@ -3010,38 +3010,156 @@ function buildDynamicSellListHTML(){
   const data = getDynamicSellList()
   if(!data) return "No positions under €100 found — this step may already be complete."
 
-  const rows = data.positions.map(p => {
-    const cur    = p.currentPrice || 0
-    const buy    = p.avgBuy || 0
-    const chg    = buy > 0 ? ((cur - buy) / buy * 100) : 0
-    const chgCls = chg >= 0 ? "profit" : "loss"
-    const chgStr = (chg >= 0 ? "+" : "") + chg.toFixed(1) + "%"
-    const reason = chg < -30
-      ? "Deep loss — book loss for tax offset against future gains"
-      : chg > 50
-        ? "Strong gain — lock in profit, too small to compound meaningfully"
-        : (p.totalCurrentEUR||0) < 20
-          ? "Effectively zero — exit immediately, not worth tracking"
-          : "Too small to impact portfolio — sell and redeploy to quality positions"
+  const LTCG_EXEMPTION = 125000  /* ₹1.25L annual free limit on net LTCG */
+  const FY_END = new Date(new Date().getFullYear(), 2, 31)  /* March 31 */
+  const today  = new Date()
+
+  /* Compute per-position profit/loss and tax type */
+  let runningLTCGProfit = 0
+  let runningSTCGProfit = 0
+  let totalLoss = 0
+  let runningDETax = 0
+
+  const enriched = data.positions.map(p => {
+    const cur       = p.currentPrice || 0
+    const buy       = p.avgBuy || 0
+    const qty       = parseFloat(p.qty) || 0
+    const profitINR = p.currency === "INR" ? (cur - buy) * qty : 0
+    const profitEUR = p.currency !== "INR" ? (p.totalCurrentEUR||0) - (p.totalBuyEUR||0) : 0
+    const chgPct    = buy > 0 ? ((cur - buy) / buy * 100) : 0
+
+    /* Tax regime by currency */
+    const isINR = p.currency === "INR"
+    const buyDate  = p.lastDate ? new Date(p.lastDate) : null
+    const heldDays = buyDate ? Math.floor((today - buyDate) / 86400000) : null
+
+    let taxType, taxNote
+    if (isINR) {
+      const isLTCG = heldDays === null || heldDays >= 365
+      taxType = isLTCG ? "LTCG" : "STCG"
+      if (profitINR > 0){
+        if (isLTCG) runningLTCGProfit += profitINR
+        else        runningSTCGProfit += profitINR
+      } else {
+        totalLoss += Math.abs(profitINR)
+      }
+      taxNote = isLTCG ? "India LTCG 12.5%" : "India STCG 20%"
+    } else {
+      taxType = "DE"
+      if (profitEUR > 0) runningDETax += profitEUR * 0.26375
+      taxNote = `Germany 26.375% on €${profitEUR > 0 ? profitEUR.toFixed(0) : 0} gain`
+    }
+
+    const profitDisplay = isINR
+      ? (profitINR >= 0 ? `+₹${profitINR.toFixed(0)}` : `−₹${Math.abs(profitINR).toFixed(0)}`)
+      : (profitEUR >= 0 ? `+€${profitEUR.toFixed(0)}` : `−€${Math.abs(profitEUR).toFixed(0)}`)
+
+    const reason = (isINR ? profitINR : profitEUR) < 0
+      ? `Loss ${profitDisplay} — offsets future gains`
+      : chgPct > 80
+        ? `Gain ${profitDisplay} — strong run, too small to compound`
+        : `Gain ${profitDisplay} — too small, redeploy to quality`
+
+    return { ...p, profitINR, profitEUR, profitDisplay, chgPct, taxType, taxNote, reason, heldDays, buy, cur, qty, isINR }
+  })
+
+  /* Net LTCG after offsetting with losses */
+  const netLTCG    = Math.max(0, runningLTCGProfit - totalLoss)
+  const taxableAmt = Math.max(0, netLTCG - LTCG_EXEMPTION)
+  const ltcgTax    = taxableAmt * 0.125  /* 12.5% */
+  const withinLimit = netLTCG <= LTCG_EXEMPTION
+
+  /* Tax status chip */
+  const taxStatus = withinLimit
+    ? `<span class="dsl-tax-ok">✓ Within ₹1.25L LTCG exemption — net LTCG ₹${(netLTCG/1000).toFixed(1)}k</span>`
+    : `<span class="dsl-tax-warn">⚠ Net LTCG ₹${(netLTCG/1000).toFixed(1)}k exceeds exemption by ₹${((netLTCG-LTCG_EXEMPTION)/1000).toFixed(1)}k — estimated tax ₹${ltcgTax.toFixed(0)} @ 12.5%</span>`
+
+  /* Suggest splitting across FY boundary if close to limit */
+  const splitAdvice = !withinLimit
+    ? `<div class="dsl-split-advice">💡 Split strategy: sell loss positions + positions in gain now (this FY), sell remaining profitable positions after April 1 ${today.getFullYear()+1} to use next year's ₹1.25L exemption.</div>`
+    : ""
+
+  const rows = enriched.map(p => {
+    const chgCls   = p.chgPct >= 0 ? "profit" : "loss"
+    const chgStr   = (p.chgPct >= 0 ? "+" : "") + p.chgPct.toFixed(1) + "%"
+    const profitCls = (p.isINR ? p.profitINR : p.profitEUR) >= 0 ? "profit" : "loss"
+    const taxBadge = `<span class="dsl-tax-badge dsl-${p.taxType.toLowerCase()}">${p.taxType}</span>`
+    const heldStr  = p.heldDays !== null ? `${p.heldDays}d` : "?"
+
     return `<div class="dsl-row">
       <span class="dsl-ticker">${p.key}</span>
       <span class="dsl-name">${resolveDisplayName(p)}</span>
-      <span class="dsl-qty">${p.qty?.toFixed ? p.qty.toFixed(0) : p.qty} shares</span>
-      <span class="dsl-buy">Bought @ ${formatCurrency(buy, "INR")}</span>
-      <span class="dsl-cur">Now ${formatCurrency(cur, "INR")}</span>
+      <span class="dsl-qty">${p.qty?.toFixed ? p.qty.toFixed(0) : p.qty} sh</span>
+      <span class="dsl-buy">@${formatCurrency(p.buy, p.currency)}</span>
+      <span class="dsl-cur">${formatCurrency(p.cur, p.currency)}</span>
       <span class="dsl-chg ${chgCls}">${chgStr}</span>
+      <span class="dsl-profit ${profitCls}">${p.profitDisplay}</span>
+      ${taxBadge}
+      <span class="dsl-held">${heldStr}</span>
       <span class="dsl-val">≈€${(p.totalCurrentEUR||0).toFixed(0)}</span>
-      <div class="dsl-reason">${reason}</div>
+      <div class="dsl-reason">${p.reason}</div>
     </div>`
   }).join("")
 
-  return `<div class="dsl-header">
-    <strong>${data.positions.length} positions to exit · Combined ≈€${data.totalEUR.toFixed(0)} (₹${(data.totalINR/1000).toFixed(1)}k)</strong>
-    <span style="color:var(--dim);font-size:11px"> · Sell via Kite · Redeploy proceeds to IWDA or HDFCBANK</span>
+  return `
+  <div class="dsl-header">
+    <strong>${data.positions.length} positions to exit · Proceeds ≈€${data.totalEUR.toFixed(0)} (₹${(data.totalINR/1000).toFixed(1)}k)</strong>
+    <span class="dsl-subhead"> · Sell via Kite · Redeploy to IWDA or HDFCBANK</span>
+  </div>
+  <div class="dsl-tax-summary">
+    <div class="dsl-tax-row">
+      <span>🇮🇳 India LTCG: <strong>₹${(runningLTCGProfit/1000).toFixed(1)}k</strong></span>
+      <span>India STCG: <strong>₹${(runningSTCGProfit/1000).toFixed(1)}k</strong></span>
+      <span>Losses (offset): <strong>₹${(totalLoss/1000).toFixed(1)}k</strong></span>
+      <span>Net LTCG: <strong>₹${(netLTCG/1000).toFixed(1)}k</strong></span>
+      ${runningDETax > 0 ? `<span>🇩🇪 Germany tax: <strong>≈€${runningDETax.toFixed(0)}</strong></span>` : ""}
+    </div>
+    ${taxStatus}
+    ${splitAdvice}
   </div>
   <div class="dsl-list">${rows}</div>
-  <div class="dsl-footer">Tax note: Most lots are small gains/losses. Each transaction &lt; ₹5,000 — well within LTCG ₹1.25L annual exemption. Losses can be carried forward 8 years to offset future gains.</div>`
+  <div class="dsl-footer">
+    LTCG (held &gt;1yr) taxed at 12.5% — first ₹1.25L/FY free (resets April 1).
+    STCG (held &lt;1yr) taxed at 20% — no exemption.
+    Capital losses carried forward 8 years to offset future gains.
+    FY ends ${FY_END.toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}.
+  </div>`
 }
+
+/* ── PERSISTENT NOISE ALERT ───────────────────────────────
+   Always shown at top of Goals tab whenever any non-MF position
+   is under €100 — regardless of checklist state.
+   Covers INR stocks, EUR/USD stocks, ETFs, commodities, crypto.
+   MFs excluded (different redemption mechanics). */
+function renderNoiseAlert(){
+  const el = document.getElementById("noiseAlert")
+  if(!el) return
+
+  const data = getDynamicSellList()
+  if(!data || !data.positions.length){
+    el.style.display = "none"
+    return
+  }
+
+  const inr = data.positions.filter(p => p.currency === "INR")
+  const eur = data.positions.filter(p => p.currency !== "INR")
+  const parts = []
+  if(inr.length) parts.push(`${inr.length} India stock${inr.length>1?"s":""}`)
+  if(eur.length) parts.push(`${eur.length} EUR/USD position${eur.length>1?"s":""}`)
+
+  el.style.display = "flex"
+  el.innerHTML = `
+    <div class="noise-alert-icon">⚠</div>
+    <div class="noise-alert-body">
+      <strong>${data.positions.length} noise positions</strong> under €100 detected
+      (${parts.join(" + ")}) · Combined ≈€${data.totalEUR.toFixed(0)}
+      <span class="noise-alert-sub"> — too small to impact portfolio. Sell and redeploy.</span>
+    </div>
+    <button class="noise-alert-btn" onclick="document.getElementById('clstep_p1_1')?.scrollIntoView({behavior:'smooth'})">
+      View list ↓
+    </button>`
+}
+
 
 const CHECKLIST_STEPS = [
   { id:"p1_1", phase:1, text:"Exit all small Indian stock positions under €100",
@@ -3225,6 +3343,7 @@ function renderGoalsTab(){
   if(projCard) projCard.style.display = "block"
 
   renderTradeReminders()
+  renderNoiseAlert()
 
   /* Show advisor card — user must click Refresh to run analysis */
   const advisorCard = document.getElementById("goalsAdvisorCard")
