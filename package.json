@@ -1,7 +1,6 @@
 {
   "name": "capintel-pwa",
   "version": "1.0.0",
-  "type": "module",
   "dependencies": {
     "yahoo-finance2": "^2.13.3"
   }
