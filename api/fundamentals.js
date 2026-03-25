@@ -1,281 +1,162 @@
-/* ============================================================
-   CapIntel — api/fundamentals.js
+/* CapIntel — api/fundamentals.js — Finnhub */
 
-   Finnhub institutional-grade fundamentals API.
-   Free tier: 60 calls/minute. No cookies, no scraping.
-   Works reliably from Vercel server-side.
-
-   TICKER FORMAT:
-   - Indian NSE: "NSE:HDFCBANK", "NSE:BERGEPAINT"
-   - US stocks:  "AAPL", "GOOGL", "ISRG"
-   - EUR stocks: "CHIP.PA", "IWDA.L", "EWG2.SG"
-
-   TWO ENDPOINTS PER STOCK:
-   1. /stock/profile2  → sector, industry, marketCap
-   2. /stock/metric    → 117 fundamental metrics (PE, PB, ROE, D/E, margins, growth)
-
-   KEY METRIC FIELDS (confirmed from Finnhub docs):
-   - peBasicExclExtraTTM   P/E TTM
-   - pbAnnual              Price/Book
-   - roeTTM                Return on Equity (%) — divide by 100
-   - totalDebt/totalEquityAnnual  Debt/Equity
-   - revenueGrowthTTMYoy   Revenue growth YoY (%)
-   - epsGrowthTTMYoy       EPS growth YoY (%)
-   - netProfitMarginTTM    Net margin (%) — divide by 100
-
-   SCORING: Three dimensions, composited to ADD/EXIT/HOLD/REVIEW
-   1. Fundamental score (0-100) — P/E, P/B, ROE, D/E, growth, margins
-   2. Technical score   (0-100) — from client _techMap
-   3. Goal alignment    (0-100) — computed from investor goals config
-
-   CACHE: 7 days — fundamentals are quarterly reports
-   ============================================================ */
-
-/* ── TICKER RESOLVER ── */
-/* Known mismatches: NSE display ticker → Finnhub symbol */
-const NSE_TICKER_MAP = {
-  "LTFOODS":     "NSE:LTOL",
-  "ENGINERSIN":  "NSE:ENGINERSIN",  /* verify */
-  "KIRLPNU":     "NSE:KIRLPNU",
-  "BERGEPAINT":  "NSE:BRGR",
-  "SUNDARMFIN":  "NSE:SFL",
-  "HDFCBANK":    "NSE:HDFCB",
-  "HINDUNILVR":  "NSE:HLL",
-  "SHRIRAMFIN":  "NSE:SHFL",
-  "PERSISTENT":  "NSE:PSYS",
-  "NATIONALUM":  "NSE:NATL",
-  "CRISIL":      "NSE:CRISIL",
-  "NMDC":        "NSE:NMDC",
-  "POWERGRID":   "NSE:PGRD",
-  "IDFCFIRSTB":  "NSE:IDFCFB",
-  "RECLTD":      "NSE:RECL",
-  "SBIN":        "NSE:SBI",
-  "CDSL":        "NSE:CDSL",
-  "OFSS":        "NSE:OFSS",
-}
-
-async function resolveNSETicker(nseTicker, apiKey) {
-  /* First try the known mapping */
-  if (NSE_TICKER_MAP[nseTicker]) return NSE_TICKER_MAP[nseTicker]
-
-  /* Fall back: use Finnhub symbol search to find the correct symbol */
+/* ── SYMBOL RESOLUTION ── */
+/* Use Finnhub /search to resolve correct symbol for any NSE ticker */
+async function resolveSymbol(nseTicker, apiKey) {
   try {
     const r = await fetch(
-      `https://finnhub.io/api/v1/search?q=${encodeURIComponent(nseTicker)}&exchange=NS`,
+      `https://finnhub.io/api/v1/search?q=${encodeURIComponent(nseTicker)}`,
       { headers: { "X-Finnhub-Token": apiKey, "Accept": "application/json" } }
     )
-    if (!r.ok) return `NSE:${nseTicker}`  /* fallback to direct format */
+    if (!r.ok) return null
     const d = await r.json()
-    const results = d.result || []
+    const results = (d.result || []).filter(r => r.type === "Common Stock")
 
-    /* Find exact match on displaySymbol or description */
-    const exact = results.find(r =>
-      r.displaySymbol === nseTicker ||
+    /* Priority 1: exact match on displaySymbol */
+    const exact = results.find(r => r.displaySymbol === nseTicker)
+    if (exact) return exact.symbol
+
+    /* Priority 2: symbol ends with the NSE ticker on NSE exchange */
+    const nse = results.find(r =>
       r.symbol === `NSE:${nseTicker}` ||
-      r.symbol?.endsWith(`:${nseTicker}`)
+      (r.exchange === "NSE" && r.displaySymbol === nseTicker)
     )
-    if (exact?.symbol) return exact.symbol
+    if (nse) return nse.symbol
 
-    /* Best partial match */
+    /* Priority 3: first Common Stock result that contains ticker name */
     const partial = results.find(r =>
-      r.type === "Common Stock" &&
-      (r.displaySymbol?.includes(nseTicker) || r.description?.toUpperCase().includes(nseTicker))
+      r.symbol?.includes(nseTicker) || r.displaySymbol?.includes(nseTicker)
     )
-    if (partial?.symbol) return partial.symbol
+    if (partial) return partial.symbol
 
-    return `NSE:${nseTicker}`  /* fallback */
-  } catch(e) {
-    return `NSE:${nseTicker}`
-  }
+    return null
+  } catch(e) { return null }
 }
 
-function toFinnhubTicker(pos) {
-  const t = (pos.key || "").replace(/\.(NS|BO)$/, "")
-  if (!t || pos.type === "MutualFund") return null
-
-  /* EUR/USD — map known ETF/stock symbols */
-  if (pos.currency !== "INR") {
-    if (t === "SEMI")  return "CHIP.PA"
-    if (t === "EWG2")  return "EWG2.SG"
-    if (t === "DFNS")  return "DFNS.L"
-    if (t === "IWDA")  return "IWDA.L"
-    if (t === "EIMI")  return "EIMI.L"
-    if (t === "SSLV")  return "SSLV.L"
-    if (t === "SGLN")  return "SGLN.L"
-    if (t.includes("-USD")) return null
-    return t
+/* EUR/USD ticker mapping */
+function toEurTicker(key) {
+  const map = {
+    "SEMI": "CHIP.PA", "EWG2": "EWG2.SG", "DFNS": "DFNS.L",
+    "IWDA": "IWDA.L",  "EIMI": "EIMI.L",  "SSLV": "SSLV.L",
+    "SGLN": "SGLN.L",  "VUSA": "VUSA.L",  "CSPX": "CSPX.L"
   }
-
-  /* INR — return the key for async resolution */
-  return t  /* will be resolved via resolveNSETicker() */
+  return map[key] || key
 }
 
-/* ── FINNHUB API FETCH ── */
+/* ── FINNHUB FETCH ── */
 async function fetchFinnhub(symbol, apiKey) {
   const BASE = "https://finnhub.io/api/v1"
-  const headers = {
-    "X-Finnhub-Token": apiKey,
-    "Accept":          "application/json"
-  }
-
+  const h = { "X-Finnhub-Token": apiKey, "Accept": "application/json" }
   try {
-    /* Parallel fetch — profile + metrics */
     const [r1, r2] = await Promise.all([
-      fetch(`${BASE}/stock/profile2?symbol=${encodeURIComponent(symbol)}`, { headers }),
-      fetch(`${BASE}/stock/metric?symbol=${encodeURIComponent(symbol)}&metric=all`, { headers })
+      fetch(`${BASE}/stock/profile2?symbol=${encodeURIComponent(symbol)}`, { headers: h }),
+      fetch(`${BASE}/stock/metric?symbol=${encodeURIComponent(symbol)}&metric=all`, { headers: h })
     ])
+    const profile  = r1.ok ? await r1.json() : {}
+    const metricR  = r2.ok ? await r2.json() : {}
+    const m = metricR.metric || {}
 
-    const profile = r1.ok ? await r1.json() : {}
-    const metricRes = r2.ok ? await r2.json() : {}
-    const m = metricRes.metric || {}
+    /* If profile has no name AND metric has no keys — ticker not found */
+    if (!profile.name && Object.keys(m).length < 3) return null
 
-    /* Check if we got any real data — empty response means ticker not covered */
-    if (!profile.name && Object.keys(m).length === 0) return null
-
-    const n = v => (typeof v === "number" && isFinite(v) && v !== 0) ? v : null
-
-    /* ROE and margins come as percentages from Finnhub — convert to decimal */
-    const pctToDecimal = v => n(v) !== null ? v / 100 : null
+    const n = v => (typeof v === "number" && isFinite(v)) ? v : null
+    const pct = v => n(v) !== null ? v / 100 : null  /* Finnhub returns % not decimal */
 
     return {
-      /* Valuation */
-      trailingPE:      n(m.peBasicExclExtraTTM)    ?? n(m.peTTM)            ?? n(m.peAnnual),
-      priceToBook:     n(m.pbAnnual)                ?? n(m.pbQuarterly),
-
-      /* Profitability */
-      roe:             pctToDecimal(m.roeTTM)        ?? pctToDecimal(m.roeAnnual),
-      roa:             pctToDecimal(m.roaTTM)        ?? pctToDecimal(m.roaAnnual),
-      profitMargins:   pctToDecimal(m.netProfitMarginTTM),
-      operatingMargins:pctToDecimal(m.operatingMarginTTM),
-      grossMargins:    pctToDecimal(m.grossMarginTTM),
-
-      /* Leverage */
-      debtToEquity:    n(m["totalDebt/totalEquityAnnual"]) ??
-                       n(m["longTermDebt/equityAnnual"]),
-
-      /* Growth */
-      revenueGrowth:   pctToDecimal(m.revenueGrowthTTMYoy)  ??
-                       pctToDecimal(m.revenueGrowth3Y),
-      earningsGrowth:  pctToDecimal(m.epsGrowthTTMYoy)      ??
-                       pctToDecimal(m.epsGrowth3Y),
-
-      /* Liquidity */
+      trailingPE:      n(m.peBasicExclExtraTTM)       ?? n(m.peTTM)           ?? n(m.peAnnual),
+      priceToBook:     n(m.pbAnnual)                   ?? n(m.pbQuarterly),
+      roe:             pct(m.roeTTM)                   ?? pct(m.roeAnnual),
+      roa:             pct(m.roaTTM),
+      profitMargins:   pct(m.netProfitMarginTTM),
+      operatingMargins:pct(m.operatingMarginTTM),
+      debtToEquity:    n(m["totalDebt/totalEquityAnnual"]) ?? n(m["longTermDebt/equityAnnual"]),
+      revenueGrowth:   pct(m.revenueGrowthTTMYoy)     ?? pct(m.revenueGrowth3Y),
+      earningsGrowth:  pct(m.epsGrowthTTMYoy)         ?? pct(m.epsGrowth3Y),
       currentRatio:    n(m.currentRatioAnnual),
-
-      /* Company info */
-      sector:          profile.finnhubIndustry  || profile.sector || null,
-      industry:        profile.finnhubIndustry  || null,
+      sector:          profile.finnhubIndustry || profile.sector || null,
+      industry:        profile.finnhubIndustry || null,
       marketCap:       n(profile.marketCapitalization),
-      beta:            n(m.beta),
-
-      /* 52-week context */
-      week52High:      n(m["52WeekHigh"]),
-      week52Low:       n(m["52WeekLow"]),
-      week52Return:    pctToDecimal(m["52WeekPriceReturnDaily"]),
+      /* Debug: store raw keys present so we can diagnose */
+      _metricKeys:     Object.keys(m).slice(0, 20),
+      _profileName:    profile.name || null,
     }
-  } catch(e) {
-    console.error(`Finnhub fetch failed for ${symbol}:`, e.message)
-    return null
-  }
+  } catch(e) { return null }
 }
 
-/* ── FUNDAMENTAL SCORER (0-100) ── */
+/* ── SCORER ── */
 function scoreFundamentals(f) {
   if (!f) return { score: 50, signals: [], grade: "UNKNOWN", hasData: false, display: null }
+  const sigs = []; let score = 50, fields = 0
 
-  const sigs = []
-  let score = 50
-  let fields = 0  /* count how many real data points we have */
-
-  /* P/E — valuation */
   if (f.trailingPE != null) {
     fields++
-    if      (f.trailingPE <= 0)  { score -= 15; sigs.push(`Negative P/E — loss-making`) }
+    if      (f.trailingPE <= 0)  { score -= 15; sigs.push(`Negative P/E`) }
     else if (f.trailingPE < 12)  { score += 12; sigs.push(`P/E ${f.trailingPE.toFixed(1)}x — undervalued`) }
-    else if (f.trailingPE < 20)  { score += 8;  sigs.push(`P/E ${f.trailingPE.toFixed(1)}x — fair value`) }
+    else if (f.trailingPE < 20)  { score += 8;  sigs.push(`P/E ${f.trailingPE.toFixed(1)}x — fair`) }
     else if (f.trailingPE < 35)  { score += 2 }
     else if (f.trailingPE < 60)  { score -= 5;  sigs.push(`P/E ${f.trailingPE.toFixed(1)}x — elevated`) }
     else                         { score -= 12; sigs.push(`P/E ${f.trailingPE.toFixed(1)}x — very high`) }
   }
-
-  /* P/B — balance sheet quality */
   if (f.priceToBook != null) {
     fields++
-    if      (f.priceToBook < 0)  { score -= 10; sigs.push(`Negative book value`) }
-    else if (f.priceToBook < 1.5){ score += 8;  sigs.push(`P/B ${f.priceToBook.toFixed(1)}x — near book value`) }
+    if      (f.priceToBook < 0)  { score -= 10 }
+    else if (f.priceToBook < 1.5){ score += 8;  sigs.push(`P/B ${f.priceToBook.toFixed(1)}x`) }
     else if (f.priceToBook < 3)  { score += 4 }
     else if (f.priceToBook > 6)  { score -= 8;  sigs.push(`High P/B ${f.priceToBook.toFixed(1)}x`) }
   }
-
-  /* ROE — how well management uses capital */
   if (f.roe != null) {
     fields++
     const r = f.roe * 100
-    if      (r > 25) { score += 15; sigs.push(`ROE ${r.toFixed(0)}% — excellent capital efficiency`) }
+    if      (r > 25) { score += 15; sigs.push(`ROE ${r.toFixed(0)}% — excellent`) }
     else if (r > 15) { score += 10; sigs.push(`ROE ${r.toFixed(0)}% — good`) }
     else if (r > 8)  { score += 4 }
     else if (r > 0)  { score -= 5;  sigs.push(`ROE ${r.toFixed(0)}% — weak`) }
-    else             { score -= 15; sigs.push(`Negative ROE — destroying value`) }
+    else             { score -= 15; sigs.push(`Negative ROE`) }
   }
-
-  /* D/E — financial risk */
   if (f.debtToEquity != null) {
     fields++
     const de = f.debtToEquity
-    if      (de < 0.2) { score += 10; sigs.push(`Low debt D/E ${de.toFixed(2)} — fortress balance sheet`) }
+    if      (de < 0.2) { score += 10; sigs.push(`Low debt D/E ${de.toFixed(2)}`) }
     else if (de < 0.5) { score += 6 }
     else if (de < 1.0) { score += 0 }
     else if (de < 2.0) { score -= 8;  sigs.push(`High debt D/E ${de.toFixed(1)}`) }
-    else               { score -= 15; sigs.push(`Excessive debt D/E ${de.toFixed(1)} — high risk`) }
+    else               { score -= 15; sigs.push(`Excessive debt D/E ${de.toFixed(1)}`) }
   }
-
-  /* Revenue growth — business momentum */
   if (f.revenueGrowth != null) {
     fields++
     const g = f.revenueGrowth * 100
-    if      (g > 20) { score += 12; sigs.push(`Revenue +${g.toFixed(0)}% YoY — strong growth`) }
+    if      (g > 20) { score += 12; sigs.push(`Revenue +${g.toFixed(0)}% YoY`) }
     else if (g > 10) { score += 7;  sigs.push(`Revenue +${g.toFixed(0)}% YoY`) }
     else if (g > 0)  { score += 2 }
-    else if (g > -5) { score -= 5;  sigs.push(`Revenue flat/slightly declining`) }
-    else             { score -= 12; sigs.push(`Revenue declining ${g.toFixed(0)}% YoY`) }
+    else if (g > -5) { score -= 5 }
+    else             { score -= 12; sigs.push(`Revenue declining ${g.toFixed(0)}%`) }
   }
-
-  /* EPS growth — earnings quality */
   if (f.earningsGrowth != null) {
     fields++
     const g = f.earningsGrowth * 100
-    if      (g > 25) { score += 12; sigs.push(`EPS +${g.toFixed(0)}% YoY — strong earnings growth`) }
-    else if (g > 10) { score += 6;  sigs.push(`EPS +${g.toFixed(0)}% YoY`) }
+    if      (g > 25) { score += 12; sigs.push(`EPS +${g.toFixed(0)}% YoY`) }
+    else if (g > 10) { score += 6 }
     else if (g > 0)  { score += 2 }
-    else if (g > -15){ score -= 8;  sigs.push(`EPS declining ${g.toFixed(0)}%`) }
-    else             { score -= 15; sigs.push(`EPS declining severely ${g.toFixed(0)}%`) }
+    else if (g > -15){ score -= 8 }
+    else             { score -= 15; sigs.push(`EPS severely declining`) }
   }
-
-  /* Net profit margin — business quality */
   if (f.profitMargins != null) {
     fields++
     const m = f.profitMargins * 100
-    if      (m > 25) { score += 10; sigs.push(`Excellent margins ${m.toFixed(0)}%`) }
-    else if (m > 15) { score += 6;  sigs.push(`Good margins ${m.toFixed(0)}%`) }
+    if      (m > 25) { score += 10; sigs.push(`Margins ${m.toFixed(0)}% — excellent`) }
+    else if (m > 15) { score += 6;  sigs.push(`Margins ${m.toFixed(0)}% — good`) }
     else if (m > 8)  { score += 2 }
     else if (m > 0)  { score -= 3 }
-    else             { score -= 12; sigs.push(`Negative margins — unprofitable`) }
+    else             { score -= 12; sigs.push(`Negative margins`) }
   }
 
-  if (fields === 0) {
-    return { score: 50, signals: ["No fundamental data from Finnhub for this ticker"], grade: "UNKNOWN", hasData: false, display: null }
-  }
+  if (fields === 0) return { score: 50, signals: [], grade: "UNKNOWN", hasData: false, display: null }
 
   score = Math.max(0, Math.min(100, Math.round(score)))
   const grade = score >= 70 ? "STRONG" : score >= 50 ? "FAIR" : score >= 30 ? "WEAK" : "POOR"
-
-  const fmt = (v, mult=1, dec=1, suf="", fallback="N/A") =>
-    v != null ? (v * mult).toFixed(dec) + suf : fallback
-
+  const fmt = (v, mult=1, dec=1, suf="") => v != null ? (v*mult).toFixed(dec)+suf : "N/A"
   return {
-    score, grade,
-    signals: sigs.slice(0, 4),
-    hasData: true,
+    score, grade, signals: sigs.slice(0, 4), hasData: true,
     display: {
       pe:      fmt(f.trailingPE,   1,   1, "x"),
       pb:      fmt(f.priceToBook,  1,   1, "x"),
@@ -289,133 +170,94 @@ function scoreFundamentals(f) {
   }
 }
 
-/* ── GOAL ALIGNMENT SCORER (0-100) ── */
 function scoreGoalAlignment(pos, sector, goals) {
-  let score = 50
-  const sigs = []
-  const retireYrs  = (goals.retireAge  || 50) - 36
-  const homeBudget = goals.homeBudget  || 8000000  /* ₹80L */
-
+  let score = 50; const sigs = []
   if (pos.currency === "INR") {
-    score += 10
-    sigs.push("India — home purchase fund")
-
-    /* High-quality sectors get bonus */
-    const goodSectors = [
-      "banks","financial services","nbfc","insurance","asset management",
-      "software & it services","technology","it","pharmaceuticals","healthcare services",
-      "consumer goods","fmcg","retailing",
-      "capital goods","industrial machinery","engineering",
-      "chemicals","specialty chemicals",
-      "ratings & research","analytics"
-    ]
-    const badSectors = [
-      "utilities","power","oil & gas","metals","mining",
-      "telecom","cement","real estate"
-    ]
+    score += 10; sigs.push("India — home purchase fund")
+    const good = ["bank","financial","nbfc","insurance","software","it","technology",
+                  "pharma","healthcare","consumer","fmcg","capital goods","industrial",
+                  "machinery","engineering","chemicals","ratings","analytics","food"]
+    const bad  = ["utilities","power","oil","gas","metals","mining","telecom","cement"]
     const s = (sector || "").toLowerCase()
-    if (goodSectors.some(g => s.includes(g))) { score += 12; sigs.push(`Quality sector: ${sector}`) }
-    if (badSectors.some(b => s.includes(b)))  { score -= 8;  sigs.push(`Cyclical sector: ${sector}`) }
-
+    if (good.some(g => s.includes(g))) { score += 12; sigs.push(`Quality sector: ${sector}`) }
+    if (bad.some(b =>  s.includes(b))) { score -= 8;  sigs.push(`Cyclical sector`) }
   } else {
-    score += 10
-    sigs.push(`EUR/USD — retirement corpus (${retireYrs}yr horizon)`)
+    score += 10; sigs.push("EUR/USD — retirement corpus")
   }
-
-  /* Size penalty — too small to meaningfully serve either goal */
   const eur = pos.totalCurrentEUR || 0
-  if      (eur < 30)  { score -= 20; sigs.push("Under €30 — negligible size") }
+  if      (eur < 30)  { score -= 20; sigs.push("Under €30 — negligible") }
   else if (eur < 100) { score -= 8;  sigs.push("Under €100 — underfunded") }
-  else if (eur < 500) { score -= 3 }
-
-  /* Long horizon bonus for aggressive growth */
+  const retireYrs = (goals.retireAge || 50) - 36
   if (retireYrs >= 10) score += 6
-
-  return {
-    score: Math.max(0, Math.min(100, Math.round(score))),
-    signals: sigs
-  }
+  return { score: Math.max(0, Math.min(100, Math.round(score))), signals: sigs }
 }
 
-/* ── COMPOSITE VERDICT ── */
 function getVerdict(techScore, techVerdict, fundScore, fundHasData, goalScore, pos) {
-  /* If no fundamental data: weight technicals 65%, goal 35% */
   const composite = fundHasData
-    ? Math.round(techScore * 0.40 + fundScore * 0.35 + goalScore * 0.25)
-    : Math.round(techScore * 0.65 + goalScore * 0.35)
+    ? Math.round(techScore*0.40 + fundScore*0.35 + goalScore*0.25)
+    : Math.round(techScore*0.65 + goalScore*0.35)
 
-  const isBuy      = techVerdict === "BUY" || techVerdict === "STRONG BUY"
-  const isSell     = techVerdict === "SELL" || techVerdict === "TRIM"
-  const isHold     = techVerdict === "HOLD"
-  const cur        = pos.currentPrice || 0
-  const currency   = pos.currency || "INR"
+  const isBuy  = techVerdict === "BUY" || techVerdict === "STRONG BUY"
+  const isSell = techVerdict === "SELL" || techVerdict === "TRIM"
+  const cur    = pos.currentPrice || 0
 
   let verdict, action, priority, reasoning
 
-  /* ── KEY DECISION RULE ──
-     Technicals tell you WHEN. Fundamentals tell you WHAT.
-     A bad technical on a great business = temporary dip, HOLD.
-     A bad fundamental on any technical   = exit, no matter the signal.
-     A good technical on a great business = ADD.
-  */
-
   if (fundHasData) {
     if (fundScore < 30) {
-      /* Weak fundamentals override everything — exit regardless of technicals */
       verdict="EXIT"; priority="HIGH"
-      reasoning = "Poor fundamentals confirm exit — weak business metrics"
-      action = `Sell all ${pos.qty||""} shares. Business quality insufficient for long-term holding.`
+      reasoning="Poor fundamentals — weak business metrics confirm exit"
+      action=`Sell all ${pos.qty||""} shares. Business quality insufficient for long-term hold.`
     } else if (isBuy && fundScore >= 55) {
-      /* Strong technicals + decent/good fundamentals = clear ADD */
       verdict="ADD"; priority=composite>=72?"HIGH":"MEDIUM"
-      reasoning = "Strong technical momentum + solid fundamentals = quality entry"
-      const addQty = Math.max(1, Math.round(5000 / (cur||1)))
-      action = currency === "INR"
-        ? `Add ${addQty} shares at ₹${cur.toFixed(0)} (≈₹${(addQty*cur).toFixed(0)}) — builds to meaningful size`
-        : `Add €200-300 — underfunded quality position`
+      reasoning="Strong technicals + solid fundamentals = quality entry point"
+      const qty = Math.max(1, Math.round(5000/(cur||1)))
+      action = pos.currency==="INR"
+        ? `Add ${qty} shares at ₹${cur.toFixed(0)} (≈₹${(qty*cur).toFixed(0)}) — builds to meaningful size`
+        : `Add €200–300 — underfunded quality position`
     } else if (isSell && fundScore >= 60) {
-      /* Technicals bearish BUT strong fundamentals — this is a dip in a quality business */
       verdict="HOLD"; priority="MEDIUM"
-      reasoning = "Weak technicals but strong fundamentals — temporary dip in quality business"
-      action = `Hold. Strong business metrics (ROE, growth) contradict sell signal. Add only if RSI drops below 35 and holds there.`
+      reasoning="Weak technicals but strong fundamentals — temporary dip in quality business"
+      action=`Hold. Strong business metrics contradict sell signal. Add if RSI drops below 35.`
     } else if (isSell && fundScore >= 40) {
-      /* Mixed — weak technicals, mediocre fundamentals */
       verdict="REVIEW"; priority="LOW"
-      reasoning = "Bearish technicals + average fundamentals — monitor closely"
-      action = `Hold but watch closely. If price breaks 52-week low, exit. If fundamentals deteriorate next quarter, exit.`
-    } else if (isSell && fundScore < 40) {
+      reasoning="Bearish technicals + mediocre fundamentals — monitor closely"
+      action=`Hold but watch carefully. Exit if price breaks 52-week low or next quarter's earnings disappoint.`
+    } else if (isSell) {
       verdict="EXIT"; priority="HIGH"
-      reasoning = "Bearish technicals + weak fundamentals = clear exit"
-      action = `Sell all ${pos.qty||""} shares. Both technicals and fundamentals confirm exit.`
-    } else if (isHold && fundScore >= 55) {
-      verdict="HOLD"; priority="LOW"
-      reasoning = "Consolidating with solid fundamentals — wait for better entry"
-      action = `Hold. Quality business in consolidation phase. Consider adding if RSI drops below 42.`
+      reasoning="Bearish technicals + weak fundamentals = confirmed exit"
+      action=`Sell all ${pos.qty||""} shares. Both signals confirm exit. Redeploy to stronger position.`
+    } else if (isBuy && fundScore >= 40) {
+      verdict="ADD"; priority="MEDIUM"
+      reasoning="Technical BUY with fair fundamentals"
+      const qty = Math.max(1, Math.round(5000/(cur||1)))
+      action = pos.currency==="INR"
+        ? `Add ${qty} shares at ₹${cur.toFixed(0)} (≈₹${(qty*cur).toFixed(0)})`
+        : `Add €150–200`
     } else {
-      verdict="REVIEW"; priority="LOW"
-      reasoning = "Mixed signals across technicals and fundamentals"
-      action = `Hold current position. Reassess after next quarterly earnings.`
+      verdict="HOLD"; priority="LOW"
+      reasoning="Consolidating with solid fundamentals — wait for better entry"
+      action=`Hold. Quality business in consolidation. Consider adding if RSI drops below 42.`
     }
   } else {
-    /* No fundamental data — technicals-only verdict */
+    /* No fundamental data — technicals only */
     if (isBuy) {
       verdict="ADD"; priority="MEDIUM"
-      reasoning = "Technical BUY signal (no fundamental data available)"
-      const addQty = Math.max(1, Math.round(5000/(cur||1)))
-      action = currency==="INR"
-        ? `Add ${addQty} shares at ₹${cur.toFixed(0)} — technical signal positive. Verify fundamentals on Screener.in before committing large capital.`
-        : `Add €200 — technical signal positive. Verify fundamentals before large add.`
+      reasoning="Technical BUY signal — no Finnhub data for this ticker"
+      const qty = Math.max(1, Math.round(5000/(cur||1)))
+      action = pos.currency==="INR"
+        ? `Add ${qty} shares at ₹${cur.toFixed(0)} — verify fundamentals on Screener.in first`
+        : `Add €150 — verify fundamentals before larger commitment`
     } else if (isSell) {
       verdict="REVIEW"; priority="MEDIUM"
-      reasoning = "Technical SELL signal but no fundamental data to confirm"
-      action = `Do not exit purely on technicals without checking fundamentals. Check Screener.in for ${pos.key} before deciding.`
+      reasoning="Technical SELL — no fundamental data to confirm. Verify on Screener.in before exiting."
+      action=`Check fundamentals on Screener.in for ${pos.key} before deciding. Do not exit purely on technicals.`
     } else {
       verdict="HOLD"; priority="LOW"
-      reasoning = "Neutral technicals, no fundamental data"
-      action = `Hold. Check fundamentals on Screener.in before adding or exiting.`
+      reasoning="Neutral technicals — no Finnhub fundamental data for this ticker"
+      action=`Hold. Verify fundamentals on Screener.in before adding or exiting.`
     }
   }
-
   return { verdict, action, priority, composite, reasoning }
 }
 
@@ -428,61 +270,66 @@ export default async function handler(req, res) {
   if (req.method !== "POST")   return res.status(405).json({ error: "POST only" })
 
   const apiKey = process.env.FINNHUB_API_KEY
-  if (!apiKey) return res.status(500).json({ error: "FINNHUB_API_KEY not set in Vercel environment variables" })
+  if (!apiKey) return res.status(500).json({ error: "FINNHUB_API_KEY not set" })
 
-  const { positions, techMap, goals } = req.body || {}
+  const { positions, techMap, goals, debug } = req.body || {}
   if (!positions?.length) return res.status(400).json({ error: "positions required" })
 
   const results = {}
+  const debugInfo = {}  /* only populated when debug:true is sent */
 
-  /* Process in batches of 3 — Finnhub free tier: 60 calls/min, 2 calls per position */
   const BATCH = 3
   for (let i = 0; i < positions.length; i += BATCH) {
     const batch = positions.slice(i, i + BATCH)
-
     await Promise.all(batch.map(async pos => {
-      const baseKey = toFinnhubTicker(pos)
-      if (!baseKey) return  /* MutualFund or crypto — skip */
+      if (pos.type === "MutualFund") return
+      const key = pos.key || ""
 
-      /* Resolve final Finnhub symbol */
-      let ticker
+      /* Resolve Finnhub symbol */
+      let symbol
       if (pos.currency === "INR") {
-        ticker = await resolveNSETicker(baseKey, apiKey)
+        /* Always use Finnhub search — most reliable way to get correct symbol */
+        symbol = await resolveSymbol(key, apiKey)
+        if (!symbol) {
+          /* Final fallback: try NSE:TICKER directly */
+          symbol = `NSE:${key}`
+        }
       } else {
-        ticker = baseKey
+        if (key.includes("-USD")) return  /* crypto — skip */
+        symbol = toEurTicker(key)
       }
 
-      const f = await fetchFinnhub(ticker, apiKey)
+      if (debug) debugInfo[key] = { resolvedSymbol: symbol }
+
+      const f = await fetchFinnhub(symbol, apiKey)
+
+      if (debug && f) {
+        debugInfo[key].finnhubProfileName = f._profileName
+        debugInfo[key].sampleMetricKeys   = f._metricKeys
+        debugInfo[key].peValue            = f.trailingPE
+        debugInfo[key].roeValue           = f.roe
+      }
+
       const { score: fundScore, signals: fundSigs, grade, hasData, display } = scoreFundamentals(f)
-
-      const tech        = techMap?.[pos.key] || {}
-      const techScore   = tech.score   ?? 50
-      const techVerdict = tech.verdict ?? "HOLD"
-      const techSigs    = (tech.signals || []).slice(0, 3)
-
-      const { score: goalScore, signals: goalSigs } =
-        scoreGoalAlignment(pos, f?.sector, goals || {})
-
+      const tech      = techMap?.[key] || {}
+      const techScore = tech.score ?? 50; const techVerdict = tech.verdict ?? "HOLD"
+      const { score: goalScore, signals: goalSigs } = scoreGoalAlignment(pos, f?.sector, goals||{})
       const { verdict, action, priority, composite, reasoning } =
         getVerdict(techScore, techVerdict, fundScore, hasData, goalScore, pos)
 
-      results[pos.key] = {
+      results[key] = {
         verdict, action, priority, composite, reasoning,
-        scores:  { technical: techScore, fundamental: fundScore, goalAlign: goalScore },
-        signals: { technical: techSigs, fundamental: fundSigs, goalAlign: goalSigs },
-        fundamentals: display || {
-          pe: "N/A", pb: "N/A", roe: "N/A", de: "N/A",
-          revGrow: "N/A", margins: "N/A",
-          sector: "N/A", grade: "UNKNOWN"
-        }
+        scores:       { technical: techScore, fundamental: fundScore, goalAlign: goalScore },
+        signals:      { technical: tech.signals||[], fundamental: fundSigs, goalAlign: goalSigs },
+        fundamentals: display || { pe:"N/A", pb:"N/A", roe:"N/A", de:"N/A", revGrow:"N/A", margins:"N/A", sector:"N/A", grade:"UNKNOWN" }
       }
     }))
-
-    /* Small delay between batches to stay within rate limits */
-    if (i + BATCH < positions.length) {
-      await new Promise(r => setTimeout(r, 200))
-    }
+    if (i + BATCH < positions.length) await new Promise(r => setTimeout(r, 250))
   }
 
-  return res.status(200).json({ results, computedAt: new Date().toISOString() })
+  return res.status(200).json({
+    results,
+    ...(debug ? { debugInfo } : {}),
+    computedAt: new Date().toISOString()
+  })
 }
