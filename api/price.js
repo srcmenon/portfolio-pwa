@@ -75,7 +75,42 @@ export default async function handler(req, res) {
     const previousClose = meta?.chartPreviousClose || meta?.previousClose || null
     const changePercent = (previousClose && price)
       ? ((price - previousClose) / previousClose) * 100 : null
-    const marketState   = meta?.marketState || "CLOSED"
+
+    /* Yahoo's marketState for non-US exchanges (especially .NS) is unreliable —
+       it often returns "CLOSED" even when NSE/BSE is open.
+       Detect market state locally using IST time for Indian tickers,
+       and CET/CEST for European tickers. Fall back to Yahoo for US. */
+    let marketState = meta?.marketState || "CLOSED"
+
+    const isNSE = ticker.endsWith(".NS") || ticker.endsWith(".BO")
+    const isEUR = ticker.endsWith(".DE") || ticker.endsWith(".PA") ||
+                  ticker.endsWith(".L")  || ticker.endsWith(".SG") ||
+                  ticker.endsWith(".MC") || ticker.endsWith(".MI")
+
+    if (isNSE) {
+      /* NSE hours: Mon–Fri 09:15–15:30 IST (UTC+5:30) */
+      const now = new Date()
+      const istOffset = 5.5 * 60  /* IST = UTC+5:30 in minutes */
+      const istMinutes = (now.getUTCHours() * 60 + now.getUTCMinutes() + istOffset) % (24 * 60)
+      const istDay = new Date(now.getTime() + istOffset * 60000).getUTCDay()
+      const isWeekday = istDay >= 1 && istDay <= 5
+      const afterOpen  = istMinutes >= 9 * 60 + 15   /* 09:15 IST */
+      const beforeClose= istMinutes <= 15 * 60 + 30  /* 15:30 IST */
+      marketState = (isWeekday && afterOpen && beforeClose) ? "REGULAR" : "CLOSED"
+    } else if (isEUR) {
+      /* XETRA/LSE hours: Mon–Fri 08:00–17:30 CET (UTC+1 / UTC+2 DST) */
+      const now = new Date()
+      /* Approximate CET offset — CET is UTC+1, CEST is UTC+2 */
+      const month = now.getUTCMonth() + 1  /* 1-12 */
+      const cetOffset = (month >= 4 && month <= 10) ? 2 * 60 : 1 * 60
+      const cetMinutes = (now.getUTCHours() * 60 + now.getUTCMinutes() + cetOffset) % (24 * 60)
+      const cetDay = new Date(now.getTime() + cetOffset * 60000).getUTCDay()
+      const isWeekday = cetDay >= 1 && cetDay <= 5
+      const afterOpen  = cetMinutes >= 8 * 60
+      const beforeClose= cetMinutes <= 17 * 60 + 30
+      marketState = (isWeekday && afterOpen && beforeClose) ? "REGULAR" : "CLOSED"
+    }
+    /* US tickers: trust Yahoo's marketState — it's accurate for NYSE/NASDAQ */
 
     res.status(200).json({ price, changePercent, previousClose, marketState })
 
