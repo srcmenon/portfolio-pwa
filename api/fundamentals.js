@@ -9,7 +9,10 @@
    Ticker format: HDFCBANK.NS, LTFOODS.NS, BERGEPAINT.NS
    ============================================================ */
 
-import yahooFinance from "yahoo-finance2"
+import yf from "yahoo-finance2"
+
+/* yahoo-finance2 ESM/CJS interop — handle both export shapes */
+const yahooFinance = yf.default || yf
 
 /* ── TICKER RESOLVER ── */
 function toYahooTicker(pos) {
