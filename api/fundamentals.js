@@ -12,20 +12,28 @@ async function resolveSymbol(nseTicker, apiKey) {
     const d = await r.json()
     const results = (d.result || []).filter(r => r.type === "Common Stock")
 
-    /* Find best match */
+    /* For Indian stocks ONLY accept results from NSE or BSE exchange.
+       Without this guard, "SAIL" matches SailPoint Inc (US) instead of
+       Steel Authority of India. */
+    const indianResults = results.filter(r =>
+      r.symbol?.startsWith("NSE:") ||
+      r.symbol?.startsWith("BSE:") ||
+      r.symbol?.endsWith(".NS") ||
+      r.symbol?.endsWith(".BO")
+    )
+
     const match =
-      results.find(r => r.displaySymbol === nseTicker) ||
-      results.find(r => r.symbol === `NSE:${nseTicker}`) ||
-      results.find(r => r.symbol?.includes(nseTicker)) ||
-      results[0]
+      indianResults.find(r => r.displaySymbol === nseTicker) ||
+      indianResults.find(r => r.symbol === `NSE:${nseTicker}`) ||
+      indianResults.find(r => r.symbol?.includes(nseTicker)) ||
+      indianResults[0]
 
     if (!match) return `NSE:${nseTicker}`
 
-    /* Finnhub search returns symbols like "HDFCBANK.NS" but metric endpoint
-       requires "NSE:HDFCBANK" — convert .NS/.BO suffix to NSE: prefix */
+    /* Convert .NS/.BO suffix → NSE:/BSE: prefix */
     let sym = match.symbol
-    if (sym.endsWith(".NS"))  sym = "NSE:" + sym.replace(".NS", "")
-    if (sym.endsWith(".BO"))  sym = "BSE:" + sym.replace(".BO", "")
+    if (sym.endsWith(".NS")) sym = "NSE:" + sym.replace(".NS", "")
+    if (sym.endsWith(".BO")) sym = "BSE:" + sym.replace(".BO", "")
 
     return sym
   } catch(e) { return `NSE:${nseTicker}` }
