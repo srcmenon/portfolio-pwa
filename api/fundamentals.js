@@ -8,29 +8,27 @@ async function resolveSymbol(nseTicker, apiKey) {
       `https://finnhub.io/api/v1/search?q=${encodeURIComponent(nseTicker)}`,
       { headers: { "X-Finnhub-Token": apiKey, "Accept": "application/json" } }
     )
-    if (!r.ok) return null
+    if (!r.ok) return `NSE:${nseTicker}`
     const d = await r.json()
     const results = (d.result || []).filter(r => r.type === "Common Stock")
 
-    /* Priority 1: exact match on displaySymbol */
-    const exact = results.find(r => r.displaySymbol === nseTicker)
-    if (exact) return exact.symbol
+    /* Find best match */
+    const match =
+      results.find(r => r.displaySymbol === nseTicker) ||
+      results.find(r => r.symbol === `NSE:${nseTicker}`) ||
+      results.find(r => r.symbol?.includes(nseTicker)) ||
+      results[0]
 
-    /* Priority 2: symbol ends with the NSE ticker on NSE exchange */
-    const nse = results.find(r =>
-      r.symbol === `NSE:${nseTicker}` ||
-      (r.exchange === "NSE" && r.displaySymbol === nseTicker)
-    )
-    if (nse) return nse.symbol
+    if (!match) return `NSE:${nseTicker}`
 
-    /* Priority 3: first Common Stock result that contains ticker name */
-    const partial = results.find(r =>
-      r.symbol?.includes(nseTicker) || r.displaySymbol?.includes(nseTicker)
-    )
-    if (partial) return partial.symbol
+    /* Finnhub search returns symbols like "HDFCBANK.NS" but metric endpoint
+       requires "NSE:HDFCBANK" — convert .NS/.BO suffix to NSE: prefix */
+    let sym = match.symbol
+    if (sym.endsWith(".NS"))  sym = "NSE:" + sym.replace(".NS", "")
+    if (sym.endsWith(".BO"))  sym = "BSE:" + sym.replace(".BO", "")
 
-    return null
-  } catch(e) { return null }
+    return sym
+  } catch(e) { return `NSE:${nseTicker}` }
 }
 
 /* EUR/USD ticker mapping */
@@ -56,8 +54,9 @@ async function fetchFinnhub(symbol, apiKey) {
     const metricR  = r2.ok ? await r2.json() : {}
     const m = metricR.metric || {}
 
-    /* If profile has no name AND metric has no keys — ticker not found */
-    if (!profile.name && Object.keys(m).length < 3) return null
+    /* If both profile and metrics are empty — ticker genuinely not covered */
+    const metricCount = Object.keys(m).length
+    if (!profile.name && metricCount < 5) return null
 
     const n = v => (typeof v === "number" && isFinite(v)) ? v : null
     const pct = v => n(v) !== null ? v / 100 : null  /* Finnhub returns % not decimal */
