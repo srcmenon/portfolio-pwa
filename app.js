@@ -3248,7 +3248,7 @@ function getDynamicSellList(){
    Cached 4 hours — fundamentals don't change hourly.
    Completely free — Yahoo Finance only, no Claude. */
 
-const FUND_CACHE_KEY = "capintel_fundamentals_v3"
+const FUND_CACHE_KEY = "capintel_fundamentals_v4"
 
 function getFundCache(){
   try{
@@ -3399,6 +3399,7 @@ async function buildDynamicSellListHTMLAsync(){
         ${scoreBars}
         ${fundRow}
         ${sigsHTML}
+        ${a?.reasoning?`<div class="dsl-reasoning">💡 ${a.reasoning}</div>`:""}
         ${a?.action?`<div class="dsl-action-text">→ ${a.action}</div>`:""}
       </div>`
     }).join("")
