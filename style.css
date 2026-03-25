@@ -2029,3 +2029,8 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
   border-radius:4px; cursor:pointer;
 }
 .rp-deploy-btn:hover { background:rgba(34,209,122,0.2); }
+
+.dsl-reasoning {
+  font-size:11px; color:var(--blue); padding:3px 0 2px;
+  font-style:italic;
+}
