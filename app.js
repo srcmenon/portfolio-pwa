@@ -177,15 +177,136 @@ function saveAsset(asset){
 }
 
 /* Deletes a single asset by auto-incremented id, then refreshes the table. */
-function deleteAsset(id){
+/* ── SELL INTENT CAPTURE ─────────────────────────────────
+   When removing or selling a position, capture why and how much.
+   "Sold" → store proceeds for reallocation planner.
+   "Mistake/duplicate" → silent delete, no proceeds tracked. */
+
+const PROCEEDS_KEY = "capintel_proceeds"
+
+function getProceeds(){
+  try{ return JSON.parse(localStorage.getItem(PROCEEDS_KEY)) || [] }catch(e){ return [] }
+}
+function saveProceeds(list){
+  try{ localStorage.setItem(PROCEEDS_KEY, JSON.stringify(list)) }catch(e){}
+}
+function addProceeds(amount, currency, fromName, fromTicker){
+  const list = getProceeds()
+  list.push({
+    id:       Date.now(),
+    amount,   currency,
+    fromName, fromTicker,
+    addedAt:  Date.now(),
+    deployed: false
+  })
+  saveProceeds(list)
+  renderReallocationPlanner()
+}
+function markProceedsDeployed(id){
+  const list = getProceeds().map(p => p.id===id ? {...p, deployed:true} : p)
+  saveProceeds(list)
+  renderReallocationPlanner()
+}
+function clearDeployedProceeds(){
+  saveProceeds(getProceeds().filter(p => !p.deployed))
+  renderReallocationPlanner()
+}
+
+/* Show sell intent dialog instead of silently deleting */
+async function deleteAsset(id){
   if(!db) return
-  const tx = db.transaction("assets", "readwrite")
+
+  /* Find the asset to get name, current price, quantity, currency */
+  const assets = await getAssets()
+  const asset  = assets.find(a => a.id === id)
+  if(!asset){ _hardDeleteAsset(id); return }
+
+  const name     = asset.name || asset.ticker || "this position"
+  const cur      = asset.currentPrice || asset.buyPrice || 0
+  const qty      = asset.quantity || 0
+  const currency = asset.currency || "INR"
+  const value    = cur * qty
+  const valueStr = formatCurrency(value, currency)
+
+  showSellIntentDialog({
+    title:    `Remove ${name}`,
+    valueStr, currency, value, name,
+    ticker:   asset.ticker || "",
+    onSold:   (proceeds) => {
+      _hardDeleteAsset(id)
+      if(proceeds > 0) addProceeds(proceeds, currency, name, asset.ticker||"")
+    },
+    onDelete: () => _hardDeleteAsset(id)
+  })
+}
+
+function _hardDeleteAsset(id){
+  if(!db) return
+  const tx = db.transaction("assets","readwrite")
   tx.objectStore("assets").delete(id)
   tx.oncomplete = () => loadAssets()
 }
 
-/* Partial sell: reduces quantity of a single lot.
-   If sellQty >= currentQty, prompts to fully remove the position. */
+/* Sell intent dialog — shown as modal overlay */
+function showSellIntentDialog({ title, valueStr, currency, value, name, ticker, onSold, onDelete }){
+  /* Remove any existing dialog */
+  document.getElementById("sellIntentDialog")?.remove()
+
+  const overlay = document.createElement("div")
+  overlay.id        = "sellIntentDialog"
+  overlay.className = "sid-overlay"
+  overlay.innerHTML = `
+    <div class="sid-modal">
+      <div class="sid-title">${title}</div>
+      <div class="sid-value">Current value: <strong>${valueStr}</strong></div>
+      <div class="sid-question">Why are you removing this position?</div>
+      <div class="sid-options">
+        <button class="sid-btn sid-sold" onclick="sidSold()">
+          💰 Sold — enter proceeds
+        </button>
+        <button class="sid-btn sid-mistake" onclick="sidDelete()">
+          🗑 Mistake / duplicate — just delete
+        </button>
+        <button class="sid-btn sid-cancel" onclick="sidCancel()">
+          Cancel
+        </button>
+      </div>
+      <div id="sidProceedsRow" class="sid-proceeds-row" style="display:none">
+        <label>Proceeds received (${currency}):</label>
+        <input id="sidProceedsInput" type="number" class="sid-proceeds-input"
+          value="${value.toFixed(0)}" step="1" min="0">
+        <button class="sid-btn sid-confirm" onclick="sidConfirmSold()">Confirm Sell</button>
+      </div>
+    </div>`
+
+  /* Wire callbacks via closure stored on element */
+  overlay._onSold   = onSold
+  overlay._onDelete = onDelete
+
+  document.body.appendChild(overlay)
+  overlay.addEventListener("click", e => { if(e.target===overlay) sidCancel() })
+}
+
+function sidSold(){
+  document.getElementById("sidProceedsRow").style.display = "flex"
+}
+function sidConfirmSold(){
+  const input    = document.getElementById("sidProceedsInput")
+  const proceeds = parseFloat(input?.value) || 0
+  const overlay  = document.getElementById("sellIntentDialog")
+  if(overlay?._onSold) overlay._onSold(proceeds)
+  overlay?.remove()
+}
+function sidDelete(){
+  const overlay = document.getElementById("sellIntentDialog")
+  if(overlay?._onDelete) overlay._onDelete()
+  overlay?.remove()
+}
+function sidCancel(){
+  document.getElementById("sellIntentDialog")?.remove()
+}
+
+/* Partial sell — also capture proceeds */
 async function sellPartial(id, currentQty, name){
   const input = prompt(`Sell how many units of ${name}?\nCurrent holding: ${currentQty}`)
   if(input === null) return
@@ -200,16 +321,123 @@ async function sellPartial(id, currentQty, name){
     }
     return
   }
-  /* Round to 8 decimal places to avoid floating-point drift */
   const newQty  = Math.round((currentQty - sellQty) * 1e8) / 1e8
   const assets  = await getAssets()
   const asset   = assets.find(a => a.id === id)
   if(!asset) return
-  const tx      = db.transaction("assets", "readwrite")
+
+  /* Capture partial sell proceeds */
+  const cur      = asset.currentPrice || asset.buyPrice || 0
+  const proceeds = sellQty * cur
+  const currency = asset.currency || "INR"
+  if(proceeds > 0) addProceeds(proceeds, currency, name, asset.ticker||"")
+
+  const tx = db.transaction("assets","readwrite")
   tx.objectStore("assets").put({ ...asset, quantity: newQty })
   tx.oncomplete = () => loadAssets()
 }
 
+/* ── REALLOCATION PLANNER ────────────────────────────────
+   Shows pending sell proceeds and suggests where to deploy them.
+   Rendered above the Add Asset form in Portfolio tab.
+   Suggestions ranked by composite score from _techMap + fundamentals cache.
+   Same currency as proceeds — no cross-currency suggestions. */
+
+function renderReallocationPlanner(){
+  const el = document.getElementById("reallocationPlanner")
+  if(!el) return
+
+  const pending = getProceeds().filter(p => !p.deployed)
+  if(!pending.length){ el.style.display = "none"; return }
+
+  /* Group by currency */
+  const byCurrency = {}
+  pending.forEach(p => {
+    if(!byCurrency[p.currency]) byCurrency[p.currency] = { total:0, items:[] }
+    byCurrency[p.currency].total += p.amount
+    byCurrency[p.currency].items.push(p)
+  })
+
+  /* Get top ADD-rated suggestions per currency from techMap */
+  const getSuggestions = (currency) => {
+    if(!lastPortfolio?.length) return []
+    return lastPortfolio
+      .filter(p => {
+        if(p.currency !== currency) return false
+        const t = window._techMap?.[p.key]
+        if(!t) return false
+        return t.verdict === "BUY" || t.verdict === "STRONG BUY" || t.verdict === "HOLD"
+      })
+      .map(p => {
+        const t = window._techMap[p.key]
+        const f = window._fundMap?.[p.key]
+        const composite = f?.composite || t?.score || 50
+        return { ...p, composite, verdict: t.verdict, signals: t.signals||[] }
+      })
+      .sort((a,b) => b.composite - a.composite)
+      .slice(0, 3)
+  }
+
+  let html = `<div class="rp-header">
+    <span class="rp-title">💰 Undeployed Proceeds</span>
+    <button class="rp-clear-btn" onclick="clearDeployedProceeds()">Clear deployed</button>
+  </div>`
+
+  Object.entries(byCurrency).forEach(([currency, data]) => {
+    const sym   = currency === "INR" ? "₹" : currency === "EUR" ? "€" : "$"
+    const total = data.total
+    const suggs = getSuggestions(currency)
+
+    html += `<div class="rp-currency-block">
+      <div class="rp-currency-header">
+        <span class="rp-amount">${sym}${total.toLocaleString("en-IN",{maximumFractionDigits:0})} available</span>
+        <span class="rp-from">from: ${data.items.map(i=>i.fromName).join(", ")}</span>
+      </div>`
+
+    if(suggs.length){
+      html += `<div class="rp-suggestions">`
+      suggs.forEach(s => {
+        const cur      = s.currentPrice || 0
+        const addQty   = currency === "INR"
+          ? Math.floor(Math.min(total, 5000) / (cur||1))
+          : Math.floor(total / (convertToEUR(cur, currency)||1))
+        const addAmt   = currency === "INR"
+          ? `₹${(addQty*cur).toFixed(0)}`
+          : `€${(addQty*convertToEUR(cur,currency)).toFixed(0)}`
+        const vCls     = s.verdict==="STRONG BUY"||s.verdict==="BUY" ? "av-buy" : "av-hold"
+        const sigStr   = s.signals.slice(0,2).join(" · ")
+        const remaining= currency==="INR"
+          ? total - addQty*cur
+          : total - addQty*convertToEUR(cur,currency)
+
+        html += `<div class="rp-suggestion">
+          <span class="action-badge ${vCls} rp-verdict">${s.verdict}</span>
+          <span class="rp-score">${s.composite}</span>
+          <span class="rp-sug-name">${resolveDisplayName(s)}</span>
+          <span class="rp-sug-ticker">${s.key}</span>
+          <span class="rp-sug-action">Buy ${addQty} shares = ${addAmt}</span>
+          ${remaining > 100 ? `<span class="rp-remaining">+${sym}${remaining.toFixed(0)} remaining</span>` : ""}
+          <div class="rp-sug-signals">${sigStr}</div>
+        </div>`
+      })
+      html += `</div>`
+    } else {
+      html += `<div class="rp-no-sugg">No strong BUY signals in ${currency} right now — consider parking in IWDA (EUR) or Nifty 50 index fund (INR) temporarily.</div>`
+    }
+
+    /* Mark each source as deployed */
+    html += `<div class="rp-actions">`
+    data.items.forEach(item => {
+      html += `<button class="rp-deploy-btn" onclick="markProceedsDeployed(${item.id})">
+        ✓ Mark ₹${item.amount.toFixed(0)} from ${item.fromName} as deployed
+      </button>`
+    })
+    html += `</div></div>`
+  })
+
+  el.innerHTML = html
+  el.style.display = "block"
+}
 
 /* ── PORTFOLIO ENGINE ─────────────────────────────────────
    Transforms raw asset records into grouped, calculated positions.
@@ -329,6 +557,9 @@ async function loadAssets(){
 
     /* Apply free technicals AFTER table is rendered so cells exist in DOM */
     runFreeTechnicals(false)
+
+    /* Show reallocation planner if there are pending proceeds */
+    renderReallocationPlanner()
 
     /* Only redraw Insights charts if that tab is currently visible */
     if(document.getElementById("insightsTab")?.classList.contains("active")){
