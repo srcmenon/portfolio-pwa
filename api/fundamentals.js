@@ -62,30 +62,31 @@ async function fetchFinnhub(symbol, apiKey) {
     const metricR  = r2.ok ? await r2.json() : {}
     const m = metricR.metric || {}
 
-    /* If both profile and metrics are empty — ticker genuinely not covered */
     const metricCount = Object.keys(m).length
-    if (!profile.name && metricCount < 5) return null
+
+    /* Finnhub free tier often returns empty profile for NSE stocks
+       but metric endpoint works fine. Only bail if BOTH are empty. */
+    if (metricCount < 5 && !profile.name && !profile.ticker) return null
 
     const n = v => (typeof v === "number" && isFinite(v)) ? v : null
     const pct = v => n(v) !== null ? v / 100 : null  /* Finnhub returns % not decimal */
 
     return {
-      trailingPE:      n(m.peBasicExclExtraTTM)       ?? n(m.peTTM)           ?? n(m.peAnnual),
-      priceToBook:     n(m.pbAnnual)                   ?? n(m.pbQuarterly),
-      roe:             pct(m.roeTTM)                   ?? pct(m.roeAnnual),
-      roa:             pct(m.roaTTM),
-      profitMargins:   pct(m.netProfitMarginTTM),
-      operatingMargins:pct(m.operatingMarginTTM),
-      debtToEquity:    n(m["totalDebt/totalEquityAnnual"]) ?? n(m["longTermDebt/equityAnnual"]),
-      revenueGrowth:   pct(m.revenueGrowthTTMYoy)     ?? pct(m.revenueGrowth3Y),
-      earningsGrowth:  pct(m.epsGrowthTTMYoy)         ?? pct(m.epsGrowth3Y),
-      currentRatio:    n(m.currentRatioAnnual),
+      trailingPE:      n(m.peBasicExclExtraTTM)       ?? n(m.peTTM)              ?? n(m.peAnnual)          ?? n(m.peInclExtraTTM),
+      priceToBook:     n(m.pbAnnual)                   ?? n(m.pbQuarterly)        ?? n(m.priceToBookTTM),
+      roe:             pct(m.roeTTM)                   ?? pct(m.roeAnnual)        ?? pct(m.returnOnEquityTTM),
+      roa:             pct(m.roaTTM)                   ?? pct(m.roaAnnual),
+      profitMargins:   pct(m.netProfitMarginTTM)       ?? pct(m.netMarginAnnual),
+      operatingMargins:pct(m.operatingMarginTTM)       ?? pct(m.operatingMarginAnnual),
+      debtToEquity:    n(m["totalDebt/totalEquityAnnual"]) ?? n(m["longTermDebt/equityAnnual"]) ?? n(m.totalDebtToEquityAnnual),
+      revenueGrowth:   pct(m.revenueGrowthTTMYoy)     ?? pct(m.revenueGrowth3Y)  ?? pct(m.revenueGrowthAnnual),
+      earningsGrowth:  pct(m.epsGrowthTTMYoy)         ?? pct(m.epsGrowth3Y)      ?? pct(m.epsGrowthAnnual),
+      currentRatio:    n(m.currentRatioAnnual)         ?? n(m.currentRatioQuarterly),
       sector:          profile.finnhubIndustry || profile.sector || null,
       industry:        profile.finnhubIndustry || null,
       marketCap:       n(profile.marketCapitalization),
-      /* Debug: store raw keys present so we can diagnose */
-      _metricKeys:     Object.keys(m).slice(0, 20),
-      _profileName:    profile.name || null,
+      _metricKeys:     Object.keys(m),  /* all keys for debug diagnosis */
+      _profileName:    profile.name || profile.ticker || null,
     }
   } catch(e) { return null }
 }
@@ -312,9 +313,15 @@ export default async function handler(req, res) {
 
       if (debug && f) {
         debugInfo[key].finnhubProfileName = f._profileName
-        debugInfo[key].sampleMetricKeys   = f._metricKeys
+        debugInfo[key].allMetricKeys      = f._metricKeys  /* all keys for diagnosis */
         debugInfo[key].peValue            = f.trailingPE
+        debugInfo[key].pbValue            = f.priceToBook
         debugInfo[key].roeValue           = f.roe
+        debugInfo[key].deValue            = f.debtToEquity
+        debugInfo[key].revGrowth          = f.revenueGrowth
+        debugInfo[key].margins            = f.profitMargins
+      } else if (debug) {
+        debugInfo[key].finnhubReturnedNull = true
       }
 
       const { score: fundScore, signals: fundSigs, grade, hasData, display } = scoreFundamentals(f)
