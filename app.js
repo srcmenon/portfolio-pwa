@@ -3006,124 +3006,205 @@ function getDynamicSellList(){
   return { positions: small, totalEUR, totalINR }
 }
 
-function buildDynamicSellListHTML(){
+/* ── NOISE POSITION DEEP ANALYSIS ────────────────────────
+   Fetches fundamental scores for all noise positions (<€100).
+   Combines with pre-computed technicals + goal alignment.
+   Verdicts: ADD (small but quality) / EXIT (weak, free capital)
+             HOLD (mixed) / REVIEW (uncertain)
+   Cached 4 hours — fundamentals don't change hourly.
+   Completely free — Yahoo Finance only, no Claude. */
+
+const FUND_CACHE_KEY = "capintel_fundamentals"
+
+function getFundCache(){
+  try{
+    const c = JSON.parse(localStorage.getItem(FUND_CACHE_KEY))
+    if(!c) return null
+    return (Date.now() - c.ts) < 4*60*60*1000 ? c.data : null  /* 4hr TTL */
+  }catch(e){ return null }
+}
+function setFundCache(data){
+  try{ localStorage.setItem(FUND_CACHE_KEY, JSON.stringify({data, ts:Date.now()})) }catch(e){}
+}
+
+async function fetchNoiseAnalysis(positions, force=false){
+  if(!positions?.length) return null
+
+  /* Check cache — keyed to position tickers to invalidate when portfolio changes */
+  const cacheKey = positions.map(p=>p.key).sort().join(",")
+  const cached = getFundCache()
+  if(!force && cached && cached._key === cacheKey) return cached
+
+  try{
+    const goals = loadGoals() || {}
+    const r = await fetch("/api/fundamentals", {
+      method:  "POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({
+        positions: positions.map(p=>({
+          key: p.key, type: p.type, currency: p.currency,
+          qty: p.qty, currentPrice: p.currentPrice,
+          totalCurrentEUR: p.totalCurrentEUR, totalBuyEUR: p.totalBuyEUR
+        })),
+        techMap: window._techMap || {},
+        goals
+      })
+    })
+    if(!r.ok) return null
+    const data = await r.json()
+    data._key = cacheKey
+    setFundCache(data)
+    return data
+  }catch(e){
+    console.warn("Fundamentals fetch failed:", e.message)
+    return null
+  }
+}
+
+/* Render the noise list — called from buildDynamicSellListHTML */
+async function buildDynamicSellListHTMLAsync(){
   const data = getDynamicSellList()
-  if(!data) return "No positions under €100 found — this step may already be complete."
+  const el = document.getElementById("noiseDynamicList")
+  if(!el || !data) return
 
-  const LTCG_EXEMPTION = 125000  /* ₹1.25L annual free limit on net LTCG */
-  const FY_END = new Date(new Date().getFullYear(), 2, 31)  /* March 31 */
-  const today  = new Date()
+  /* Show loading state */
+  el.innerHTML = `<div class="dsl-loading"><span class="insights-spinner"></span> Analysing ${data.positions.length} positions — technicals + fundamentals + goal alignment…</div>`
 
-  /* Compute per-position profit/loss and tax type */
-  let runningLTCGProfit = 0
-  let runningSTCGProfit = 0
-  let totalLoss = 0
-  let runningDETax = 0
+  /* Fetch fundamental analysis */
+  const analysis = await fetchNoiseAnalysis(data.positions)
 
-  const enriched = data.positions.map(p => {
-    const cur       = p.currentPrice || 0
-    const buy       = p.avgBuy || 0
-    const qty       = parseFloat(p.qty) || 0
-    const profitINR = p.currency === "INR" ? (cur - buy) * qty : 0
-    const profitEUR = p.currency !== "INR" ? (p.totalCurrentEUR||0) - (p.totalBuyEUR||0) : 0
-    const chgPct    = buy > 0 ? ((cur - buy) / buy * 100) : 0
+  const LTCG_EXEMPTION = 125000
+  const today = new Date()
+  let runningLTCGProfit=0, runningSTCGProfit=0, totalLoss=0, runningDETax=0
 
-    /* Tax regime by currency */
-    const isINR = p.currency === "INR"
-    const buyDate  = p.lastDate ? new Date(p.lastDate) : null
-    const heldDays = buyDate ? Math.floor((today - buyDate) / 86400000) : null
-
-    let taxType, taxNote
-    if (isINR) {
-      const isLTCG = heldDays === null || heldDays >= 365
-      taxType = isLTCG ? "LTCG" : "STCG"
-      if (profitINR > 0){
-        if (isLTCG) runningLTCGProfit += profitINR
-        else        runningSTCGProfit += profitINR
-      } else {
-        totalLoss += Math.abs(profitINR)
-      }
-      taxNote = isLTCG ? "India LTCG 12.5%" : "India STCG 20%"
-    } else {
-      taxType = "DE"
-      if (profitEUR > 0) runningDETax += profitEUR * 0.26375
-      taxNote = `Germany 26.375% on €${profitEUR > 0 ? profitEUR.toFixed(0) : 0} gain`
-    }
-
-    const profitDisplay = isINR
-      ? (profitINR >= 0 ? `+₹${profitINR.toFixed(0)}` : `−₹${Math.abs(profitINR).toFixed(0)}`)
-      : (profitEUR >= 0 ? `+€${profitEUR.toFixed(0)}` : `−€${Math.abs(profitEUR).toFixed(0)}`)
-
-    const reason = (isINR ? profitINR : profitEUR) < 0
-      ? `Loss ${profitDisplay} — offsets future gains`
-      : chgPct > 80
-        ? `Gain ${profitDisplay} — strong run, too small to compound`
-        : `Gain ${profitDisplay} — too small, redeploy to quality`
-
-    return { ...p, profitINR, profitEUR, profitDisplay, chgPct, taxType, taxNote, reason, heldDays, buy, cur, qty, isINR }
+  /* Pre-compute tax per position */
+  const taxed = data.positions.map(p => {
+    const cur=p.currentPrice||0, buy=p.avgBuy||0, qty=parseFloat(p.qty)||0
+    const profitINR = p.currency==="INR" ? (cur-buy)*qty : 0
+    const profitEUR = p.currency!=="INR" ? (p.totalCurrentEUR||0)-(p.totalBuyEUR||0) : 0
+    const buyDate   = p.lastDate ? new Date(p.lastDate) : null
+    const heldDays  = buyDate ? Math.floor((today-buyDate)/86400000) : null
+    const isLTCG    = heldDays===null||heldDays>=365
+    const taxType   = p.currency==="INR" ? (isLTCG?"LTCG":"STCG") : "DE"
+    if(p.currency==="INR"){
+      if(profitINR>0){ isLTCG ? (runningLTCGProfit+=profitINR) : (runningSTCGProfit+=profitINR) }
+      else totalLoss+=Math.abs(profitINR)
+    } else { if(profitEUR>0) runningDETax+=profitEUR*0.26375 }
+    const chgPct = buy>0?((cur-buy)/buy*100):0
+    const profitDisplay = p.currency==="INR"
+      ? (profitINR>=0?`+₹${profitINR.toFixed(0)}`:`−₹${Math.abs(profitINR).toFixed(0)}`)
+      : (profitEUR>=0?`+€${profitEUR.toFixed(0)}`:`−€${Math.abs(profitEUR).toFixed(0)}`)
+    return {...p, profitINR, profitEUR, profitDisplay, chgPct, taxType, heldDays, buy, cur, qty}
   })
 
-  /* Net LTCG after offsetting with losses */
-  const netLTCG    = Math.max(0, runningLTCGProfit - totalLoss)
-  const taxableAmt = Math.max(0, netLTCG - LTCG_EXEMPTION)
-  const ltcgTax    = taxableAmt * 0.125  /* 12.5% */
-  const withinLimit = netLTCG <= LTCG_EXEMPTION
+  /* Group by verdict from analysis */
+  const verdictOrder = { ADD:0, HOLD:1, REVIEW:2, EXIT:3 }
+  const groups = { ADD:[], HOLD:[], REVIEW:[], EXIT:[] }
 
-  /* Tax status chip */
-  const taxStatus = withinLimit
-    ? `<span class="dsl-tax-ok">✓ Within ₹1.25L LTCG exemption — net LTCG ₹${(netLTCG/1000).toFixed(1)}k</span>`
-    : `<span class="dsl-tax-warn">⚠ Net LTCG ₹${(netLTCG/1000).toFixed(1)}k exceeds exemption by ₹${((netLTCG-LTCG_EXEMPTION)/1000).toFixed(1)}k — estimated tax ₹${ltcgTax.toFixed(0)} @ 12.5%</span>`
+  taxed.forEach(p => {
+    const a = analysis?.results?.[p.key]
+    const verdict = a?.verdict || (
+      /* Fallback to pure technicals if fundamental fetch failed */
+      ["BUY","STRONG BUY"].includes(window._techMap?.[p.key]?.verdict) ? "ADD" :
+      ["SELL","TRIM"].includes(window._techMap?.[p.key]?.verdict) ? "EXIT" : "REVIEW"
+    )
+    groups[verdict]?.push({...p, analysis:a})
+  })
 
-  /* Suggest splitting across FY boundary if close to limit */
+  /* Render group */
+  const groupHTML = (label, cls, icon, items) => {
+    if(!items.length) return ""
+    const rows = items.map(p => {
+      const a   = p.analysis
+      const chgCls = p.chgPct>=0?"profit":"loss"
+      const taxBadge = `<span class="dsl-tax-badge dsl-${p.taxType.toLowerCase()}">${p.taxType}</span>`
+
+      /* Score bars */
+      const scoreBars = a ? `
+        <div class="dsl-scores">
+          <span class="dsl-score-item">📊 Tech <strong>${a.scores.technical}</strong></span>
+          <span class="dsl-score-item">📈 Fund <strong>${a.scores.fundamental}</strong></span>
+          <span class="dsl-score-item">🎯 Goal <strong>${a.scores.goalAlign}</strong></span>
+          <span class="dsl-score-item">Composite <strong>${a.composite}</strong></span>
+        </div>` : ""
+
+      /* Fundamentals row */
+      const fundRow = a?.fundamentals ? `
+        <div class="dsl-fund-row">
+          <span>P/E ${a.fundamentals.pe}</span>
+          <span>P/B ${a.fundamentals.pb}</span>
+          <span>ROE ${a.fundamentals.roe}</span>
+          <span>D/E ${a.fundamentals.de}</span>
+          <span>Rev ${a.fundamentals.revGrow}</span>
+          <span>Margin ${a.fundamentals.margins}</span>
+          ${a.fundamentals.sector!=="N/A"?`<span class="dsl-sector">${a.fundamentals.sector}</span>`:""}
+        </div>` : ""
+
+      /* Key signals */
+      const allSigs = a ? [
+        ...(a.signals.technical||[]),
+        ...(a.signals.fundamental||[]),
+        ...(a.signals.goalAlign||[])
+      ].slice(0,4) : []
+      const sigsHTML = allSigs.length
+        ? `<div class="dsl-sigs">${allSigs.map(s=>`<span class="dsl-sig">${s}</span>`).join("")}</div>`
+        : ""
+
+      return `<div class="dsl-row dsl-row-${cls}">
+        <div class="dsl-row-top">
+          <span class="dsl-ticker">${p.key}</span>
+          <span class="dsl-name">${resolveDisplayName(p)}</span>
+          <span class="dsl-qty">${p.qty?.toFixed?p.qty.toFixed(0):p.qty} sh</span>
+          <span class="dsl-buy">@${formatCurrency(p.buy,p.currency)}</span>
+          <span class="dsl-cur">${formatCurrency(p.cur,p.currency)}</span>
+          <span class="dsl-chg ${chgCls}">${p.chgPct>=0?"+":""}${p.chgPct.toFixed(1)}%</span>
+          <span class="dsl-profit ${p.chgPct>=0?"profit":"loss"}">${p.profitDisplay}</span>
+          ${taxBadge}
+          <span class="dsl-val">≈€${(p.totalCurrentEUR||0).toFixed(0)}</span>
+        </div>
+        ${scoreBars}
+        ${fundRow}
+        ${sigsHTML}
+        ${a?.action?`<div class="dsl-action-text">→ ${a.action}</div>`:""}
+      </div>`
+    }).join("")
+
+    return `<div class="dsl-group">
+      <div class="dsl-group-header dsl-gh-${cls}">${icon} ${label} (${items.length})</div>
+      ${rows}
+    </div>`
+  }
+
+  const netLTCG    = Math.max(0, runningLTCGProfit-totalLoss)
+  const taxableAmt = Math.max(0, netLTCG-LTCG_EXEMPTION)
+  const withinLimit= netLTCG <= LTCG_EXEMPTION
+  const taxStatus  = withinLimit
+    ? `<span class="dsl-tax-ok">✓ Net LTCG ₹${(netLTCG/1000).toFixed(1)}k — within ₹1.25L exemption</span>`
+    : `<span class="dsl-tax-warn">⚠ Net LTCG ₹${(netLTCG/1000).toFixed(1)}k exceeds limit — est. tax ₹${(taxableAmt*0.125).toFixed(0)}</span>`
+
   const splitAdvice = !withinLimit
-    ? `<div class="dsl-split-advice">💡 Split strategy: sell loss positions + positions in gain now (this FY), sell remaining profitable positions after April 1 ${today.getFullYear()+1} to use next year's ₹1.25L exemption.</div>`
+    ? `<div class="dsl-split-advice">💡 Sell loss positions first to offset LTCG. Defer profitable positions to next FY (after April 1) to use next year's ₹1.25L exemption.</div>`
     : ""
 
-  const rows = enriched.map(p => {
-    const chgCls   = p.chgPct >= 0 ? "profit" : "loss"
-    const chgStr   = (p.chgPct >= 0 ? "+" : "") + p.chgPct.toFixed(1) + "%"
-    const profitCls = (p.isINR ? p.profitINR : p.profitEUR) >= 0 ? "profit" : "loss"
-    const taxBadge = `<span class="dsl-tax-badge dsl-${p.taxType.toLowerCase()}">${p.taxType}</span>`
-    const heldStr  = p.heldDays !== null ? `${p.heldDays}d` : "?"
-
-    return `<div class="dsl-row">
-      <span class="dsl-ticker">${p.key}</span>
-      <span class="dsl-name">${resolveDisplayName(p)}</span>
-      <span class="dsl-qty">${p.qty?.toFixed ? p.qty.toFixed(0) : p.qty} sh</span>
-      <span class="dsl-buy">@${formatCurrency(p.buy, p.currency)}</span>
-      <span class="dsl-cur">${formatCurrency(p.cur, p.currency)}</span>
-      <span class="dsl-chg ${chgCls}">${chgStr}</span>
-      <span class="dsl-profit ${profitCls}">${p.profitDisplay}</span>
-      ${taxBadge}
-      <span class="dsl-held">${heldStr}</span>
-      <span class="dsl-val">≈€${(p.totalCurrentEUR||0).toFixed(0)}</span>
-      <div class="dsl-reason">${p.reason}</div>
-    </div>`
-  }).join("")
-
-  return `
-  <div class="dsl-header">
-    <strong>${data.positions.length} positions to exit · Proceeds ≈€${data.totalEUR.toFixed(0)} (₹${(data.totalINR/1000).toFixed(1)}k)</strong>
-    <span class="dsl-subhead"> · Sell via Kite · Redeploy to IWDA or HDFCBANK</span>
-  </div>
-  <div class="dsl-tax-summary">
-    <div class="dsl-tax-row">
-      <span>🇮🇳 India LTCG: <strong>₹${(runningLTCGProfit/1000).toFixed(1)}k</strong></span>
-      <span>India STCG: <strong>₹${(runningSTCGProfit/1000).toFixed(1)}k</strong></span>
-      <span>Losses (offset): <strong>₹${(totalLoss/1000).toFixed(1)}k</strong></span>
-      <span>Net LTCG: <strong>₹${(netLTCG/1000).toFixed(1)}k</strong></span>
-      ${runningDETax > 0 ? `<span>🇩🇪 Germany tax: <strong>≈€${runningDETax.toFixed(0)}</strong></span>` : ""}
+  el.innerHTML = `
+    <div class="dsl-tax-summary">
+      <div class="dsl-tax-row">
+        <span>🇮🇳 LTCG: <strong>₹${(runningLTCGProfit/1000).toFixed(1)}k</strong></span>
+        <span>STCG: <strong>₹${(runningSTCGProfit/1000).toFixed(1)}k</strong></span>
+        <span>Losses: <strong>₹${(totalLoss/1000).toFixed(1)}k</strong></span>
+        <span>Net LTCG: <strong>₹${(netLTCG/1000).toFixed(1)}k</strong></span>
+        ${runningDETax>0?`<span>🇩🇪 DE tax: <strong>≈€${runningDETax.toFixed(0)}</strong></span>`:""}
+      </div>
+      ${taxStatus}${splitAdvice}
     </div>
-    ${taxStatus}
-    ${splitAdvice}
-  </div>
-  <div class="dsl-list">${rows}</div>
-  <div class="dsl-footer">
-    LTCG (held &gt;1yr) taxed at 12.5% — first ₹1.25L/FY free (resets April 1).
-    STCG (held &lt;1yr) taxed at 20% — no exemption.
-    Capital losses carried forward 8 years to offset future gains.
-    FY ends ${FY_END.toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}.
-  </div>`
+    ${groupHTML("ADD — Underfunded quality position","add","📈",groups.ADD)}
+    ${groupHTML("HOLD — Wait for better entry","hold","🤚",groups.HOLD)}
+    ${groupHTML("REVIEW — Mixed signals","review","🔍",groups.REVIEW)}
+    ${groupHTML("EXIT — Weak, free the capital","exit","📉",groups.EXIT)}
+    <div class="dsl-footer">
+      Scored: Technical 40% · Fundamental 35% · Goal alignment 25% · Data: Yahoo Finance · <strong>FREE</strong><br>
+      LTCG (>1yr) 12.5% · STCG (<1yr) 20% · Germany 26.375% · FY resets April 1
+    </div>`
 }
 
 /* ── PERSISTENT NOISE ALERT ───────────────────────────────
@@ -3454,7 +3535,17 @@ function renderChecklist(state, daysActive){
           </div>
           ${(isNext || overdue) && !done ? `<div class="cl-detail">${
             step.dynamic && step.id === "p1_1"
-              ? buildDynamicSellListHTML()
+              ? (() => {
+                  const data = getDynamicSellList()
+                  if(!data) return "No positions under €100 — this step may be complete."
+                  /* Render container, trigger async fill after render */
+                  setTimeout(() => buildDynamicSellListHTMLAsync(), 100)
+                  return `<div class="dsl-header">
+                    <strong>${data.positions.length} positions detected · ≈€${data.totalEUR.toFixed(0)} combined</strong>
+                    <span class="dsl-subhead"> · Analysing technicals + fundamentals + goal alignment…</span>
+                  </div>
+                  <div id="noiseDynamicList"><div class="dsl-loading"><span class="insights-spinner"></span> Loading analysis…</div></div>`
+                })()
               : step.detail
           }</div>` : ""}
         </div>
