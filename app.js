@@ -358,7 +358,9 @@ function renderReallocationPlanner(){
     byCurrency[p.currency].items.push(p)
   })
 
-  /* Get top ADD-rated suggestions per currency from techMap */
+  /* Get top ADD-rated suggestions per currency from techMap.
+     Include noise positions (<€100) with BUY verdict — they are underfunded
+     quality positions and the primary reason to redeploy proceeds. */
   const getSuggestions = (currency) => {
     if(!lastPortfolio?.length) return []
     return lastPortfolio
@@ -366,7 +368,8 @@ function renderReallocationPlanner(){
         if(p.currency !== currency) return false
         const t = window._techMap?.[p.key]
         if(!t) return false
-        return t.verdict === "BUY" || t.verdict === "STRONG BUY" || t.verdict === "HOLD"
+        /* Include BUY and STRONG BUY — these are the best destinations */
+        return t.verdict === "BUY" || t.verdict === "STRONG BUY"
       })
       .map(p => {
         const t = window._techMap[p.key]
@@ -375,7 +378,7 @@ function renderReallocationPlanner(){
         return { ...p, composite, verdict: t.verdict, signals: t.signals||[] }
       })
       .sort((a,b) => b.composite - a.composite)
-      .slice(0, 3)
+      .slice(0, 4)  /* show top 4 so user has real choice */
   }
 
   let html = `<div class="rp-header">
@@ -3258,58 +3261,6 @@ function setFundCache(data){
   try{ localStorage.setItem(FUND_CACHE_KEY, JSON.stringify({data, ts:Date.now()})) }catch(e){}
 }
 
-async function fetchFundamentalsClientSide(positions) {
-  const results = {}
-  const BATCH = 5
-  const resolveYahoo = pos => {
-    const t = pos.key || ""
-    if (!t || pos.type === "MutualFund") return null
-    if (t.includes("-USD") || t.includes(".")) return t
-    if (t === "SEMI") return "CHIP.PA"
-    if (t === "EWG2") return "EWG2.SG"
-    if (pos.currency === "USD") return t
-    if (pos.currency === "EUR") return (pos.type==="ETF"||pos.type==="Commodity") ? t+".L" : t
-    return t + ".NS"
-  }
-  for (let i = 0; i < positions.length; i += BATCH) {
-    const batch = positions.slice(i, i + BATCH)
-    await Promise.all(batch.map(async pos => {
-      const sym = resolveYahoo(pos)
-      if (!sym) return
-      try {
-        const modules = "defaultKeyStatistics,financialData,summaryDetail,assetProfile"
-        const r = await fetch(
-          `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${sym}?modules=${modules}`,
-          { headers: { "Accept": "application/json" } }
-        )
-        if (!r.ok) return
-        const d = await r.json()
-        const res = d.quoteSummary?.result?.[0]
-        if (!res) return
-        const sd = res.summaryDetail        || {}
-        const fd = res.financialData        || {}
-        const ks = res.defaultKeyStatistics || {}
-        const ap = res.assetProfile         || {}
-        const v = obj => { if (obj == null) return null; if (typeof obj === "number") return obj; return obj.raw ?? null }
-        results[pos.key] = {
-          trailingPE:      v(sd.trailingPE)       ?? v(ks.trailingPE)   ?? null,
-          priceToBook:     v(ks.priceToBook)                             ?? null,
-          roe:             v(fd.returnOnEquity)                          ?? null,
-          debtToEquity:    v(fd.debtToEquity)                            ?? null,
-          revenueGrowth:   v(fd.revenueGrowth)                           ?? null,
-          earningsGrowth:  v(fd.earningsGrowth)                          ?? null,
-          profitMargins:   v(fd.profitMargins)    ?? v(ks.profitMargins) ?? null,
-          operatingMargins:v(fd.operatingMargins)                        ?? null,
-          currentRatio:    v(fd.currentRatio)                            ?? null,
-          sector:          ap.sector || null,
-          industry:        ap.industry || null,
-        }
-      } catch(e) {}
-    }))
-  }
-  return results
-}
-
 async function fetchNoiseAnalysis(positions, force=false){
   if(!positions?.length) return null
   const cacheKey = positions.map(p=>p.key).sort().join(",")
@@ -3317,8 +3268,7 @@ async function fetchNoiseAnalysis(positions, force=false){
   if(!force && cached && cached._key === cacheKey) return cached
   try{
     const goals = loadGoals() || {}
-    /* Fetch fundamentals from browser (has Yahoo Finance session cookies) */
-    const fundData = await fetchFundamentalsClientSide(positions)
+    /* Server-side fetch only — Vercel uses Yahoo v8+v7 which work without cookies */
     const r = await fetch("/api/fundamentals", {
       method:  "POST",
       headers: { "Content-Type":"application/json" },
@@ -3328,7 +3278,6 @@ async function fetchNoiseAnalysis(positions, force=false){
           qty: p.qty, currentPrice: p.currentPrice,
           totalCurrentEUR: p.totalCurrentEUR, totalBuyEUR: p.totalBuyEUR
         })),
-        fundamentalsData: fundData,
         techMap: window._techMap || {},
         goals
       })
@@ -3343,6 +3292,7 @@ async function fetchNoiseAnalysis(positions, force=false){
     return null
   }
 }
+
 
 
 /* Render the noise list — called from buildDynamicSellListHTML */
