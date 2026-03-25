@@ -3014,7 +3014,7 @@ function getDynamicSellList(){
    Cached 4 hours — fundamentals don't change hourly.
    Completely free — Yahoo Finance only, no Claude. */
 
-const FUND_CACHE_KEY = "capintel_fundamentals"
+const FUND_CACHE_KEY = "capintel_fundamentals_v2"
 
 function getFundCache(){
   try{
@@ -3027,16 +3027,67 @@ function setFundCache(data){
   try{ localStorage.setItem(FUND_CACHE_KEY, JSON.stringify({data, ts:Date.now()})) }catch(e){}
 }
 
+async function fetchFundamentalsClientSide(positions) {
+  const results = {}
+  const BATCH = 5
+  const resolveYahoo = pos => {
+    const t = pos.key || ""
+    if (!t || pos.type === "MutualFund") return null
+    if (t.includes("-USD") || t.includes(".")) return t
+    if (t === "SEMI") return "CHIP.PA"
+    if (t === "EWG2") return "EWG2.SG"
+    if (pos.currency === "USD") return t
+    if (pos.currency === "EUR") return (pos.type==="ETF"||pos.type==="Commodity") ? t+".L" : t
+    return t + ".NS"
+  }
+  for (let i = 0; i < positions.length; i += BATCH) {
+    const batch = positions.slice(i, i + BATCH)
+    await Promise.all(batch.map(async pos => {
+      const sym = resolveYahoo(pos)
+      if (!sym) return
+      try {
+        const modules = "defaultKeyStatistics,financialData,summaryDetail,assetProfile"
+        const r = await fetch(
+          `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${sym}?modules=${modules}`,
+          { headers: { "Accept": "application/json" } }
+        )
+        if (!r.ok) return
+        const d = await r.json()
+        const res = d.quoteSummary?.result?.[0]
+        if (!res) return
+        const sd = res.summaryDetail        || {}
+        const fd = res.financialData        || {}
+        const ks = res.defaultKeyStatistics || {}
+        const ap = res.assetProfile         || {}
+        const v = obj => { if (obj == null) return null; if (typeof obj === "number") return obj; return obj.raw ?? null }
+        results[pos.key] = {
+          trailingPE:      v(sd.trailingPE)       ?? v(ks.trailingPE)   ?? null,
+          priceToBook:     v(ks.priceToBook)                             ?? null,
+          roe:             v(fd.returnOnEquity)                          ?? null,
+          debtToEquity:    v(fd.debtToEquity)                            ?? null,
+          revenueGrowth:   v(fd.revenueGrowth)                           ?? null,
+          earningsGrowth:  v(fd.earningsGrowth)                          ?? null,
+          profitMargins:   v(fd.profitMargins)    ?? v(ks.profitMargins) ?? null,
+          operatingMargins:v(fd.operatingMargins)                        ?? null,
+          currentRatio:    v(fd.currentRatio)                            ?? null,
+          sector:          ap.sector || null,
+          industry:        ap.industry || null,
+        }
+      } catch(e) {}
+    }))
+  }
+  return results
+}
+
 async function fetchNoiseAnalysis(positions, force=false){
   if(!positions?.length) return null
-
-  /* Check cache — keyed to position tickers to invalidate when portfolio changes */
   const cacheKey = positions.map(p=>p.key).sort().join(",")
   const cached = getFundCache()
   if(!force && cached && cached._key === cacheKey) return cached
-
   try{
     const goals = loadGoals() || {}
+    /* Fetch fundamentals from browser (has Yahoo Finance session cookies) */
+    const fundData = await fetchFundamentalsClientSide(positions)
     const r = await fetch("/api/fundamentals", {
       method:  "POST",
       headers: { "Content-Type":"application/json" },
@@ -3046,6 +3097,7 @@ async function fetchNoiseAnalysis(positions, force=false){
           qty: p.qty, currentPrice: p.currentPrice,
           totalCurrentEUR: p.totalCurrentEUR, totalBuyEUR: p.totalBuyEUR
         })),
+        fundamentalsData: fundData,
         techMap: window._techMap || {},
         goals
       })
@@ -3060,6 +3112,7 @@ async function fetchNoiseAnalysis(positions, force=false){
     return null
   }
 }
+
 
 /* Render the noise list — called from buildDynamicSellListHTML */
 async function buildDynamicSellListHTMLAsync(){
