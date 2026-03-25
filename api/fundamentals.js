@@ -20,36 +20,53 @@
 /* ── YAHOO FINANCE QUOTE FIELDS ── */
 async function fetchQuote(ticker) {
   try {
-    const url = `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`
+    /* Primary: use v8 chart API with financial modules — more reliable than v7 quote */
+    const url = `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${ticker}?modules=summaryDetail,financialData,defaultKeyStatistics,assetProfile`
     const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } })
     const d = await r.json()
-    const meta = d.chart?.result?.[0]?.meta
-    if (!meta) return null
+    const result = d.quoteSummary?.result?.[0]
 
-    /* Also fetch summary detail for fundamentals */
-    const q2 = await fetch(
-      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${ticker}&fields=trailingPE,forwardPE,priceToBook,returnOnEquity,debtToEquity,revenueGrowth,earningsGrowth,profitMargins,operatingMargins,currentRatio,marketCap,trailingEps,forwardEps,sector,industry`,
-      { headers: { "User-Agent": "Mozilla/5.0" } }
-    )
-    const d2 = await q2.json()
-    const q  = d2.quoteResponse?.result?.[0] || {}
+    if (!result) {
+      /* Fallback: try v8 chart meta for basic price data at least */
+      const r2 = await fetch(
+        `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`,
+        { headers: { "User-Agent": "Mozilla/5.0" } }
+      )
+      const d2 = await r2.json()
+      if (!d2.chart?.result?.[0]) return null
+      return null  /* chart API doesn't have fundamentals */
+    }
+
+    const sd  = result.summaryDetail       || {}
+    const fd  = result.financialData       || {}
+    const ks  = result.defaultKeyStatistics|| {}
+    const ap  = result.assetProfile        || {}
+
+    /* Yahoo returns either {raw: X, fmt: "X"} objects or plain numbers.
+       This helper handles both cases. */
+    const v = obj => {
+      if (obj === null || obj === undefined) return null
+      if (typeof obj === "number") return obj
+      if (typeof obj === "object" && "raw" in obj) return obj.raw
+      return null
+    }
 
     return {
-      trailingPE:      q.trailingPE     || null,
-      forwardPE:       q.forwardPE      || null,
-      priceToBook:     q.priceToBook    || null,
-      roe:             q.returnOnEquity || null,   /* decimal e.g. 0.17 = 17% */
-      debtToEquity:    q.debtToEquity   || null,
-      revenueGrowth:   q.revenueGrowth  || null,  /* decimal e.g. 0.12 = 12% */
-      earningsGrowth:  q.earningsGrowth || null,
-      profitMargins:   q.profitMargins  || null,
-      operatingMargins:q.operatingMargins || null,
-      currentRatio:    q.currentRatio   || null,
-      marketCap:       q.marketCap      || null,
-      sector:          q.sector         || null,
-      industry:        q.industry       || null,
-      trailingEps:     q.trailingEps    || null,
-      forwardEps:      q.forwardEps     || null,
+      trailingPE:      v(sd.trailingPE)      ?? v(ks.trailingPE)      ?? null,
+      forwardPE:       v(sd.forwardPE)        ?? v(ks.forwardPE)        ?? null,
+      priceToBook:     v(ks.priceToBook)      ?? null,
+      roe:             v(fd.returnOnEquity)   ?? null,
+      debtToEquity:    v(fd.debtToEquity)     ?? null,
+      revenueGrowth:   v(fd.revenueGrowth)    ?? null,
+      earningsGrowth:  v(fd.earningsGrowth)   ?? null,
+      profitMargins:   v(fd.profitMargins)    ?? v(ks.profitMargins)    ?? null,
+      operatingMargins:v(fd.operatingMargins) ?? null,
+      currentRatio:    v(fd.currentRatio)     ?? null,
+      marketCap:       v(sd.marketCap)        ?? null,
+      trailingEps:     v(ks.trailingEps)      ?? null,
+      forwardEps:      v(ks.forwardEps)       ?? null,
+      sector:          ap.sector              || null,
+      industry:        ap.industry            || null,
     }
   } catch(e) { return null }
 }
