@@ -1871,3 +1871,45 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
 .news-title { font-size:12.5px; color:var(--text); line-height:1.4; margin-bottom:3px; }
 .news-date  { font-size:10px; color:var(--muted); }
 .news-footer{ font-size:10px; color:var(--muted); padding-top:8px; border-top:1px solid var(--border); margin-top:6px; }
+
+/* ── DSL Tax Summary ────────────────────────────────────── */
+.dsl-subhead    { font-size:11px; color:var(--dim); }
+.dsl-tax-summary{
+  background:rgba(255,255,255,0.02); border:1px solid var(--border);
+  border-radius:var(--radius-sm); padding:10px 12px; margin:8px 0; font-size:12px;
+}
+.dsl-tax-row    { display:flex; gap:16px; flex-wrap:wrap; color:var(--dim); margin-bottom:6px; }
+.dsl-tax-row strong { color:var(--text); }
+.dsl-tax-ok     { color:var(--green); font-size:12px; font-weight:600; }
+.dsl-tax-warn   { color:var(--gold);  font-size:12px; font-weight:600; }
+.dsl-split-advice{
+  margin-top:6px; padding:6px 10px; background:rgba(91,156,246,0.08);
+  border-left:3px solid var(--blue); font-size:11.5px; color:var(--dim);
+  border-radius:0 4px 4px 0;
+}
+.dsl-profit     { font-size:11px; font-family:var(--mono); font-weight:600; }
+.dsl-tax-badge  {
+  font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px;
+  letter-spacing:0.4px;
+}
+.dsl-ltcg { background:rgba(34,209,122,0.12); color:var(--green); border:1px solid rgba(34,209,122,0.25); }
+.dsl-stcg { background:rgba(240,165,53,0.12); color:var(--gold);  border:1px solid rgba(240,165,53,0.25); }
+.dsl-held   { font-size:10px; color:var(--muted); }
+
+/* ── Persistent Noise Alert ─────────────────────────────── */
+.noise-alert {
+  display: flex; align-items: center; gap: 12px;
+  background: rgba(240,165,53,0.08); border: 1px solid rgba(240,165,53,0.25);
+  border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.noise-alert-icon { font-size: 18px; flex-shrink: 0; }
+.noise-alert-body { flex: 1; font-size: 12.5px; color: var(--text); }
+.noise-alert-body strong { color: var(--gold); }
+.noise-alert-sub  { color: var(--dim); font-size: 11.5px; }
+.noise-alert-btn  {
+  padding: 5px 14px; background: var(--gold); color: #000;
+  border: none; border-radius: 4px; font-size: 11px; font-weight: 700;
+  cursor: pointer; white-space: nowrap; flex-shrink: 0;
+}
+.dsl-de { background:rgba(91,156,246,0.12); color:var(--blue); border:1px solid rgba(91,156,246,0.25); }
