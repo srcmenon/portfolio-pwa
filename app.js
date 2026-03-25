@@ -2141,6 +2141,15 @@ function applyTechnicalsToUI(data){
     if(vf) vf.style.display = "flex"
   })
 
+  /* Wire filter buttons here so they work from free technicals alone */
+  document.querySelectorAll(".vf-btn").forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll(".vf-btn").forEach(b => b.classList.remove("active"))
+      btn.classList.add("active")
+      loadAssets()
+    }
+  })
+
   /* 2. Refresh Smart Picks if already visible */
   const picksEl = document.getElementById("picksResult")
   if(picksEl && picksEl.style.display !== "none") renderFreeSmartPicks()
@@ -2957,9 +2966,14 @@ function applyFilters(rows){
     if(growth === "positive" && r.profitEUR <= 0) return false
     if(growth === "negative" && r.profitEUR >= 0) return false
     if(verdict){
-      /* Filter by advisor verdict stored in window._advisorMap */
-      const adv = window._advisorMap?.[r.key]
-      if(!adv || adv.verdict !== verdict) return false
+      /* Check free technicals map first, fall back to advisor map */
+      const techVerdict    = window._techMap?.[r.key]?.verdict
+      const advisorVerdict = window._advisorMap?.[r.key]?.verdict
+      const activeVerdict  = advisorVerdict || techVerdict  /* advisor overrides if run */
+      if(!activeVerdict) return false
+      /* Normalise STRONG BUY → BUY for filter matching */
+      const normalised = activeVerdict === "STRONG BUY" ? "BUY" : activeVerdict
+      if(normalised !== verdict) return false
     }
     return true
   })
