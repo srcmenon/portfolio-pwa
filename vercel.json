@@ -1,23 +1,10 @@
 {
-  "regions": [
-    "fra1"
-  ],
+  "regions": ["fra1"],
   "functions": {
-    "api/market-search.js": {
-      "maxDuration": 55
-    },
-    "api/analyse.js": {
-      "maxDuration": 55
-    },
-    "api/price.js": {
-      "maxDuration": 10
-    },
-    "api/mfnav.js": {
-      "maxDuration": 15
-    }
-    {
-    "api/fundamentals.js": {
-      "maxDuration": 60
-    }
+    "api/market-search.js": { "maxDuration": 55 },
+    "api/analyse.js":       { "maxDuration": 55 },
+    "api/price.js":         { "maxDuration": 10 },
+    "api/mfnav.js":         { "maxDuration": 15 },
+    "api/fundamentals.js":  { "maxDuration": 60 }
   }
 }
