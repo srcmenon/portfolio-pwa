@@ -33,7 +33,8 @@ async function fetchApifyFundamentals(symbol, apiToken) {
     const d = items?.[0]
     if (!d) return null
 
-    console.log(`[apify] ${symbol} pe=${d.stockPE} roe=${d.roe} roce=${d.roce}`)
+    console.log(`[apify] ${symbol} raw keys:`, Object.keys(d).join(","))
+    console.log(`[apify] ${symbol} pe=${d.stockPE} roe=${d.roe} roce=${d.roce} sample:`, JSON.stringify(d).slice(0,300))
 
     const n = v => {
       if (v == null) return null
@@ -277,13 +278,13 @@ export default async function handler(req, res) {
 
   const results = {}
 
-  /* Run all in parallel — each Apify actor starts simultaneously,
-     total time = single actor run time (~15-20s), not 35×10s = 350s */
+  /* Batch in groups of 5 — avoids Apify free tier concurrency limit (402 errors) */
   const eligible = positions.filter(p =>
     p.type !== "MutualFund" && !(p.key||"").includes("-USD")
   )
-
-  await Promise.all(eligible.map(async pos => {
+  const BATCH = 5
+  for (let i = 0; i < eligible.length; i += BATCH) {
+    await Promise.all(eligible.slice(i, i + BATCH).map(async pos => {
     let f = null
     if (pos.currency === "INR") {
       const symbol = (pos.key || "").replace(/\.(NS|BO)$/, "")
@@ -308,7 +309,9 @@ export default async function handler(req, res) {
         revGrow:"N/A", margins:"N/A", sector:"N/A", grade:"UNKNOWN"
       }
     }
-  }))
+    }))
+    if (i + BATCH < eligible.length) await new Promise(r => setTimeout(r, 1000))
+  }
 
   return res.status(200).json({ results, computedAt: new Date().toISOString() })
 }
