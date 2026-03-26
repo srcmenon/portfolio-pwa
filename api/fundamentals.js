@@ -14,29 +14,28 @@ export default async function handler(req, res) {
   const yf  = (typeof YF === "function") ? new YF() : YF
 
   const results = {}
-  const BATCH = 3
 
-  for (let i = 0; i < positions.length; i += BATCH) {
-    const batch = positions.slice(i, i + BATCH)
-    await Promise.all(batch.map(async pos => {
-      if (pos.type === "MutualFund" || (pos.key||"").includes("-USD")) return
-      const ticker = toYahooTicker(pos)
-      if (!ticker) return
+  /* Sequential with delay — Yahoo Finance rate-limits parallel requests from Vercel IPs */
+  for (const pos of positions) {
+    if (pos.type === "MutualFund" || (pos.key||"").includes("-USD")) continue
+    const ticker = toYahooTicker(pos)
+    if (!ticker) continue
 
-      const f    = await fetchFundamentals(yf, ticker)
-      const fund = scoreFundamentals(f)
-      const tech = techMap?.[pos.key] || {}
-      const goal = scoreGoalAlignment(pos, f?.sector, goals || {})
-      const out  = getVerdict(tech.score??50, tech.verdict??"HOLD", fund.score, fund.hasData, goal.score, pos)
+    const f    = await fetchFundamentals(yf, ticker)
+    const fund = scoreFundamentals(f)
+    const tech = techMap?.[pos.key] || {}
+    const goal = scoreGoalAlignment(pos, f?.sector, goals || {})
+    const out  = getVerdict(tech.score??50, tech.verdict??"HOLD", fund.score, fund.hasData, goal.score, pos)
 
-      results[pos.key] = {
-        ...out,
-        scores:       { technical: tech.score??50, fundamental: fund.score, goalAlign: goal.score },
-        signals:      { technical: tech.signals||[], fundamental: fund.signals, goalAlign: goal.signals },
-        fundamentals: fund.display || { pe:"N/A", pb:"N/A", roe:"N/A", de:"N/A", revGrow:"N/A", margins:"N/A", sector:"N/A", grade:"UNKNOWN" }
-      }
-    }))
-    if (i + BATCH < positions.length) await new Promise(r => setTimeout(r, 150))
+    results[pos.key] = {
+      ...out,
+      scores:       { technical: tech.score??50, fundamental: fund.score, goalAlign: goal.score },
+      signals:      { technical: tech.signals||[], fundamental: fund.signals, goalAlign: goal.signals },
+      fundamentals: fund.display || { pe:"N/A", pb:"N/A", roe:"N/A", de:"N/A", revGrow:"N/A", margins:"N/A", sector:"N/A", grade:"UNKNOWN" }
+    }
+
+    /* 300ms between requests — stays well within Yahoo's rate limits */
+    await new Promise(r => setTimeout(r, 300))
   }
 
   return res.status(200).json({ results, computedAt: new Date().toISOString() })
