@@ -23,7 +23,7 @@ async function fetchApifyFundamentals(symbol, apiToken) {
     const r = await fetch(url, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ symbol })
+      body:    JSON.stringify({ stockSymbol: symbol })
     })
     if (!r.ok) {
       console.error(`[apify] ${symbol} HTTP ${r.status}`)
@@ -277,17 +277,18 @@ export default async function handler(req, res) {
 
   const results = {}
 
-  for (const pos of positions) {
-    if (pos.type === "MutualFund" || (pos.key||"").includes("-USD")) continue
+  /* Run all in parallel — each Apify actor starts simultaneously,
+     total time = single actor run time (~15-20s), not 35×10s = 350s */
+  const eligible = positions.filter(p =>
+    p.type !== "MutualFund" && !(p.key||"").includes("-USD")
+  )
 
+  await Promise.all(eligible.map(async pos => {
     let f = null
-
     if (pos.currency === "INR") {
-      /* Indian stocks — use Apify scraper (residential IPs, not blocked) */
       const symbol = (pos.key || "").replace(/\.(NS|BO)$/, "")
       f = await fetchApifyFundamentals(symbol, apiToken)
     } else {
-      /* EUR/USD stocks — use Yahoo Finance v8 (works from Vercel for non-Indian stocks) */
       const eurMap = { SEMI:"CHIP.PA", EWG2:"EWG2.SG", DFNS:"DFNS.L", IWDA:"IWDA.L", EIMI:"EIMI.L" }
       const ticker = eurMap[pos.key] || pos.key
       f = await fetchYahooBasic(ticker)
@@ -307,7 +308,7 @@ export default async function handler(req, res) {
         revGrow:"N/A", margins:"N/A", sector:"N/A", grade:"UNKNOWN"
       }
     }
-  }
+  }))
 
   return res.status(200).json({ results, computedAt: new Date().toISOString() })
 }
