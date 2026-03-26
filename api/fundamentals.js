@@ -13,18 +13,26 @@ export default async function handler(req, res) {
   const YF  = mod.default
   const instance = (typeof YF === "function") ? new YF() : YF
 
-  /* Find quoteSummary wherever it lives */
-  const quoteSummary =
-    (typeof instance.quoteSummary === "function")           ? instance.quoteSummary.bind(instance) :
-    (typeof YF.quoteSummary       === "function")           ? YF.quoteSummary.bind(YF) :
-    (typeof mod.quoteSummary      === "function")           ? mod.quoteSummary :
-    (instance.prototype?.quoteSummary)                      ? instance.prototype.quoteSummary.bind(instance) :
-    null
+  /* Walk full prototype chain — quoteSummary may be inherited */
+  function findMethod(obj, name) {
+    let proto = obj
+    while (proto && proto !== Object.prototype) {
+      if (typeof proto[name] === "function") return proto[name].bind(instance)
+      proto = Object.getPrototypeOf(proto)
+    }
+    return null
+  }
 
-  console.log("[yf2 debug] mod keys:", Object.keys(mod),
-    "| YF type:", typeof YF,
-    "| instance keys:", Object.getOwnPropertyNames(Object.getPrototypeOf(instance||{})).slice(0,8),
-    "| quoteSummary found:", !!quoteSummary)
+  const quoteSummary = findMethod(instance, "quoteSummary")
+
+  /* Log all methods found across prototype chain for diagnosis */
+  const allMethods = []
+  let p = instance
+  while (p && p !== Object.prototype) {
+    Object.getOwnPropertyNames(p).forEach(k => { if (typeof instance[k] === "function") allMethods.push(k) })
+    p = Object.getPrototypeOf(p)
+  }
+  console.log("[yf2 methods]", allMethods, "| quoteSummary found:", !!quoteSummary)
 
   if (!quoteSummary) {
     return res.status(500).json({ error: "yahoo-finance2 quoteSummary not found — check Vercel logs" })
