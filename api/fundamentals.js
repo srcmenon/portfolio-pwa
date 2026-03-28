@@ -1,22 +1,23 @@
 /* ============================================================
    CapIntel — api/fundamentals.js
 
-   Uses Apify actor akash9078/indian-stocks-financial-data-scraper
-   which runs on Apify's residential IPs — not blocked by Yahoo/Screener.
+   Two data sources:
+   1. Indian stocks (.NS / .BO)  → Apify actor (Screener.in)
+      Fields: PE, P/B, ROE, ROCE, revenue growth, profit growth,
+              promoter holding
+   2. EUR / USD stocks            → Oracle VM (/fundamentals/batch)
+      Runs yahoo-finance2 quoteSummary on a dedicated IP that
+      is not rate-limited by Yahoo.
+      Fields: PE, P/B, ROE, ROA, margins, D/E, growth, sector
 
-   Input:  { symbol: "HDFCBANK" }
-   Output: { roe, stockPE, bookValue, roce, growth.sales.ttm,
-             growth.profit.ttm, shareholding, ... }
-
-   Runs sequentially — one stock per Apify call.
-   Cache TTL: 7 days (fundamentals are quarterly).
-   Cost: ~$0.00005/run * 35 stocks = $0.00175 per full analysis.
+   Cache TTL (Oracle VM side): 7 days
+   Vercel maxDuration: 120s (set in vercel.json)
    ============================================================ */
 
 const ACTOR_ID = "akash9078~indian-stocks-financial-data-scraper"
 const BASE_URL = "https://api.apify.com/v2"
 
-/* ── Fetch one stock from Apify ── */
+/* ── Fetch one Indian stock from Apify ── */
 async function fetchApifyFundamentals(symbol, apiToken) {
   try {
     const url = `${BASE_URL}/acts/${ACTOR_ID}/run-sync-get-dataset-items?token=${apiToken}&timeout=60`
@@ -33,8 +34,7 @@ async function fetchApifyFundamentals(symbol, apiToken) {
     const d = items?.[0]
     if (!d) return null
 
-    console.log(`[apify] ${symbol} raw keys:`, Object.keys(d).join(","))
-    console.log(`[apify] ${symbol} pe=${d.stockPE} roe=${d.roe} roce=${d.roce} sample:`, JSON.stringify(d).slice(0,300))
+    console.log(`[apify] ${symbol} pe=${d.stockPE} roe=${d.roe} roce=${d.roce}`)
 
     const n = v => {
       if (v == null) return null
@@ -42,25 +42,21 @@ async function fetchApifyFundamentals(symbol, apiToken) {
       return isFinite(num) ? num : null
     }
 
-    /* Parse sales/profit growth — Apify returns "12%" or "12" */
-    const salesGrowthTTM   = n(d.growth?.sales?.ttm)
-    const profitGrowthTTM  = n(d.growth?.profit?.ttm)
+    const salesGrowthTTM  = n(d.growth?.sales?.ttm)
+    const profitGrowthTTM = n(d.growth?.profit?.ttm)
 
-    /* Convert % values to decimals for consistent scoring */
     return {
       trailingPE:      n(d.stockPE),
       priceToBook:     n(d.bookValue) && n(d.currentPrice)
                          ? n(d.currentPrice) / n(d.bookValue) : null,
-      roe:             d.roe   != null ? n(d.roe)  / 100 : null,
-      roce:            d.roce  != null ? n(d.roce) / 100 : null,
+      roe:             d.roe  != null ? n(d.roe)  / 100 : null,
+      roce:            d.roce != null ? n(d.roce) / 100 : null,
       revenueGrowth:   salesGrowthTTM  != null ? salesGrowthTTM  / 100 : null,
       earningsGrowth:  profitGrowthTTM != null ? profitGrowthTTM / 100 : null,
-      /* Screener doesn't directly give margins — use ROCE as proxy for profitability */
-      profitMargins:   null,
+      profitMargins:   null,   // not available from Screener
       debtToEquity:    null,
       sector:          null,
       industry:        null,
-      /* Extra context for display */
       marketCap:       n(d.marketCap),
       dividendYield:   n(d.dividendYield),
       promoterHolding: n(d.shareholding?.promoters),
@@ -71,32 +67,32 @@ async function fetchApifyFundamentals(symbol, apiToken) {
   }
 }
 
-/* ── For EUR/USD stocks — use Yahoo Finance v8 chart meta (already works) ── */
-async function fetchYahooBasic(ticker) {
+/* ── Fetch EUR/USD stocks from Oracle VM (yahoo-finance2 quoteSummary) ── */
+async function fetchOracleFundamentals(tickers) {
+  const baseUrl = process.env.FUNDAMENTALS_URL
+  if (!baseUrl) {
+    console.error("[oracle] FUNDAMENTALS_URL not set")
+    return {}
+  }
   try {
-    const r = await fetch(
-      `https://query2.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=5d`,
-      { headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" } }
-    )
-    const d = await r.json()
-    const m = d.chart?.result?.[0]?.meta
-    if (!m) return null
-    const n = v => (typeof v === "number" && isFinite(v)) ? v : null
-    return {
-      trailingPE:    n(m.trailingPE),
-      priceToBook:   null,
-      roe:           null,
-      revenueGrowth: null,
-      earningsGrowth:null,
-      profitMargins: null,
-      debtToEquity:  null,
-      sector:        null,
-      industry:      null,
+    const r = await fetch(`${baseUrl}/fundamentals/batch`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ tickers })
+    })
+    if (!r.ok) {
+      console.error(`[oracle] HTTP ${r.status}`)
+      return {}
     }
-  } catch(e) { return null }
+    const data = await r.json()
+    return data.results || {}
+  } catch(e) {
+    console.error(`[oracle] ${e.message}`)
+    return {}
+  }
 }
 
-/* ── Fundamental scorer (0-100) ── */
+/* ── Fundamental scorer (0–100) ── */
 function scoreFundamentals(f) {
   if (!f) return { score: 50, signals: [], grade: "UNKNOWN", hasData: false, display: null }
   const sigs = []; let score = 50, fields = 0
@@ -126,12 +122,31 @@ function scoreFundamentals(f) {
     else if (r > 0)  { score -= 5;  sigs.push(`ROE ${r.toFixed(0)}% — weak`) }
     else             { score -= 15; sigs.push("Negative ROE") }
   }
+  /* ROCE — Indian stocks only (Screener.in) */
   if (f.roce != null) {
     fields++
     const r = f.roce * 100
     if      (r > 20) { score += 8;  sigs.push(`ROCE ${r.toFixed(0)}% — strong`) }
     else if (r > 12) { score += 4 }
     else if (r < 8)  { score -= 8;  sigs.push(`ROCE ${r.toFixed(0)}% — weak`) }
+  }
+  /* Profit margins — EUR/USD stocks via Oracle VM */
+  if (f.profitMargins != null) {
+    fields++
+    const m = f.profitMargins * 100
+    if      (m > 20) { score += 10; sigs.push(`Net margin ${m.toFixed(0)}% — excellent`) }
+    else if (m > 10) { score += 5;  sigs.push(`Net margin ${m.toFixed(0)}%`) }
+    else if (m > 0)  { score += 1 }
+    else             { score -= 10; sigs.push(`Negative margin ${m.toFixed(0)}%`) }
+  }
+  /* Debt/equity — EUR/USD stocks via Oracle VM */
+  if (f.debtToEquity != null) {
+    fields++
+    const de = f.debtToEquity
+    if      (de < 30)  { score += 8;  sigs.push(`D/E ${de.toFixed(0)}% — low debt`) }
+    else if (de < 80)  { score += 3 }
+    else if (de < 150) { score -= 3 }
+    else               { score -= 10; sigs.push(`D/E ${de.toFixed(0)}% — high debt`) }
   }
   if (f.revenueGrowth != null) {
     fields++
@@ -151,7 +166,7 @@ function scoreFundamentals(f) {
     else if (g > -15){ score -= 8;  sigs.push("Profit declining") }
     else             { score -= 15; sigs.push("Profit declining sharply") }
   }
-  /* Promoter holding as quality signal */
+  /* Promoter holding — Indian stocks only */
   if (f.promoterHolding != null) {
     if      (f.promoterHolding > 60) { score += 5;  sigs.push(`Promoter ${f.promoterHolding.toFixed(0)}% — high conviction`) }
     else if (f.promoterHolding < 30) { score -= 5;  sigs.push(`Low promoter holding ${f.promoterHolding.toFixed(0)}%`) }
@@ -170,17 +185,17 @@ function scoreFundamentals(f) {
       pb:      fmt(f.priceToBook,   1,   1, "x"),
       roe:     fmt(f.roe,           100, 1, "%"),
       roce:    fmt(f.roce,          100, 1, "%"),
-      de:      "N/A",
+      de:      f.debtToEquity != null ? `${f.debtToEquity.toFixed(0)}%` : "N/A",
       revGrow: fmt(f.revenueGrowth, 100, 1, "%"),
-      margins: "N/A",
-      sector:  f.sector || "N/A",
+      margins: fmt(f.profitMargins, 100, 1, "%"),
+      sector:  f.sector || f.industry || "N/A",
       grade,
       promoter: f.promoterHolding ? `${f.promoterHolding.toFixed(0)}%` : null
     }
   }
 }
 
-/* ── Goal alignment scorer (0-100) ── */
+/* ── Goal alignment scorer (0–100) ── */
 function scoreGoalAlignment(pos, goals) {
   let score = 50; const sigs = []
   if (pos.currency === "INR") {
@@ -270,36 +285,41 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end()
   if (req.method !== "POST")   return res.status(405).json({ error: "POST only" })
 
-  const apiToken = process.env.APIFY_API_TOKEN
-  if (!apiToken) return res.status(500).json({ error: "APIFY_API_TOKEN not set in Vercel env vars" })
-
+  const apifyToken = process.env.APIFY_API_TOKEN
   const { positions, techMap, goals } = req.body || {}
   if (!positions?.length) return res.status(400).json({ error: "positions required" })
 
   const results = {}
 
-  /* Batch in groups of 5 — avoids Apify free tier concurrency limit (402 errors) */
-  const eligible = positions.filter(p =>
-    p.type !== "MutualFund" && !(p.key||"").includes("-USD")
+  /* ── Split positions by data source ── */
+  const indiaPositions = positions.filter(p =>
+    p.type !== "MutualFund" &&
+    (p.currency === "INR" || (p.key||"").match(/\.(NS|BO)$/))
   )
-  const BATCH = 5
-  for (let i = 0; i < eligible.length; i += BATCH) {
-    await Promise.all(eligible.slice(i, i + BATCH).map(async pos => {
-    let f = null
-    if (pos.currency === "INR") {
-      const symbol = (pos.key || "").replace(/\.(NS|BO)$/, "")
-      f = await fetchApifyFundamentals(symbol, apiToken)
-    } else {
-      const eurMap = { SEMI:"CHIP.PA", EWG2:"EWG2.SG", DFNS:"DFNS.L", IWDA:"IWDA.L", EIMI:"EIMI.L" }
-      const ticker = eurMap[pos.key] || pos.key
-      f = await fetchYahooBasic(ticker)
-    }
+  const eurPositions = positions.filter(p =>
+    p.type !== "MutualFund" &&
+    !(p.key||"").includes("-USD") &&
+    p.currency !== "INR" &&
+    !(p.key||"").match(/\.(NS|BO)$/)
+  )
 
-    const fund = scoreFundamentals(f)
+  /* ── EUR/USD: batch fetch from Oracle VM ── */
+  const eurMap = { SEMI:"CHIP.PA", EWG2:"EWG2.SG", DFNS:"DFNS.L", IWDA:"IWDA.L", EIMI:"EIMI.L" }
+  const eurTickers = eurPositions.map(p => eurMap[p.key] || p.key)
+  let oracleResults = {}
+  if (eurTickers.length) {
+    oracleResults = await fetchOracleFundamentals(eurTickers)
+    console.log(`[oracle] fetched ${Object.keys(oracleResults).length}/${eurTickers.length} tickers`)
+  }
+
+  /* ── Score EUR/USD positions ── */
+  for (const pos of eurPositions) {
+    const mappedTicker = eurMap[pos.key] || pos.key
+    const raw  = oracleResults[mappedTicker] || null
+    const fund = scoreFundamentals(raw)
     const tech = techMap?.[pos.key] || {}
     const goal = scoreGoalAlignment(pos, goals || {})
     const out  = getVerdict(tech.score??50, tech.verdict??"HOLD", fund.score, fund.hasData, goal.score, pos)
-
     results[pos.key] = {
       ...out,
       scores:       { technical: tech.score??50, fundamental: fund.score, goalAlign: goal.score },
@@ -309,8 +329,45 @@ export default async function handler(req, res) {
         revGrow:"N/A", margins:"N/A", sector:"N/A", grade:"UNKNOWN"
       }
     }
-    }))
-    if (i + BATCH < eligible.length) await new Promise(r => setTimeout(r, 1000))
+  }
+
+  /* ── Indian stocks: batch via Apify (5 at a time) ── */
+  if (!apifyToken && indiaPositions.length) {
+    console.warn("[apify] APIFY_API_TOKEN not set — skipping Indian stocks")
+    for (const pos of indiaPositions) {
+      const tech = techMap?.[pos.key] || {}
+      const goal = scoreGoalAlignment(pos, goals || {})
+      const out  = getVerdict(tech.score??50, tech.verdict??"HOLD", 50, false, goal.score, pos)
+      results[pos.key] = {
+        ...out,
+        scores:       { technical: tech.score??50, fundamental: 50, goalAlign: goal.score },
+        signals:      { technical: tech.signals||[], fundamental: [], goalAlign: goal.signals },
+        fundamentals: { pe:"N/A", pb:"N/A", roe:"N/A", roce:"N/A", de:"N/A",
+                        revGrow:"N/A", margins:"N/A", sector:"N/A", grade:"UNKNOWN" }
+      }
+    }
+  } else {
+    const BATCH = 5
+    for (let i = 0; i < indiaPositions.length; i += BATCH) {
+      await Promise.all(indiaPositions.slice(i, i + BATCH).map(async pos => {
+        const symbol = (pos.key || "").replace(/\.(NS|BO)$/, "")
+        const raw  = await fetchApifyFundamentals(symbol, apifyToken)
+        const fund = scoreFundamentals(raw)
+        const tech = techMap?.[pos.key] || {}
+        const goal = scoreGoalAlignment(pos, goals || {})
+        const out  = getVerdict(tech.score??50, tech.verdict??"HOLD", fund.score, fund.hasData, goal.score, pos)
+        results[pos.key] = {
+          ...out,
+          scores:       { technical: tech.score??50, fundamental: fund.score, goalAlign: goal.score },
+          signals:      { technical: tech.signals||[], fundamental: fund.signals, goalAlign: goal.signals },
+          fundamentals: fund.display || {
+            pe:"N/A", pb:"N/A", roe:"N/A", roce:"N/A", de:"N/A",
+            revGrow:"N/A", margins:"N/A", sector:"N/A", grade:"UNKNOWN"
+          }
+        }
+      }))
+      if (i + BATCH < indiaPositions.length) await new Promise(r => setTimeout(r, 1000))
+    }
   }
 
   return res.status(200).json({ results, computedAt: new Date().toISOString() })
