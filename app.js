@@ -3260,11 +3260,6 @@ function getFundCache(){
 function setFundCache(data){
   try{ localStorage.setItem(FUND_CACHE_KEY, JSON.stringify({data, ts:Date.now()})) }catch(e){}
 }
-  Also see separate instructions for:
-   - fetchNoiseAnalysis (add manualFunds to POST body)
-   - fundRow HTML (add edit button + staleness badge)
-   - dsl-footer text update
-   ============================================================ */
  
  
 /* ── Manual Fundamentals Storage ─────────────────────────────
