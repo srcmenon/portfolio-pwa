@@ -2,51 +2,36 @@
    CapIntel — db.js
    IndexedDB initialisation. Loaded before app.js in index.html.
 
-   Creates (or opens) a database called "portfolioDB" at version 1.
-   Two object stores are created on first run:
+   Creates (or opens) a database called "portfolioDB" at version 2.
+   Object stores:
 
-   1. "assets"
-      - keyPath: "id" (auto-incremented integer)
-      - Stores individual buy lots. One row per purchase.
-      - Fields: name, ticker, broker, type, currency,
-                quantity, buyPrice, buyPriceEUR,
-                currentPrice (updated by price engine), buyDate
-
-   2. "portfolioHistory"
-      - keyPath: "timestamp" (Unix ms, set at record time)
-      - Stores periodic snapshots of total portfolio value in EUR.
-      - Fields: timestamp, value (total EUR), cats (per-category breakdown)
-      - Used as the data source for the Growth Chart.
-      - See recordPortfolioSnapshot() in app.js for how cats is written.
-
-   On success: calls startApp() from app.js to boot the UI.
-   The `db` global is referenced throughout app.js for all transactions.
+   1. "assets"         — keyPath: "id" (auto-increment). One row per lot.
+   2. "portfolioHistory" — keyPath: "timestamp". Portfolio snapshots.
+   3. "manualFundamentals" — keyPath: "symbol". Manually entered
+      fundamental data per stock (ROE, D/E, margins, growth, P/B).
+      Added in version 2.
    ============================================================ */
 
-let db;  /* global DB handle — set in onsuccess below, used everywhere in app.js */
+let db;
 
 function initDB(){
-  const request = indexedDB.open("portfolioDB", 1);
+  const request = indexedDB.open("portfolioDB", 2);  /* bumped to 2 */
 
-  /* onupgradeneeded fires when the DB is first created (version 0 → 1)
-     or when the version number is bumped in future.
-     This is the only place object stores should be created or modified. */
   request.onupgradeneeded = event => {
     db = event.target.result;
 
-    /* Create assets store if it doesn't already exist */
     if(!db.objectStoreNames.contains("assets")){
       db.createObjectStore("assets", { keyPath:"id", autoIncrement:true });
     }
-
-    /* Create portfolioHistory store if it doesn't already exist */
     if(!db.objectStoreNames.contains("portfolioHistory")){
       db.createObjectStore("portfolioHistory", { keyPath:"timestamp" });
     }
+    /* NEW in v2 — manual fundamentals entered by user from Screener.in */
+    if(!db.objectStoreNames.contains("manualFundamentals")){
+      db.createObjectStore("manualFundamentals", { keyPath:"symbol" });
+    }
   };
 
-  /* onsuccess: DB opened successfully (and any upgrade is complete).
-     Assign the handle and boot the app. */
   request.onsuccess = event => {
     db = event.target.result;
     if(typeof startApp === "function"){
