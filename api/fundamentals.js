@@ -1,73 +1,54 @@
 /* ============================================================
    CapIntel — api/fundamentals.js  (Vercel Serverless)
 
-   Data sources:
-   1. NSE India API  → PE, sector PE, sector, industry  (auto, free)
-   2. manualFunds    → ROE, D/E, margins, growth, P/B   (user-entered from Screener.in)
+   Fetches fundamentals from Oracle VM (Python/yfinance server).
+   Oracle VM handles: SQLite cache, sequential fetching, stale fallback.
 
-   Flow:
-   - Receive { positions, techMap, goals, manualFunds } from app.js
-   - For Indian (.NS/.BO) stocks: fetch PE from NSE, merge with manualFunds
-   - For EUR/USD stocks: score from manualFunds only (or neutral if none)
-   - Score each position → verdict + signals + display fields
-   - Return { results, computedAt }
+   Fields returned by Oracle VM per ticker:
+     trailingPE, priceToBook, roe, roa, profitMargins,
+     operatingMargins, debtToEquity, revenueGrowth, earningsGrowth,
+     sector, industry, marketCap, recommendationKey, targetMeanPrice
 
+   Ticker resolution mirrors app.js resolveTicker() exactly.
    vercel.json maxDuration: 30s
    ============================================================ */
 
-/* ── NSE session (cookies expire ~4 min) ── */
-let nseSession = null
-
-const NSE_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-  "Accept": "application/json, text/plain, */*",
-  "Accept-Language": "en-US,en;q=0.9",
-  "Referer": "https://www.nseindia.com/",
-  "Connection": "keep-alive"
+/* ── Mirror app.js resolveTicker() ── */
+function toYahooTicker(key, currency, type) {
+  if (!key) return null
+  if (key.includes("-USD"))            return null          // crypto — skip
+  if (key.includes("."))              return key            // already has suffix
+  if (key === "SEMI")                 return "CHIP.PA"
+  if (key === "EWG2")                 return "EWG2.SG"
+  if (currency === "USD")             return key
+  if (currency === "EUR") {
+    const t = (type || "").toLowerCase()
+    if (t === "etf" || t === "commodity") return key + ".L"
+    return key
+  }
+  return key + ".NS"                                        // default: NSE India
 }
 
-async function getNSESession() {
-  if (nseSession && (Date.now() - nseSession.ts) < 4 * 60 * 1000) return nseSession
-  const r = await fetch("https://www.nseindia.com/", {
-    headers: {
-      "User-Agent": NSE_HEADERS["User-Agent"],
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.9"
-    }
-  })
-  const setCookie = r.headers.getSetCookie ? r.headers.getSetCookie() : []
-  const cookie = setCookie.map(c => c.split(";")[0]).join("; ")
-  if (!cookie) throw new Error("No cookies from NSE")
-  nseSession = { cookie, ts: Date.now() }
-  return nseSession
-}
-
-async function fetchNSEQuote(symbol) {
-  const { cookie } = await getNSESession()
-  const url = "https://www.nseindia.com/api/quote-equity?symbol=" + encodeURIComponent(symbol)
-  const r = await fetch(url, { headers: { ...NSE_HEADERS, "Cookie": cookie } })
-  if (!r.ok) throw new Error("HTTP " + r.status)
-  return await r.json()
-}
-
-/* ── Merge NSE auto data + manual Screener data ── */
-function mergeData(nseData, manual) {
-  const n = v => { const num = parseFloat(v); return isFinite(num) && num !== 0 ? num : null }
-  return {
-    /* NSE auto */
-    trailingPE:    nseData ? n(nseData.metadata?.pdSymbolPe)  : null,
-    sectorPE:      nseData ? n(nseData.metadata?.pdSectorPe)  : null,
-    sector:        nseData ? (nseData.industryInfo?.sector || null) : null,
-    industry:      nseData ? (nseData.industryInfo?.basicIndustry || null) : null,
-    /* Manual from Screener.in — values stored as plain % numbers (e.g. 18.5 for 18.5%) */
-    roe:           manual?.roe          != null ? manual.roe          / 100 : null,
-    debtToEquity:  manual?.de           != null ? manual.de           : null,
-    profitMargins: manual?.margins      != null ? manual.margins      / 100 : null,
-    revenueGrowth: manual?.revGrowth    != null ? manual.revGrowth    / 100 : null,
-    earningsGrowth:manual?.profitGrowth != null ? manual.profitGrowth / 100 : null,
-    priceToBook:   manual?.pb           != null ? manual.pb           : null,
-    /* Staleness metadata */
-    manualUpdatedAt: manual?.updatedAt  || null,
+/* ── Fetch all tickers from Oracle VM in one batch ── */
+async function fetchOracleBatch(tickers) {
+  const baseUrl = process.env.FUNDAMENTALS_URL
+  if (!baseUrl) {
+    console.error("[oracle] FUNDAMENTALS_URL not set")
+    return {}
+  }
+  try {
+    const r = await fetch(`${baseUrl}/fundamentals/batch`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ tickers })
+    })
+    if (!r.ok) { console.error(`[oracle] HTTP ${r.status}`); return {} }
+    const data = await r.json()
+    console.log(`[oracle] fetched=${data.fetched} cached=${data.cached} tickers=${tickers.length}`)
+    return data.results || {}
+  } catch(e) {
+    console.error(`[oracle] ${e.message}`)
+    return {}
   }
 }
 
@@ -78,7 +59,6 @@ function scoreFundamentals(f) {
 
   if (f.trailingPE != null) {
     fields++
-    /* Show vs sector PE if available */
     const vsStr = f.sectorPE ? ` vs sector ${f.sectorPE.toFixed(0)}x` : ""
     if      (f.trailingPE <= 0)  { score -= 15; sigs.push("Negative P/E — loss-making") }
     else if (f.trailingPE < 12)  { score += 12; sigs.push(`P/E ${f.trailingPE.toFixed(1)}x — undervalued${vsStr}`) }
@@ -86,14 +66,6 @@ function scoreFundamentals(f) {
     else if (f.trailingPE < 35)  { score += 2 }
     else if (f.trailingPE < 60)  { score -= 5;  sigs.push(`P/E ${f.trailingPE.toFixed(1)}x — elevated${vsStr}`) }
     else                         { score -= 12; sigs.push(`P/E ${f.trailingPE.toFixed(1)}x — very high`) }
-
-    /* Bonus/penalty for PE vs sector average */
-    if (f.sectorPE && f.sectorPE > 0) {
-      const discount = (f.sectorPE - f.trailingPE) / f.sectorPE
-      if      (discount >  0.25) { score += 8;  sigs.push(`${Math.round(discount*100)}% below sector PE — cheap vs peers`) }
-      else if (discount > 0.10)  { score += 4 }
-      else if (discount < -0.25) { score -= 6;  sigs.push(`${Math.round(-discount*100)}% above sector PE — expensive vs peers`) }
-    }
   }
   if (f.priceToBook != null) {
     fields++
@@ -122,15 +94,15 @@ function scoreFundamentals(f) {
   if (f.debtToEquity != null) {
     fields++
     const de = f.debtToEquity
-    if      (de < 0.3)  { score += 8;  sigs.push(`D/E ${de.toFixed(2)} — very low debt`) }
-    else if (de < 0.8)  { score += 3 }
-    else if (de < 1.5)  { score -= 3 }
-    else                { score -= 10; sigs.push(`D/E ${de.toFixed(2)} — high debt`) }
+    if      (de < 30)  { score += 8;  sigs.push(`D/E ${de.toFixed(0)}% — low debt`) }
+    else if (de < 80)  { score += 3 }
+    else if (de < 150) { score -= 3 }
+    else               { score -= 10; sigs.push(`D/E ${de.toFixed(0)}% — high debt`) }
   }
   if (f.revenueGrowth != null) {
     fields++
     const g = f.revenueGrowth * 100
-    if      (g > 20) { score += 12; sigs.push(`Revenue +${g.toFixed(0)}% — strong growth`) }
+    if      (g > 20) { score += 12; sigs.push(`Revenue +${g.toFixed(0)}% YoY`) }
     else if (g > 10) { score += 7;  sigs.push(`Revenue +${g.toFixed(0)}% YoY`) }
     else if (g > 0)  { score += 2 }
     else if (g > -5) { score -= 5 }
@@ -139,7 +111,7 @@ function scoreFundamentals(f) {
   if (f.earningsGrowth != null) {
     fields++
     const g = f.earningsGrowth * 100
-    if      (g > 25) { score += 12; sigs.push(`Profit +${g.toFixed(0)}% — strong growth`) }
+    if      (g > 25) { score += 12; sigs.push(`Profit +${g.toFixed(0)}% YoY`) }
     else if (g > 10) { score += 6 }
     else if (g > 0)  { score += 2 }
     else if (g > -15){ score -= 8;  sigs.push("Profit declining") }
@@ -152,27 +124,18 @@ function scoreFundamentals(f) {
   const grade = score >= 70 ? "STRONG" : score >= 50 ? "FAIR" : score >= 30 ? "WEAK" : "POOR"
   const fmt   = (v, mult=1, dec=1, suf="") => v != null ? (v*mult).toFixed(dec)+suf : "N/A"
 
-  /* Staleness warning in display */
-  let staleNote = null
-  if (f.manualUpdatedAt) {
-    const days = Math.floor((Date.now() - f.manualUpdatedAt) / (1000*60*60*24))
-    if      (days >= 120) staleNote = `🔴 Manual data ${days}d old — re-enter from Screener.in`
-    else if (days >= 90)  staleNote = `⚠️ Manual data ${days}d old — refresh soon`
-  }
-
   return {
     score, grade, signals: sigs.slice(0, 4), hasData: true,
     display: {
-      pe:      fmt(f.trailingPE, 1, 1, "x") + (f.sectorPE ? ` (sector ${f.sectorPE.toFixed(0)}x)` : ""),
+      pe:      fmt(f.trailingPE, 1, 1, "x"),
       pb:      fmt(f.priceToBook, 1, 1, "x"),
       roe:     fmt(f.roe, 100, 1, "%"),
       roce:    "N/A",
-      de:      f.debtToEquity != null ? f.debtToEquity.toFixed(2) : "N/A",
-      revGrow: fmt(f.revenueGrowth,  100, 1, "%"),
-      margins: fmt(f.profitMargins,  100, 1, "%"),
+      de:      f.debtToEquity != null ? `${f.debtToEquity.toFixed(0)}%` : "N/A",
+      revGrow: fmt(f.revenueGrowth, 100, 1, "%"),
+      margins: fmt(f.profitMargins, 100, 1, "%"),
       sector:  f.sector || f.industry || "N/A",
       grade,
-      staleNote,
     }
   }
 }
@@ -213,7 +176,7 @@ function getVerdict(techScore, techVerdict, fundScore, fundHasData, goalScore, p
         : `Add €200–300`
     } else if (isSell && fundScore >= 60) {
       verdict="HOLD";   priority="MEDIUM"
-      reasoning="Weak technicals but strong fundamentals — dip in quality business"
+      reasoning="Weak technicals but strong fundamentals — temporary dip"
       action="Hold. Fundamentals contradict sell signal. Add if RSI drops below 35."
     } else if (isSell && fundScore >= 40) {
       verdict="REVIEW"; priority="LOW"
@@ -238,19 +201,19 @@ function getVerdict(techScore, techVerdict, fundScore, fundHasData, goalScore, p
   } else {
     if (isBuy) {
       verdict="ADD";    priority="MEDIUM"
-      reasoning="Technical BUY — add fundamentals via ✏️ for full scoring"
+      reasoning="Technical BUY — fundamentals loading"
       const qty = Math.max(1, Math.round(5000/(cur||1)))
       action = pos.currency==="INR"
         ? `Add ${qty} shares at ₹${cur.toFixed(0)} — verify on Screener.in first`
         : `Add €150 — verify fundamentals first`
     } else if (isSell) {
       verdict="REVIEW"; priority="MEDIUM"
-      reasoning="Technical SELL — add fundamentals via ✏️ before exiting"
+      reasoning="Technical SELL — check fundamentals before exiting"
       action=`Check Screener.in for ${pos.key} before exiting.`
     } else {
       verdict="HOLD";   priority="LOW"
-      reasoning="Neutral — add fundamentals via ✏️ for better verdict"
-      action="Hold. Enter fundamentals from Screener.in for full analysis."
+      reasoning="Neutral — fundamentals unavailable"
+      action="Hold. Fundamentals data loading or unavailable."
     }
   }
   return { verdict, action, priority, composite, reasoning }
@@ -264,7 +227,7 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end()
   if (req.method !== "POST")   return res.status(405).json({ error: "POST only" })
 
-  const { positions, techMap, goals, manualFunds } = req.body || {}
+  const { positions, techMap, goals } = req.body || {}
   if (!positions?.length) return res.status(400).json({ error: "positions required" })
 
   /* Skip MFs and crypto */
@@ -272,34 +235,26 @@ export default async function handler(req, res) {
     p.type !== "MutualFund" && !(p.key||"").includes("-USD")
   )
 
-  /* Fetch NSE data for Indian stocks in parallel */
-  const nseDataMap = {}
-  await Promise.all(
-    eligible
-      .filter(p => p.currency === "INR" || (p.key||"").match(/\.(NS|BO)$/))
-      .map(async pos => {
-        const symbol = (pos.key||"").replace(/\.(NS|BO)$/, "").toUpperCase()
-        try {
-          nseDataMap[pos.key] = await fetchNSEQuote(symbol)
-          const pe = nseDataMap[pos.key]?.metadata?.pdSymbolPe
-          console.log(`[nse] ${pos.key} pe=${pe}`)
-        } catch(e) {
-          console.error(`[nse] ${pos.key}: ${e.message}`)
-          nseDataMap[pos.key] = null
-        }
-      })
-  )
+  /* Resolve each position key → Yahoo ticker */
+  const keyToYahoo = {}
+  for (const pos of eligible) {
+    const yt = toYahooTicker(pos.key, pos.currency, pos.type)
+    if (yt) keyToYahoo[pos.key] = yt
+  }
+
+  /* Single batch call to Oracle VM */
+  const uniqueTickers = [...new Set(Object.values(keyToYahoo))]
+  const oracleData    = uniqueTickers.length ? await fetchOracleBatch(uniqueTickers) : {}
 
   /* Score each position */
   const results = {}
   for (const pos of eligible) {
-    const nse    = nseDataMap[pos.key] || null
-    const manual = manualFunds?.[pos.key] || null
-    const merged = mergeData(nse, manual)
-    const fund   = scoreFundamentals(merged)
-    const tech   = techMap?.[pos.key] || {}
-    const goal   = scoreGoalAlignment(pos, goals || {})
-    const out    = getVerdict(tech.score??50, tech.verdict??"HOLD", fund.score, fund.hasData, goal.score, pos)
+    const yt   = keyToYahoo[pos.key]
+    const raw  = yt ? (oracleData[yt] || null) : null
+    const fund = scoreFundamentals(raw)
+    const tech = techMap?.[pos.key] || {}
+    const goal = scoreGoalAlignment(pos, goals || {})
+    const out  = getVerdict(tech.score??50, tech.verdict??"HOLD", fund.score, fund.hasData, goal.score, pos)
 
     results[pos.key] = {
       ...out,
