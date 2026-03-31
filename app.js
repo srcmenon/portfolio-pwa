@@ -3260,15 +3260,134 @@ function getFundCache(){
 function setFundCache(data){
   try{ localStorage.setItem(FUND_CACHE_KEY, JSON.stringify({data, ts:Date.now()})) }catch(e){}
 }
-
+  Also see separate instructions for:
+   - fetchNoiseAnalysis (add manualFunds to POST body)
+   - fundRow HTML (add edit button + staleness badge)
+   - dsl-footer text update
+   ============================================================ */
+ 
+ 
+/* ── Manual Fundamentals Storage ─────────────────────────────
+   Saved per stock symbol in IndexedDB "manualFundamentals" store.
+   Schema: { symbol, roe, de, margins, revGrowth, profitGrowth,
+             pb, updatedAt }
+   ─────────────────────────────────────────────────────────── */
+ 
+function saveManualFund(symbol, data) {
+  return new Promise((resolve, reject) => {
+    const tx    = db.transaction("manualFundamentals", "readwrite")
+    const store = tx.objectStore("manualFundamentals")
+    store.put({ symbol, ...data, updatedAt: Date.now() })
+    tx.oncomplete = () => resolve()
+    tx.onerror    = () => reject(tx.error)
+  })
+}
+ 
+function getManualFund(symbol) {
+  return new Promise((resolve) => {
+    const tx  = db.transaction("manualFundamentals", "readonly")
+    const req = tx.objectStore("manualFundamentals").get(symbol)
+    req.onsuccess = () => resolve(req.result || null)
+    req.onerror   = () => resolve(null)
+  })
+}
+ 
+function getAllManualFunds() {
+  return new Promise((resolve) => {
+    const tx      = db.transaction("manualFundamentals", "readonly")
+    const results = {}
+    tx.objectStore("manualFundamentals").openCursor().onsuccess = e => {
+      const cursor = e.target.result
+      if (cursor) { results[cursor.value.symbol] = cursor.value; cursor.continue() }
+      else resolve(results)
+    }
+  })
+}
+ 
+/* ── Staleness logic ──────────────────────────────────────────
+   Indian quarterly results seasons:
+   Q1: mid-Jul to mid-Aug  | Q2: mid-Oct to mid-Nov
+   Q3: mid-Jan to mid-Feb  | Q4: mid-Apr to mid-May
+   Rule: refresh every 90 days. Warn at 90, block at 120.
+   ─────────────────────────────────────────────────────────── */
+function getFundStaleness(updatedAt) {
+  if (!updatedAt) return { status: "none", label: null, days: null }
+  const days = Math.floor((Date.now() - updatedAt) / (1000 * 60 * 60 * 24))
+  if (days < 90)  return { status: "fresh",  label: null,                              days }
+  if (days < 120) return { status: "warn",   label: `⚠️ ${days}d old — refresh soon`, days }
+  return             { status: "stale",  label: `🔴 ${days}d old — stale, re-enter`,  days }
+}
+ 
+/* ── Manual Fundamentals Modal ────────────────────────────────
+   Opens when user clicks "✏️" on a stock row.
+   Pre-fills if data already exists.
+   ─────────────────────────────────────────────────────────── */
+let _mfModalSymbol = null
+ 
+function openManualFundModal(symbol, displayName) {
+  _mfModalSymbol = symbol
+  document.getElementById("mf-modal-title").textContent   = `${symbol} — ${displayName}`
+  document.getElementById("mf-screener-link").href        = `https://www.screener.in/company/${symbol}/`
+  document.getElementById("mf-modal-status").textContent  = ""
+  document.getElementById("mf-stale-warn").textContent    = ""
+ 
+  /* Pre-fill if data exists */
+  getManualFund(symbol).then(d => {
+    const fields = ["roe","de","margins","revGrowth","profitGrowth","pb"]
+    fields.forEach(f => {
+      const el = document.getElementById("mf-" + f)
+      if (el) el.value = d?.[f] != null ? d[f] : ""
+    })
+    if (d?.updatedAt) {
+      const stale = getFundStaleness(d.updatedAt)
+      const dateStr = new Date(d.updatedAt).toLocaleDateString("en-GB", {day:"numeric",month:"short",year:"numeric"})
+      document.getElementById("mf-stale-warn").textContent =
+        stale.status === "fresh"
+          ? `✅ Last updated ${dateStr} (${stale.days}d ago)`
+          : stale.label + ` (last: ${dateStr})`
+    }
+  })
+ 
+  document.getElementById("mf-modal-overlay").style.display = "flex"
+}
+ 
+function closeManualFundModal() {
+  document.getElementById("mf-modal-overlay").style.display = "none"
+  _mfModalSymbol = null
+}
+ 
+async function saveManualFundFromModal() {
+  if (!_mfModalSymbol) return
+  const n = id => { const v = parseFloat(document.getElementById(id)?.value); return isFinite(v) ? v : null }
+  const data = {
+    roe:         n("mf-roe"),
+    de:          n("mf-de"),
+    margins:     n("mf-margins"),
+    revGrowth:   n("mf-revGrowth"),
+    profitGrowth:n("mf-profitGrowth"),
+    pb:          n("mf-pb"),
+  }
+  const hasAny = Object.values(data).some(v => v !== null)
+  if (!hasAny) {
+    document.getElementById("mf-modal-status").textContent = "⚠️ Enter at least one value"
+    return
+  }
+  await saveManualFund(_mfModalSymbol, data)
+  document.getElementById("mf-modal-status").textContent = "✅ Saved!"
+  localStorage.removeItem("capintel_fundamentals_v4")  /* bust cache */
+  setTimeout(() => {
+    closeManualFundModal()
+    buildDynamicSellListHTMLAsync()  /* re-run analysis with new data */
+  }, 800)
+}
 async function fetchNoiseAnalysis(positions, force=false){
   if(!positions?.length) return null
   const cacheKey = positions.map(p=>p.key).sort().join(",")
   const cached = getFundCache()
   if(!force && cached && cached._key === cacheKey) return cached
   try{
-    const goals = loadGoals() || {}
-    /* Server-side fetch only — Vercel uses Yahoo v8+v7 which work without cookies */
+    const goals      = loadGoals() || {}
+    const manualFunds = await getAllManualFunds()  /* NEW — include manual data */
     const r = await fetch("/api/fundamentals", {
       method:  "POST",
       headers: { "Content-Type":"application/json" },
@@ -3278,8 +3397,9 @@ async function fetchNoiseAnalysis(positions, force=false){
           qty: p.qty, currentPrice: p.currentPrice,
           totalCurrentEUR: p.totalCurrentEUR, totalBuyEUR: p.totalBuyEUR
         })),
-        techMap: window._techMap || {},
-        goals
+        techMap:      window._techMap || {},
+        goals,
+        manualFunds   /* NEW */
       })
     })
     if(!r.ok) return null
@@ -3303,7 +3423,7 @@ async function buildDynamicSellListHTMLAsync(){
 
   /* Show loading state */
   el.innerHTML = `<div class="dsl-loading"><span class="insights-spinner"></span> Analysing ${data.positions.length} positions — technicals + fundamentals + goal alignment…</div>`
-
+const manualFundsMap = await getAllManualFunds()
   /* Fetch fundamental analysis */
   const analysis = await fetchNoiseAnalysis(data.positions)
 
@@ -3363,6 +3483,13 @@ async function buildDynamicSellListHTMLAsync(){
         </div>` : ""
 
       /* Fundamentals row */
+const mfData    = manualFundsMap[p.key]
+      const stale     = getFundStaleness(mfData?.updatedAt)
+      const staleHTML = stale.label ? `<span class="dsl-stale-${stale.status}">${stale.label}</span>` : ""
+      const hasManual = mfData && Object.values(mfData).some(v => typeof v === "number")
+      const editBtn   = p.currency === "INR"
+        ? `<button class="dsl-edit-fund" onclick="openManualFundModal('${p.key}','${resolveDisplayName(p).replace(/'/g,"")}')" title="Enter fundamentals from Screener.in">✏️ ${hasManual?"Edit":"Add"} fundamentals</button>`
+        : ""
       const fundRow = a?.fundamentals ? `
         <div class="dsl-fund-row">
           <span>P/E ${a.fundamentals.pe}</span>
@@ -3372,6 +3499,8 @@ async function buildDynamicSellListHTMLAsync(){
           <span>Rev ${a.fundamentals.revGrow}</span>
           <span>Margin ${a.fundamentals.margins}</span>
           ${a.fundamentals.sector!=="N/A"?`<span class="dsl-sector">${a.fundamentals.sector}</span>`:""}
+          ${staleHTML}
+          ${editBtn}
         </div>` : ""
 
       /* Key signals */
@@ -3437,7 +3566,7 @@ async function buildDynamicSellListHTMLAsync(){
     ${groupHTML("REVIEW — Mixed signals","review","🔍",groups.REVIEW)}
     ${groupHTML("EXIT — Weak, free the capital","exit","📉",groups.EXIT)}
     <div class="dsl-footer">
-      Scored: Technical 40% · Fundamental 35% · Goal alignment 25% · Data: Yahoo Finance · <strong>FREE</strong><br>
+      Scored: Technical 40% · Fundamental 35% · Goal alignment 25% · Data: NSE India + Screener.in (manual) · <strong>FREE</strong><br>
       LTCG (>1yr) 12.5% · STCG (<1yr) 20% · Germany 26.375% · FY resets April 1
     </div>`
 }
