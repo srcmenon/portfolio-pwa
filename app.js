@@ -3469,57 +3469,129 @@ const manualFundsMap = await getAllManualFunds()
       const taxBadge = `<span class="dsl-tax-badge dsl-${p.taxType.toLowerCase()}">${p.taxType}</span>`
 
       /* Score bars */
+      const verdictColor = { ADD:"green", HOLD:"blue", REVIEW:"gold", EXIT:"red" }[cls] || "blue"
+ 
+      /* ── Score bars ── */
       const scoreBars = a ? `
-        <div class="dsl-scores">
-          <span class="dsl-score-item">📊 Tech <strong>${a.scores.technical}</strong></span>
-          <span class="dsl-score-item">📈 Fund <strong>${a.scores.fundamental}</strong></span>
-          <span class="dsl-score-item">🎯 Goal <strong>${a.scores.goalAlign}</strong></span>
-          <span class="dsl-score-item">Composite <strong>${a.composite}</strong></span>
+        <div class="dsl2-scores">
+          <div class="dsl2-score-bar">
+            <span class="dsl2-score-label">Tech</span>
+            <div class="dsl2-bar-track">
+              <div class="dsl2-bar-fill dsl2-bar-tech" style="width:${a.scores.technical}%"></div>
+            </div>
+            <span class="dsl2-score-val">${a.scores.technical}</span>
+          </div>
+          <div class="dsl2-score-bar">
+            <span class="dsl2-score-label">Fund</span>
+            <div class="dsl2-bar-track">
+              <div class="dsl2-bar-fill dsl2-bar-fund" style="width:${a.scores.fundamental}%"></div>
+            </div>
+            <span class="dsl2-score-val">${a.scores.fundamental}</span>
+          </div>
+          <div class="dsl2-score-bar">
+            <span class="dsl2-score-label">Goal</span>
+            <div class="dsl2-bar-track">
+              <div class="dsl2-bar-fill dsl2-bar-goal" style="width:${a.scores.goalAlign}%"></div>
+            </div>
+            <span class="dsl2-score-val">${a.scores.goalAlign}</span>
+          </div>
+          <div class="dsl2-composite">
+            <span class="dsl2-composite-label">Composite</span>
+            <span class="dsl2-composite-val dsl2-comp-${cls}">${a.composite}</span>
+          </div>
         </div>` : ""
-
-      /* Fundamentals row */
-const mfData    = manualFundsMap[p.key]
-      const stale     = getFundStaleness(mfData?.updatedAt)
-      const staleHTML = stale.label ? `<span class="dsl-stale-${stale.status}">${stale.label}</span>` : ""
-      const hasManual = mfData && Object.values(mfData).some(v => typeof v === "number")
-      const editBtn   = p.currency === "INR"
-        ? `<button class="dsl-edit-fund" onclick="openManualFundModal('${p.key}','${resolveDisplayName(p).replace(/'/g,"")}')" title="Enter fundamentals from Screener.in">✏️ ${hasManual?"Edit":"Add"} fundamentals</button>`
-        : ""
-      const fundRow = a?.fundamentals ? `
-        <div class="dsl-fund-row">
-          <span>P/E ${a.fundamentals.pe}</span>
-          <span>P/B ${a.fundamentals.pb}</span>
-          <span>ROE ${a.fundamentals.roe}</span>
-          <span>D/E ${a.fundamentals.de}</span>
-          <span>Rev ${a.fundamentals.revGrow}</span>
-          <span>Margin ${a.fundamentals.margins}</span>
-          ${a.fundamentals.sector!=="N/A"?`<span class="dsl-sector">${a.fundamentals.sector}</span>`:""}
-          ${staleHTML}
-          ${editBtn}
+ 
+      /* ── Fundamentals grid ── */
+      const f = a?.fundamentals
+      const fundGrid = f ? `
+        <div class="dsl2-fund-grid">
+          <div class="dsl2-fund-cell">
+            <span class="dsl2-fund-label">P/E</span>
+            <span class="dsl2-fund-val">${f.pe}</span>
+          </div>
+          <div class="dsl2-fund-cell">
+            <span class="dsl2-fund-label">P/B</span>
+            <span class="dsl2-fund-val">${f.pb}</span>
+          </div>
+          <div class="dsl2-fund-cell">
+            <span class="dsl2-fund-label">ROE</span>
+            <span class="dsl2-fund-val">${f.roe}</span>
+          </div>
+          <div class="dsl2-fund-cell">
+            <span class="dsl2-fund-label">D/E</span>
+            <span class="dsl2-fund-val">${f.de}</span>
+          </div>
+          <div class="dsl2-fund-cell">
+            <span class="dsl2-fund-label">Rev Growth</span>
+            <span class="dsl2-fund-val">${f.revGrow}</span>
+          </div>
+          <div class="dsl2-fund-cell">
+            <span class="dsl2-fund-label">Net Margin</span>
+            <span class="dsl2-fund-val">${f.margins}</span>
+          </div>
+          ${f.sector && f.sector !== "N/A" ? `
+          <div class="dsl2-fund-cell dsl2-fund-sector">
+            <span class="dsl2-fund-label">Sector</span>
+            <span class="dsl2-fund-val dsl2-sector-val">${f.sector}</span>
+          </div>` : ""}
         </div>` : ""
-
-      /* Key signals */
+ 
+      /* ── Signals ── */
       const allSigs = a ? [
         ...(a.signals.technical||[]),
         ...(a.signals.fundamental||[]),
         ...(a.signals.goalAlign||[])
-      ].slice(0,4) : []
+      ].slice(0, 4) : []
       const sigsHTML = allSigs.length
-        ? `<div class="dsl-sigs">${allSigs.map(s=>`<span class="dsl-sig">${s}</span>`).join("")}</div>`
+        ? `<div class="dsl2-sigs">${allSigs.map(s=>`<span class="dsl2-sig">${s}</span>`).join("")}</div>`
         : ""
-
-      return `<div class="dsl-row dsl-row-${cls}">
-        <div class="dsl-row-top">
-          <span class="dsl-ticker">${p.key}</span>
-          <span class="dsl-name">${resolveDisplayName(p)}</span>
-          <span class="dsl-qty">${p.qty?.toFixed?p.qty.toFixed(0):p.qty} sh</span>
-          <span class="dsl-buy">@${formatCurrency(p.buy,p.currency)}</span>
-          <span class="dsl-cur">${formatCurrency(p.cur,p.currency)}</span>
-          <span class="dsl-chg ${chgCls}">${p.chgPct>=0?"+":""}${p.chgPct.toFixed(1)}%</span>
-          <span class="dsl-profit ${p.chgPct>=0?"profit":"loss"}">${p.profitDisplay}</span>
-          ${taxBadge}
-          <span class="dsl-val">≈€${(p.totalCurrentEUR||0).toFixed(0)}</span>
+ 
+      return `<div class="dsl2-card dsl2-card-${cls}">
+ 
+        <!-- Header: ticker + name + verdict + price -->
+        <div class="dsl2-header">
+          <div class="dsl2-header-left">
+            <span class="dsl2-ticker">${p.key}</span>
+            <span class="dsl2-name">${resolveDisplayName(p)}</span>
+          </div>
+          <div class="dsl2-header-right">
+            ${a ? `<span class="dsl2-verdict dsl2-verdict-${cls}">${cls.toUpperCase()}</span>` : ""}
+            ${taxBadge}
+          </div>
         </div>
+ 
+        <!-- Price row -->
+        <div class="dsl2-price-row">
+          <span class="dsl2-qty">${p.qty?.toFixed?p.qty.toFixed(0):p.qty} shares</span>
+          <span class="dsl2-buy">avg ₹${p.buy?.toFixed?p.buy.toFixed(1):p.buy}</span>
+          <span class="dsl2-cur">${formatCurrency(p.cur, p.currency)}</span>
+          <span class="dsl2-chg ${chgCls}">${p.chgPct>=0?"+":""}${p.chgPct.toFixed(1)}%</span>
+          <span class="dsl2-profit ${p.chgPct>=0?'profit':'loss'}">${p.profitDisplay}</span>
+          <span class="dsl2-eur">≈€${(p.totalCurrentEUR||0).toFixed(0)}</span>
+        </div>
+ 
+        <!-- Scores + Fundamentals side by side -->
+        <div class="dsl2-body">
+          <div class="dsl2-left">
+            ${scoreBars}
+          </div>
+          <div class="dsl2-right">
+            ${fundGrid}
+          </div>
+        </div>
+ 
+        <!-- Signals -->
+        ${sigsHTML}
+ 
+        <!-- Action -->
+        ${a?.action ? `
+        <div class="dsl2-action">
+          <span class="dsl2-action-label">Recommended action</span>
+          <span class="dsl2-action-text dsl2-action-${cls}">→ ${a.action}</span>
+        </div>` : ""}
+ 
+      </div>`
+ 
         ${scoreBars}
         ${fundRow}
         ${sigsHTML}
