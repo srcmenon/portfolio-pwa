@@ -3591,13 +3591,6 @@ const manualFundsMap = await getAllManualFunds()
         </div>` : ""}
  
       </div>`
- 
-        ${scoreBars}
-        ${fundRow}
-        ${sigsHTML}
-        ${a?.reasoning?`<div class="dsl-reasoning">💡 ${a.reasoning}</div>`:""}
-        ${a?.action?`<div class="dsl-action-text">→ ${a.action}</div>`:""}
-      </div>`
     }).join("")
 
     return `<div class="dsl-group">
