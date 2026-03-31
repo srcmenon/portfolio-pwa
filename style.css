@@ -2034,3 +2034,176 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
   font-size:11px; color:var(--blue); padding:3px 0 2px;
   font-style:italic;
 }
+/* ============================================================
+   DSL2 — Redesigned Goals Tab Cards
+   Add this block to the END of style.css
+   ============================================================ */
+
+/* ── Card container ── */
+.dsl2-card {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(26,45,80,0.6);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dsl2-card-add    { border-left: 4px solid var(--green); }
+.dsl2-card-hold   { border-left: 4px solid var(--blue); }
+.dsl2-card-review { border-left: 4px solid var(--gold); }
+.dsl2-card-exit   { border-left: 4px solid var(--red); }
+
+/* ── Header ── */
+.dsl2-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.dsl2-header-left  { display: flex; align-items: baseline; gap: 8px; }
+.dsl2-header-right { display: flex; align-items: center; gap: 6px; }
+.dsl2-ticker {
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  color: var(--blue); letter-spacing: 0.3px;
+}
+.dsl2-name {
+  font-size: 12px; color: var(--dim);
+}
+
+/* ── Verdict badge ── */
+.dsl2-verdict {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.8px;
+  padding: 2px 8px; border-radius: 4px; text-transform: uppercase;
+}
+.dsl2-verdict-add    { background: rgba(34,209,122,0.15); color: var(--green); border: 1px solid rgba(34,209,122,0.3); }
+.dsl2-verdict-hold   { background: rgba(91,156,246,0.15); color: var(--blue);  border: 1px solid rgba(91,156,246,0.3); }
+.dsl2-verdict-review { background: rgba(240,165,53,0.15); color: var(--gold);  border: 1px solid rgba(240,165,53,0.3); }
+.dsl2-verdict-exit   { background: rgba(244,80,106,0.15); color: var(--red);   border: 1px solid rgba(244,80,106,0.3); }
+
+/* ── Price row ── */
+.dsl2-price-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 6px 8px;
+  background: rgba(0,0,0,0.15);
+  border-radius: 5px;
+  font-size: 11px;
+}
+.dsl2-qty    { color: var(--muted); }
+.dsl2-buy    { color: var(--dim); }
+.dsl2-cur    { font-weight: 700; color: var(--text); font-family: var(--mono); }
+.dsl2-chg    { font-weight: 700; font-family: var(--mono); }
+.dsl2-profit { font-weight: 600; font-family: var(--mono); }
+.dsl2-eur    { color: var(--dim); font-family: var(--mono); margin-left: auto; }
+
+/* ── Body: scores + fundamentals side by side ── */
+.dsl2-body {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 480px) {
+  .dsl2-body { grid-template-columns: 1fr; }
+}
+
+/* ── Score bars ── */
+.dsl2-scores {
+  display: flex; flex-direction: column; gap: 5px;
+}
+.dsl2-score-bar {
+  display: flex; align-items: center; gap: 6px;
+}
+.dsl2-score-label {
+  font-size: 9.5px; color: var(--muted); width: 28px; flex-shrink: 0;
+  text-transform: uppercase; letter-spacing: 0.4px;
+}
+.dsl2-bar-track {
+  flex: 1; height: 5px; background: rgba(255,255,255,0.06);
+  border-radius: 3px; overflow: hidden;
+}
+.dsl2-bar-fill {
+  height: 100%; border-radius: 3px; transition: width 0.4s ease;
+}
+.dsl2-bar-tech { background: var(--blue); }
+.dsl2-bar-fund { background: var(--green); }
+.dsl2-bar-goal { background: var(--gold); }
+.dsl2-score-val {
+  font-size: 10px; font-family: var(--mono); color: var(--text);
+  width: 22px; text-align: right; flex-shrink: 0;
+}
+.dsl2-composite {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 4px; padding-top: 4px;
+  border-top: 1px solid rgba(26,45,80,0.4);
+}
+.dsl2-composite-label {
+  font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px;
+}
+.dsl2-composite-val {
+  font-size: 13px; font-weight: 800; font-family: var(--mono);
+}
+.dsl2-comp-add    { color: var(--green); }
+.dsl2-comp-hold   { color: var(--blue); }
+.dsl2-comp-review { color: var(--gold); }
+.dsl2-comp-exit   { color: var(--red); }
+
+/* ── Fundamentals grid ── */
+.dsl2-fund-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px 8px;
+}
+.dsl2-fund-cell {
+  display: flex; flex-direction: column; gap: 1px;
+  padding: 4px 6px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 4px;
+  border: 1px solid rgba(26,45,80,0.3);
+}
+.dsl2-fund-sector {
+  grid-column: span 3;
+}
+.dsl2-fund-label {
+  font-size: 8.5px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.4px;
+}
+.dsl2-fund-val {
+  font-size: 11px; font-weight: 600; color: var(--text);
+  font-family: var(--mono);
+}
+.dsl2-sector-val {
+  font-size: 10px; color: var(--blue); font-family: inherit;
+}
+
+/* ── Signals ── */
+.dsl2-sigs {
+  display: flex; gap: 5px; flex-wrap: wrap;
+}
+.dsl2-sig {
+  font-size: 10px; padding: 2px 7px; border-radius: 3px;
+  background: rgba(255,255,255,0.04);
+  color: var(--dim); border: 1px solid rgba(26,45,80,0.4);
+}
+
+/* ── Action recommendation ── */
+.dsl2-action {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 8px 10px;
+  border-radius: 5px;
+  background: rgba(0,0,0,0.2);
+  border-top: 1px solid rgba(26,45,80,0.4);
+}
+.dsl2-action-label {
+  font-size: 9px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.dsl2-action-text {
+  font-size: 12px; font-weight: 600; line-height: 1.4;
+}
+.dsl2-action-add    { color: var(--green); }
+.dsl2-action-hold   { color: var(--blue); }
+.dsl2-action-review { color: var(--gold); }
+.dsl2-action-exit   { color: var(--red); }
