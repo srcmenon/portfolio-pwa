@@ -3416,8 +3416,13 @@ async function buildDynamicSellListHTMLAsync(){
   const el = document.getElementById("noiseDynamicList")
   if(!el || !data) return
 
-  /* Show loading state */
-  el.innerHTML = `<div class="dsl-loading"><span class="insights-spinner"></span> Analysing ${data.positions.length} positions — technicals + fundamentals + goal alignment…</div>`
+  /* Only show loading if no cache exists */
+  const cacheKey = data.positions.map(p=>p.key).sort().join(",")
+  const existingCache = getFundCache()
+  const hasCachedData = existingCache && existingCache._key === cacheKey
+  if(!hasCachedData){
+    el.innerHTML = `<div class="dsl-loading"><span class="insights-spinner"></span> Analysing ${data.positions.length} positions — fetching fundamentals…</div>`
+  }
 const manualFundsMap = await getAllManualFunds()
   /* Fetch fundamental analysis */
   const analysis = await fetchNoiseAnalysis(data.positions)
@@ -3627,11 +3632,10 @@ const manualFundsMap = await getAllManualFunds()
       ${taxStatus}${splitAdvice}
     </div>
     ${groupHTML("ADD — Underfunded quality position","add","📈",groups.ADD)}
-    ${groupHTML("HOLD — Wait for better entry","hold","🤚",groups.HOLD)}
-    ${groupHTML("REVIEW — Mixed signals","review","🔍",groups.REVIEW)}
+    ${groupHTML("REVIEW — Mixed signals, monitor closely","review","🔍",groups.REVIEW)}
     ${groupHTML("EXIT — Weak, free the capital","exit","📉",groups.EXIT)}
     <div class="dsl-footer">
-      Scored: Technical 40% · Fundamental 35% · Goal alignment 25% · Data: NSE India + Screener.in (manual) · <strong>FREE</strong><br>
+      Scored: Technical 25% · Fundamental 50% · Goal alignment 25% · Data: NSE + Yahoo Finance · <strong>FREE</strong><br>
       LTCG (>1yr) 12.5% · STCG (<1yr) 20% · Germany 26.375% · FY resets April 1
     </div>`
 }
