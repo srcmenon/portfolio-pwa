@@ -3239,7 +3239,549 @@ function getDynamicSellList(){
   const totalINR = small.filter(p=>p.currency==="INR").reduce((s,p) => s+(p.totalCurrentLocal||0), 0)
   return { positions: small, totalEUR, totalINR }
 }
-
+/* ============================================================
+   CapIntel — NEW FEATURES BLOCK
+   INSERT this entire block just BEFORE the line:
+   "const FUND_CACHE_KEY = "capintel_fundamentals_v4""
+ 
+   Also see CHANGE instructions at the bottom of this file.
+   ============================================================ */
+ 
+ 
+/* ════════════════════════════════════════════════════════════
+   FEATURE 1: GOAL GAP CALCULATOR
+   Computes exact shortfall for each goal and monthly
+   contribution needed to close the gap.
+   ════════════════════════════════════════════════════════════ */
+ 
+function computeGoalGaps(goals, portfolio) {
+  if (!goals || !portfolio?.length) return null
+  const now       = new Date()
+  const currentAge = 36
+ 
+  /* ── Indian equity total ── */
+  const inrTotal = portfolio
+    .filter(p => p.currency === "INR" && p.type !== "MutualFund")
+    .reduce((s, p) => s + (p.totalCurrentLocal || 0), 0)
+  const inrMF = portfolio
+    .filter(p => p.currency === "INR" && p.type === "MutualFund")
+    .reduce((s, p) => s + (p.totalCurrentLocal || 0), 0)
+  const totalINR = inrTotal + inrMF
+ 
+  /* ── EUR equity total ── */
+  const totalEUR = portfolio
+    .filter(p => p.currency !== "INR")
+    .reduce((s, p) => s + (p.totalCurrentEUR || 0), 0)
+ 
+  /* ── Home goal ── */
+  const homeTargetINR  = (goals.homeBudget || 80) * 100000
+  const homeYear       = goals.homeYear || 2030
+  const homeMonthsLeft = Math.max(1, (homeYear - now.getFullYear()) * 12)
+  const homeGrowthRate = 0.12 / 12  /* 12% annual → monthly */
+  /* Future value of current INR holdings */
+  const homeFV         = totalINR * Math.pow(1 + homeGrowthRate, homeMonthsLeft)
+  const homeShortfall  = Math.max(0, homeTargetINR - homeFV)
+  /* Monthly SIP needed to cover shortfall (PMT formula) */
+  const homeMonthly    = homeShortfall > 0
+    ? homeShortfall * homeGrowthRate / (Math.pow(1 + homeGrowthRate, homeMonthsLeft) - 1)
+    : 0
+  const homeOnTrack    = homeFV >= homeTargetINR * 0.95
+  const homePct        = Math.min(100, (totalINR / homeTargetINR) * 100)
+  const homeFVPct      = Math.min(100, (homeFV / homeTargetINR) * 100)
+ 
+  /* ── Retirement goal ── */
+  const retireTarget   = goals.corpus || 270000
+  const retireAge      = goals.retireAge || 50
+  const retireMonths   = Math.max(1, (retireAge - currentAge) * 12)
+  const retireGrowth   = 0.08 / 12  /* 8% annual EUR growth → monthly */
+  const retireFV       = totalEUR * Math.pow(1 + retireGrowth, retireMonths)
+  const retireShortfall= Math.max(0, retireTarget - retireFV)
+  const retireMonthly  = retireShortfall > 0
+    ? retireShortfall * retireGrowth / (Math.pow(1 + retireGrowth, retireMonths) - 1)
+    : 0
+  const retireOnTrack  = retireFV >= retireTarget * 0.95
+  const retirePct      = Math.min(100, (totalEUR / retireTarget) * 100)
+  const retireFVPct    = Math.min(100, (retireFV / retireTarget) * 100)
+ 
+  /* ── SWP estimate at retirement ── */
+  const swpMonthly     = retireTarget * 0.04 / 12  /* 4% safe withdrawal rate */
+ 
+  return {
+    home: {
+      targetINR: homeTargetINR,
+      currentINR: totalINR,
+      projectedFV: homeFV,
+      shortfallINR: homeShortfall,
+      monthlyNeededINR: homeMonthly,
+      monthsLeft: homeMonthsLeft,
+      onTrack: homeOnTrack,
+      currentPct: homePct,
+      projectedPct: homeFVPct,
+      status: homeOnTrack ? "ON TRACK" : homeFVPct > 70 ? "SLIGHTLY BEHIND" : "BEHIND"
+    },
+    retire: {
+      targetEUR: retireTarget,
+      currentEUR: totalEUR,
+      projectedFV: retireFV,
+      shortfallEUR: retireShortfall,
+      monthlyNeededEUR: retireMonthly,
+      monthsLeft: retireMonths,
+      onTrack: retireOnTrack,
+      currentPct: retirePct,
+      projectedPct: retireFVPct,
+      swpMonthly,
+      status: retireOnTrack ? "ON TRACK" : retireFVPct > 70 ? "SLIGHTLY BEHIND" : "BEHIND"
+    }
+  }
+}
+ 
+function renderGoalGapSection(goals, portfolio) {
+  const el = document.getElementById("goalGapSection")
+  if (!el) return
+  const gaps = computeGoalGaps(goals, portfolio)
+  if (!gaps) { el.innerHTML = ""; return }
+ 
+  const { home, retire } = gaps
+  const fmtL  = v => `₹${(v/100000).toFixed(1)}L`
+  const fmtE  = v => `€${v.toLocaleString("de-DE", {maximumFractionDigits:0})}`
+  const fmtM  = v => `₹${Math.round(v).toLocaleString()}/mo`
+  const fmtME = v => `€${Math.round(v)}/mo`
+ 
+  const homeColor   = home.onTrack   ? "var(--green)" : home.status === "SLIGHTLY BEHIND" ? "var(--gold)" : "var(--red)"
+  const retireColor = retire.onTrack ? "var(--green)" : retire.status === "SLIGHTLY BEHIND" ? "var(--gold)" : "var(--red)"
+ 
+  el.innerHTML = `
+  <div class="gg-section">
+    <div class="gg-title">📊 Goal Gap Analysis</div>
+ 
+    <div class="gg-grid">
+ 
+      <!-- Home Goal -->
+      <div class="gg-card">
+        <div class="gg-card-header">
+          <span class="gg-icon">🏠</span>
+          <span class="gg-card-title">Home in India by ${goals.homeYear || 2030}</span>
+          <span class="gg-status" style="color:${homeColor}">${home.status}</span>
+        </div>
+ 
+        <div class="gg-progress-wrap">
+          <div class="gg-progress-track">
+            <div class="gg-progress-fill" style="width:${home.currentPct.toFixed(0)}%; background:var(--blue)"></div>
+            <div class="gg-progress-proj" style="width:${Math.max(0, home.projectedPct - home.currentPct).toFixed(0)}%; background:rgba(91,156,246,0.35)"></div>
+          </div>
+          <div class="gg-progress-labels">
+            <span>Now: ${fmtL(home.currentINR)}</span>
+            <span>Projected: ${fmtL(home.projectedFV)}</span>
+            <span>Target: ${fmtL(home.targetINR)}</span>
+          </div>
+        </div>
+ 
+        <div class="gg-metrics">
+          <div class="gg-metric">
+            <span class="gg-metric-label">Current corpus</span>
+            <span class="gg-metric-val">${fmtL(home.currentINR)}</span>
+          </div>
+          <div class="gg-metric">
+            <span class="gg-metric-label">At 12% growth by ${goals.homeYear||2030}</span>
+            <span class="gg-metric-val" style="color:${homeColor}">${fmtL(home.projectedFV)}</span>
+          </div>
+          <div class="gg-metric">
+            <span class="gg-metric-label">Shortfall</span>
+            <span class="gg-metric-val" style="color:${home.shortfallINR>0?"var(--red)":"var(--green)"}">
+              ${home.shortfallINR > 0 ? fmtL(home.shortfallINR) : "None ✓"}
+            </span>
+          </div>
+          <div class="gg-metric">
+            <span class="gg-metric-label">Extra SIP needed</span>
+            <span class="gg-metric-val" style="color:${home.monthlyNeededINR>0?"var(--gold)":"var(--green)"}">
+              ${home.monthlyNeededINR > 0 ? fmtM(home.monthlyNeededINR) : "On track ✓"}
+            </span>
+          </div>
+          <div class="gg-metric">
+            <span class="gg-metric-label">Months left</span>
+            <span class="gg-metric-val">${home.monthsLeft} months</span>
+          </div>
+        </div>
+      </div>
+ 
+      <!-- Retirement Goal -->
+      <div class="gg-card">
+        <div class="gg-card-header">
+          <span class="gg-icon">🎯</span>
+          <span class="gg-card-title">Retire at ${goals.retireAge||50} — €${(goals.corpus||270000).toLocaleString()} corpus</span>
+          <span class="gg-status" style="color:${retireColor}">${retire.status}</span>
+        </div>
+ 
+        <div class="gg-progress-wrap">
+          <div class="gg-progress-track">
+            <div class="gg-progress-fill" style="width:${retire.currentPct.toFixed(0)}%; background:var(--green)"></div>
+            <div class="gg-progress-proj" style="width:${Math.max(0, retire.projectedPct - retire.currentPct).toFixed(0)}%; background:rgba(34,209,122,0.3)"></div>
+          </div>
+          <div class="gg-progress-labels">
+            <span>Now: ${fmtE(retire.currentEUR)}</span>
+            <span>Projected: ${fmtE(retire.projectedFV)}</span>
+            <span>Target: ${fmtE(retire.targetEUR)}</span>
+          </div>
+        </div>
+ 
+        <div class="gg-metrics">
+          <div class="gg-metric">
+            <span class="gg-metric-label">Current EUR corpus</span>
+            <span class="gg-metric-val">${fmtE(retire.currentEUR)}</span>
+          </div>
+          <div class="gg-metric">
+            <span class="gg-metric-label">At 8% growth by age ${goals.retireAge||50}</span>
+            <span class="gg-metric-val" style="color:${retireColor}">${fmtE(retire.projectedFV)}</span>
+          </div>
+          <div class="gg-metric">
+            <span class="gg-metric-label">Shortfall</span>
+            <span class="gg-metric-val" style="color:${retire.shortfallEUR>0?"var(--red)":"var(--green)"}">
+              ${retire.shortfallEUR > 0 ? fmtE(retire.shortfallEUR) : "None ✓"}
+            </span>
+          </div>
+          <div class="gg-metric">
+            <span class="gg-metric-label">Extra monthly needed</span>
+            <span class="gg-metric-val" style="color:${retire.monthlyNeededEUR>0?"var(--gold)":"var(--green)"}">
+              ${retire.monthlyNeededEUR > 0 ? fmtME(retire.monthlyNeededEUR) : "On track ✓"}
+            </span>
+          </div>
+          <div class="gg-metric">
+            <span class="gg-metric-label">Estimated SWP at retirement</span>
+            <span class="gg-metric-val" style="color:var(--green)">${fmtME(retire.swpMonthly)}/month (4% rule)</span>
+          </div>
+        </div>
+      </div>
+ 
+    </div>
+  </div>`
+}
+ 
+ 
+/* ════════════════════════════════════════════════════════════
+   FEATURE 2: MONTHLY INVESTMENT ALLOCATOR
+   Given €600/month budget, allocates across ADD signals
+   ranked by composite score × goal gap urgency.
+   ════════════════════════════════════════════════════════════ */
+ 
+function renderMonthlyAllocator(goals, analysis, portfolio) {
+  const el = document.getElementById("monthlyAllocatorSection")
+  if (!el || !analysis?.results) { if(el) el.innerHTML=""; return }
+ 
+  const monthly    = goals?.monthly || 600
+  const gaps       = computeGoalGaps(goals, portfolio)
+  const eurINR     = 90  /* approx EUR/INR rate */
+ 
+  /* Only ADD verdicts */
+  const adds = Object.entries(analysis.results)
+    .filter(([, a]) => a?.verdict === "ADD")
+    .map(([key, a]) => {
+      const pos     = portfolio.find(p => p.key === key) || {}
+      const urgency = a.scores ? (a.signals?.goalAlign?.[0]?.includes("behind") ? 1.5 : 1.0) : 1.0
+      const priority = a.composite * urgency
+      return { key, a, pos, priority, urgency }
+    })
+    .sort((x, y) => y.priority - x.priority)
+ 
+  if (!adds.length) {
+    el.innerHTML = `<div class="ma-section"><div class="ma-title">💰 Monthly Allocator</div>
+      <div class="ma-empty">No ADD signals currently. Park €${monthly} in IWDA (EUR) or Nifty 50 index fund (INR).</div></div>`
+    return
+  }
+ 
+  /* Split budget: INR vs EUR based on goal gap urgency */
+  let inrBudgetEUR = monthly * 0.6  /* default 60% INR, 40% EUR */
+  let eurBudget    = monthly * 0.4
+  if (gaps) {
+    const homeUrgent   = !gaps.home.onTrack
+    const retireUrgent = !gaps.retire.onTrack
+    if (homeUrgent && !retireUrgent)        { inrBudgetEUR = monthly * 0.75; eurBudget = monthly * 0.25 }
+    else if (!homeUrgent && retireUrgent)   { inrBudgetEUR = monthly * 0.40; eurBudget = monthly * 0.60 }
+    else if (homeUrgent && retireUrgent)    { inrBudgetEUR = monthly * 0.60; eurBudget = monthly * 0.40 }
+  }
+  const inrBudgetINR = inrBudgetEUR * eurINR
+ 
+  /* Allocate across top ADDs */
+  const inrAdds  = adds.filter(x => x.pos.currency === "INR").slice(0, 3)
+  const eurAdds  = adds.filter(x => x.pos.currency !== "INR").slice(0, 2)
+  const allocs   = []
+ 
+  /* INR: weight by priority score */
+  const inrTotal = inrAdds.reduce((s, x) => s + x.priority, 0)
+  inrAdds.forEach(x => {
+    const share  = inrTotal > 0 ? x.priority / inrTotal : 1 / inrAdds.length
+    const rupees = Math.round(inrBudgetINR * share / 100) * 100  /* round to ₹100 */
+    const qty    = Math.max(1, Math.floor(rupees / (x.pos.currentPrice || 1)))
+    allocs.push({ ...x, amountINR: qty * (x.pos.currentPrice||1), amountEUR: null, qty, currency: "INR" })
+  })
+ 
+  /* EUR: equal split among top 2 */
+  const eurShare = eurAdds.length > 0 ? eurBudget / eurAdds.length : 0
+  eurAdds.forEach(x => {
+    allocs.push({ ...x, amountEUR: Math.round(eurShare), amountINR: null, qty: null, currency: "EUR" })
+  })
+ 
+  /* Remaining budget */
+  const allocatedINR = allocs.filter(x=>x.currency==="INR").reduce((s,x)=>s+x.amountINR,0)
+  const allocatedEUR = allocs.filter(x=>x.currency!=="INR").reduce((s,x)=>s+x.amountEUR,0)
+  const remainINR    = Math.max(0, inrBudgetINR - allocatedINR)
+  const remainEUR    = Math.max(0, eurBudget - allocatedEUR)
+ 
+  const rows = allocs.map(x => `
+    <div class="ma-row">
+      <div class="ma-row-left">
+        <span class="ma-ticker">${x.key}</span>
+        <span class="ma-composite">score ${x.a.composite}</span>
+        ${x.a.scores?.fundamental >= 70 ? `<span class="ma-quality">quality</span>` : ""}
+      </div>
+      <div class="ma-row-right">
+        ${x.currency === "INR"
+          ? `<span class="ma-amount">₹${Math.round(x.amountINR).toLocaleString()}</span>
+             <span class="ma-detail">${x.qty} shares @ ₹${(x.pos.currentPrice||0).toFixed(0)}</span>`
+          : `<span class="ma-amount">€${x.amountEUR}</span>`
+        }
+      </div>
+    </div>`).join("")
+ 
+  el.innerHTML = `
+  <div class="ma-section">
+    <div class="ma-title">💰 Monthly Allocation — €${monthly} budget</div>
+    <div class="ma-subtitle">
+      INR budget: ₹${Math.round(inrBudgetINR).toLocaleString()} · EUR budget: €${Math.round(eurBudget)}
+      ${gaps && !gaps.home.onTrack ? " · Home goal behind — INR weighted higher" : ""}
+    </div>
+    <div class="ma-rows">${rows}</div>
+    ${remainINR > 500 || remainEUR > 20 ? `
+    <div class="ma-remain">
+      Unallocated: ${remainINR > 500 ? `₹${Math.round(remainINR).toLocaleString()} → park in Nifty 50 index fund` : ""}
+      ${remainEUR > 20 ? `€${Math.round(remainEUR)} → add to IWDA` : ""}
+    </div>` : ""}
+  </div>`
+}
+ 
+ 
+/* ════════════════════════════════════════════════════════════
+   FEATURE 3: SELL PROCEEDS REALLOCATION
+   When EXIT verdict exists, suggest where to redeploy capital.
+   ════════════════════════════════════════════════════════════ */
+ 
+function renderSellReallocation(analysis, portfolio) {
+  const el = document.getElementById("sellReallocSection")
+  if (!el || !analysis?.results) { if(el) el.innerHTML=""; return }
+ 
+  const exits = Object.entries(analysis.results)
+    .filter(([, a]) => a?.verdict === "EXIT")
+    .map(([key, a]) => {
+      const pos = portfolio.find(p => p.key === key) || {}
+      return { key, a, pos, valueEUR: pos.totalCurrentEUR || 0, valueINR: pos.totalCurrentLocal || 0 }
+    })
+ 
+  if (!exits.length) { el.innerHTML=""; return }
+ 
+  const adds = Object.entries(analysis.results)
+    .filter(([, a]) => a?.verdict === "ADD")
+    .map(([key, a]) => ({ key, a, pos: portfolio.find(p=>p.key===key)||{} }))
+    .sort((x, y) => y.a.composite - x.a.composite)
+    .slice(0, 3)
+ 
+  const rows = exits.map(exit => {
+    const isINR      = exit.pos.currency === "INR"
+    const capital    = isINR ? exit.valueINR : exit.valueEUR
+    const capitalStr = isINR ? `₹${Math.round(capital).toLocaleString()}` : `€${Math.round(capital)}`
+    const taxNote    = exit.pos.taxType === "STCG"
+      ? `⚠ STCG applies (~${isINR?"20%":"26.375%"} tax)`
+      : `✓ LTCG applies (${isINR?"12.5%":"26.375%"})`
+ 
+    /* Suggest top compatible ADDs */
+    const compatible = adds
+      .filter(a => isINR ? a.pos.currency==="INR" : a.pos.currency!=="INR")
+      .slice(0, 2)
+ 
+    const suggestions = compatible.length
+      ? compatible.map((a, i) => {
+          const share  = compatible.length === 1 ? 1 : i === 0 ? 0.6 : 0.4
+          const amount = isINR
+            ? `₹${Math.round(capital * share).toLocaleString()}`
+            : `€${Math.round(capital * share)}`
+          return `<span class="sr-sugg">${amount} → <strong>${a.key}</strong> (score ${a.a.composite})</span>`
+        }).join("")
+      : `<span class="sr-sugg-none">No strong ADD signals in same currency — park in index fund</span>`
+ 
+    return `
+    <div class="sr-card">
+      <div class="sr-exit-row">
+        <span class="sr-exit-label">EXIT</span>
+        <span class="sr-ticker">${exit.key}</span>
+        <span class="sr-capital">${capitalStr} freed</span>
+        <span class="sr-tax">${taxNote}</span>
+      </div>
+      <div class="sr-redeploy-label">Redeploy to:</div>
+      <div class="sr-suggestions">${suggestions}</div>
+    </div>`
+  }).join("")
+ 
+  el.innerHTML = `
+  <div class="sr-section">
+    <div class="sr-title">🔄 Sell & Redeploy</div>
+    ${rows}
+  </div>`
+}
+ 
+ 
+/* ════════════════════════════════════════════════════════════
+   FEATURE 4: DECISION TRACKER
+   Records every verdict shown with price at that time.
+   On revisit, compares outcome vs signal.
+   Shows accuracy pattern after 5+ decisions.
+   ════════════════════════════════════════════════════════════ */
+ 
+const DECISIONS_KEY = "capintel_decisions_v1"
+ 
+function loadDecisions() {
+  try { return JSON.parse(localStorage.getItem(DECISIONS_KEY)) || [] } catch(e) { return [] }
+}
+function saveDecisions(decisions) {
+  try { localStorage.setItem(DECISIONS_KEY, JSON.stringify(decisions.slice(-200))) } catch(e) {}
+}
+ 
+function recordDecisions(analysis, portfolio) {
+  if (!analysis?.results) return
+  const decisions = loadDecisions()
+  const now = Date.now()
+ 
+  for (const [key, a] of Object.entries(analysis.results)) {
+    if (!a?.verdict) continue
+    const pos = portfolio.find(p => p.key === key)
+    if (!pos?.currentPrice) continue
+ 
+    /* Check if already recorded recently (within 4 hours) */
+    const recent = decisions.find(d =>
+      d.key === key && (now - d.recordedAt) < 4 * 60 * 60 * 1000
+    )
+    if (recent) continue
+ 
+    decisions.push({
+      key,
+      verdict:    a.verdict,
+      composite:  a.composite,
+      priceAt:    pos.currentPrice,
+      currency:   pos.currency,
+      recordedAt: now,
+      outcome:    null,  /* filled in on next analysis run */
+      outcomeAt:  null,
+      priceThen:  null,
+    })
+  }
+ 
+  /* Update outcomes for old decisions */
+  for (const d of decisions) {
+    if (d.outcome !== null) continue
+    const daysSince = (now - d.recordedAt) / (1000 * 60 * 60 * 24)
+    if (daysSince < 14) continue  /* need at least 2 weeks to judge */
+ 
+    const pos = portfolio.find(p => p.key === d.key)
+    if (!pos?.currentPrice) continue
+ 
+    const change = (pos.currentPrice - d.priceAt) / d.priceAt
+    d.priceThen = pos.currentPrice
+    d.outcomeAt = now
+ 
+    /* Score outcome vs signal */
+    if (d.verdict === "ADD" || d.verdict === "HOLD") {
+      d.outcome = change > 0.05 ? "CORRECT" : change < -0.05 ? "WRONG" : "NEUTRAL"
+    } else if (d.verdict === "EXIT" || d.verdict === "REVIEW") {
+      d.outcome = change < -0.05 ? "CORRECT" : change > 0.05 ? "WRONG" : "NEUTRAL"
+    }
+  }
+ 
+  saveDecisions(decisions)
+}
+ 
+function renderDecisionTracker() {
+  const el = document.getElementById("decisionTrackerSection")
+  if (!el) return
+ 
+  const decisions = loadDecisions()
+  const judged    = decisions.filter(d => d.outcome !== null)
+ 
+  if (judged.length < 3) {
+    el.innerHTML = `
+    <div class="dt-section">
+      <button class="dt-toggle" onclick="this.closest('.dt-section').classList.toggle('dt-open')">
+        📈 Decision Tracker <span class="dt-count">${decisions.length} recorded, need 3+ judged to show patterns</span>
+      </button>
+    </div>`
+    return
+  }
+ 
+  /* Accuracy by verdict type */
+  const byVerdict = {}
+  for (const d of judged) {
+    if (!byVerdict[d.verdict]) byVerdict[d.verdict] = { correct:0, wrong:0, neutral:0, total:0 }
+    byVerdict[d.verdict][d.outcome.toLowerCase()]++
+    byVerdict[d.verdict].total++
+  }
+ 
+  /* Find strongest pattern */
+  let insight = ""
+  for (const [verdict, stats] of Object.entries(byVerdict)) {
+    if (stats.total < 3) continue
+    const acc = stats.correct / stats.total
+    if (verdict === "REVIEW" && acc > 0.6) {
+      insight = `💡 You correctly ignore REVIEW signals ${Math.round(acc*100)}% of the time — they tend to recover.`
+    } else if (verdict === "ADD" && acc < 0.4) {
+      insight = `⚠ ADD signals have been wrong ${Math.round((1-acc)*100)}% of the time — consider waiting longer before adding.`
+    } else if (verdict === "EXIT" && acc > 0.65) {
+      insight = `✅ EXIT signals have been correct ${Math.round(acc*100)}% of the time — trust them.`
+    }
+  }
+ 
+  const overallAcc = judged.filter(d=>d.outcome==="CORRECT").length / judged.length
+ 
+  const rows = Object.entries(byVerdict).map(([verdict, stats]) => {
+    const acc = stats.total > 0 ? (stats.correct / stats.total * 100).toFixed(0) : "—"
+    const color = stats.correct/stats.total > 0.6 ? "var(--green)"
+                : stats.correct/stats.total > 0.4 ? "var(--gold)" : "var(--red)"
+    return `<div class="dt-row">
+      <span class="dt-verdict dt-v-${verdict.toLowerCase()}">${verdict}</span>
+      <span class="dt-stats">${stats.correct}✓ ${stats.wrong}✗ ${stats.neutral}~ / ${stats.total} total</span>
+      <span class="dt-acc" style="color:${color}">${acc}% accurate</span>
+    </div>`
+  }).join("")
+ 
+  /* Recent decisions */
+  const recent = [...decisions].reverse().slice(0, 5).map(d => {
+    const days = Math.round((Date.now() - d.recordedAt) / 86400000)
+    const changeStr = d.priceThen
+      ? ((d.priceThen - d.priceAt)/d.priceAt*100).toFixed(1) + "%"
+      : "pending"
+    const outcomeColor = d.outcome === "CORRECT" ? "var(--green)"
+                       : d.outcome === "WRONG"   ? "var(--red)"
+                       : "var(--muted)"
+    return `<div class="dt-recent-row">
+      <span class="dt-r-ticker">${d.key}</span>
+      <span class="dt-r-verdict dt-v-${d.verdict.toLowerCase()}">${d.verdict}</span>
+      <span class="dt-r-price">@ ${d.currency==="INR"?"₹":"€"}${d.priceAt.toFixed(1)}</span>
+      <span class="dt-r-change" style="color:${outcomeColor}">${changeStr}</span>
+      <span class="dt-r-days">${days}d ago</span>
+      ${d.outcome ? `<span class="dt-r-outcome" style="color:${outcomeColor}">${d.outcome}</span>` : ""}
+    </div>`
+  }).join("")
+ 
+  el.innerHTML = `
+  <div class="dt-section">
+    <button class="dt-toggle" onclick="this.closest('.dt-section').classList.toggle('dt-open')">
+      📈 Decision Tracker
+      <span class="dt-count">${judged.length} judged · ${Math.round(overallAcc*100)}% overall accuracy</span>
+    </button>
+    <div class="dt-body">
+      <div class="dt-accuracy">${rows}</div>
+      ${insight ? `<div class="dt-insight">${insight}</div>` : ""}
+      <div class="dt-recent-title">Recent signals:</div>
+      <div class="dt-recent">${recent}</div>
+      <button class="dt-clear" onclick="if(confirm('Clear all decision history?')){localStorage.removeItem('${DECISIONS_KEY}');renderDecisionTracker()}">Clear history</button>
+    </div>
+  </div>`
+}
 /* ── NOISE POSITION DEEP ANALYSIS ────────────────────────
    Fetches fundamental scores for all noise positions (<€100).
    Combines with pre-computed technicals + goal alignment.
