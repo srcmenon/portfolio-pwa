@@ -4095,15 +4095,15 @@ const manualFundsMap = await getAllManualFunds()
       const upside        = (targetPrice && currentPrice)
         ? ((targetPrice - currentPrice) / currentPrice * 100).toFixed(0)
         : null
-      const analystRec    = raw?.recommendationKey || null
-      const analystCount  = raw?.numberOfAnalystOpinions || null
+      const analystRec = _raw?.recommendationKey || null
+      const analystCount = _raw?.numberOfAnalystOpinions || null
       const recColor = analystRec === "strong_buy" ? "var(--green)"
                      : analystRec === "buy"         ? "var(--green)"
                      : analystRec === "hold"        ? "var(--gold)"
                      : analystRec === "sell"        ? "var(--red)"
                      : "var(--muted)"
  
-      const rawData = getFundCache()?.data?.results
+      const _rawData = getFundCache()?.data?.results
       const ytKey = (()=>{
         if(!p.key) return null
         if(p.key.includes('-USD')) return null
@@ -4116,13 +4116,13 @@ const manualFundsMap = await getAllManualFunds()
         }
         return p.key+'.NS'
       })()
-      const raw = rawData?.[ytKey]
-      const targetPrice = raw?.targetMeanPrice
+      const _raw = _rawData?.[ytKey]
+      const targetPrice = _raw?.targetMeanPrice
       const upside = (targetPrice && p.currentPrice)
         ? ((targetPrice - p.currentPrice) / p.currentPrice * 100).toFixed(0)
         : null
-      const analystRec   = raw?.recommendationKey || null
-      const analystCount = raw?.numberOfAnalystOpinions || null
+      const analystRec = _raw?.recommendationKey || null
+      const analystCount = _raw?.numberOfAnalystOpinions || null
       const recColor = analystRec==="strong_buy"||analystRec==="buy" ? "var(--green)"
                      : analystRec==="sell"||analystRec==="strong_sell" ? "var(--red)"
                      : "var(--gold)"
