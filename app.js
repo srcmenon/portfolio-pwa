@@ -3231,10 +3231,10 @@ function applyFilters(rows){
 /* Generates the dynamic sell list for Step p1_1 from live portfolio data */
 function getDynamicSellList(){
   if(!lastPortfolio?.length) return null
-  const small = lastPortfolio
-    .filter(p => p.type !== "MutualFund" && (p.totalCurrentEUR||0) < 100)
-    .sort((a,b) => (a.totalCurrentEUR||0) - (b.totalCurrentEUR||0))
-  if(!small.length) return null
+const small = lastPortfolio
+  .filter(p => p.type !== "MutualFund")
+  .sort((a,b) => (a.totalCurrentEUR||0) - (b.totalCurrentEUR||0))
+if(!small.length) return null
   const totalEUR = small.reduce((s,p) => s+(p.totalCurrentEUR||0), 0)
   const totalINR = small.filter(p=>p.currency==="INR").reduce((s,p) => s+(p.totalCurrentLocal||0), 0)
   return { positions: small, totalEUR, totalINR }
