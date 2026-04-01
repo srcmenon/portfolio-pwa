@@ -2207,3 +2207,217 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
 .dsl2-action-hold   { color: var(--blue); }
 .dsl2-action-review { color: var(--gold); }
 .dsl2-action-exit   { color: var(--red); }
+/* ============================================================
+   CapIntel — New Features CSS*/
+/* ── Goal Gap Calculator ─────────────────────────────────── */
+.gg-section {
+  margin: 12px 0;
+  padding: 14px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.gg-title {
+  font-size: 12px; font-weight: 700; color: var(--text);
+  text-transform: uppercase; letter-spacing: 0.6px;
+  margin-bottom: 12px;
+}
+.gg-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 600px) {
+  .gg-grid { grid-template-columns: 1fr; }
+}
+.gg-card {
+  background: rgba(0,0,0,0.2);
+  border: 1px solid rgba(26,45,80,0.5);
+  border-radius: 7px;
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.gg-card-header {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.gg-icon    { font-size: 16px; }
+.gg-card-title { font-size: 11px; font-weight: 600; color: var(--text); flex: 1; }
+.gg-status  { font-size: 9.5px; font-weight: 700; letter-spacing: 0.4px; padding: 2px 7px; border-radius: 3px; background: rgba(255,255,255,0.05); }
+
+.gg-progress-wrap { display: flex; flex-direction: column; gap: 4px; }
+.gg-progress-track {
+  height: 8px; background: rgba(255,255,255,0.06);
+  border-radius: 4px; overflow: hidden; display: flex;
+}
+.gg-progress-fill { height: 100%; border-radius: 4px 0 0 4px; transition: width 0.5s; }
+.gg-progress-proj { height: 100%; }
+.gg-progress-labels {
+  display: flex; justify-content: space-between;
+  font-size: 9px; color: var(--muted);
+}
+
+.gg-metrics {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+}
+.gg-metric {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 5px 7px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 4px;
+  border: 1px solid rgba(26,45,80,0.3);
+}
+.gg-metric-label {
+  font-size: 8.5px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+.gg-metric-val {
+  font-size: 12px; font-weight: 700;
+  font-family: var(--mono); color: var(--text);
+}
+
+/* ── Monthly Allocator ───────────────────────────────────── */
+.ma-section {
+  margin: 12px 0; padding: 14px;
+  background: rgba(34,209,122,0.04);
+  border: 1px solid rgba(34,209,122,0.2);
+  border-radius: 8px;
+}
+.ma-title {
+  font-size: 12px; font-weight: 700; color: var(--green);
+  text-transform: uppercase; letter-spacing: 0.6px;
+  margin-bottom: 4px;
+}
+.ma-subtitle {
+  font-size: 10.5px; color: var(--dim); margin-bottom: 10px;
+}
+.ma-empty { font-size: 11px; color: var(--muted); padding: 8px 0; }
+.ma-rows  { display: flex; flex-direction: column; gap: 6px; }
+.ma-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 5px;
+  border: 1px solid rgba(26,45,80,0.4);
+  flex-wrap: wrap; gap: 6px;
+}
+.ma-row-left  { display: flex; align-items: center; gap: 8px; }
+.ma-row-right { display: flex; flex-direction: column; align-items: flex-end; }
+.ma-ticker {
+  font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--blue);
+}
+.ma-composite { font-size: 10px; color: var(--muted); }
+.ma-quality   {
+  font-size: 9px; padding: 1px 5px; border-radius: 3px;
+  background: rgba(34,209,122,0.12); color: var(--green);
+  border: 1px solid rgba(34,209,122,0.25);
+}
+.ma-amount { font-size: 13px; font-weight: 700; color: var(--text); font-family: var(--mono); }
+.ma-detail { font-size: 9.5px; color: var(--muted); }
+.ma-remain {
+  margin-top: 8px; padding: 6px 8px;
+  background: rgba(255,255,255,0.03); border-radius: 4px;
+  font-size: 10.5px; color: var(--dim);
+  border: 1px dashed rgba(26,45,80,0.4);
+}
+
+/* ── Sell & Redeploy ─────────────────────────────────────── */
+.sr-section {
+  margin: 12px 0; padding: 14px;
+  background: rgba(244,80,106,0.04);
+  border: 1px solid rgba(244,80,106,0.2);
+  border-radius: 8px;
+}
+.sr-title {
+  font-size: 12px; font-weight: 700; color: var(--red);
+  text-transform: uppercase; letter-spacing: 0.6px;
+  margin-bottom: 10px;
+}
+.sr-card {
+  padding: 10px; margin-bottom: 8px;
+  background: rgba(0,0,0,0.2);
+  border: 1px solid rgba(26,45,80,0.4);
+  border-radius: 6px;
+}
+.sr-exit-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.sr-exit-label {
+  font-size: 9px; font-weight: 800; padding: 2px 6px;
+  background: rgba(244,80,106,0.15); color: var(--red);
+  border: 1px solid rgba(244,80,106,0.3); border-radius: 3px;
+}
+.sr-ticker   { font-family: var(--mono); font-size: 12px; font-weight: 700; color: var(--text); }
+.sr-capital  { font-size: 12px; font-weight: 600; color: var(--green); font-family: var(--mono); margin-left: auto; }
+.sr-tax      { font-size: 9.5px; color: var(--muted); }
+.sr-redeploy-label { font-size: 9.5px; color: var(--dim); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.3px; }
+.sr-suggestions { display: flex; flex-direction: column; gap: 4px; }
+.sr-sugg {
+  font-size: 11px; color: var(--text); padding: 4px 8px;
+  background: rgba(34,209,122,0.06);
+  border-radius: 4px; border: 1px solid rgba(34,209,122,0.15);
+}
+.sr-sugg strong { color: var(--green); }
+.sr-sugg-none  { font-size: 11px; color: var(--muted); }
+
+/* ── Decision Tracker ────────────────────────────────────── */
+.dt-section {
+  margin: 12px 0;
+  border: 1px solid rgba(26,45,80,0.5);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.dt-toggle {
+  width: 100%; text-align: left;
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.02);
+  border: none; cursor: pointer;
+  font-size: 12px; font-weight: 700; color: var(--text);
+  display: flex; align-items: center; gap: 8px;
+}
+.dt-toggle:hover { background: rgba(255,255,255,0.04); }
+.dt-count { font-size: 10px; color: var(--muted); font-weight: 400; margin-left: auto; }
+.dt-body  { display: none; padding: 12px 14px; border-top: 1px solid rgba(26,45,80,0.4); }
+.dt-section.dt-open .dt-body { display: block; }
+
+.dt-accuracy { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
+.dt-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 5px 8px;
+  background: rgba(0,0,0,0.15); border-radius: 4px;
+}
+.dt-verdict {
+  font-size: 9.5px; font-weight: 700; padding: 2px 7px; border-radius: 3px;
+  min-width: 55px; text-align: center;
+}
+.dt-v-add    { background: rgba(34,209,122,0.12); color: var(--green); }
+.dt-v-hold   { background: rgba(91,156,246,0.12); color: var(--blue); }
+.dt-v-review { background: rgba(240,165,53,0.12); color: var(--gold); }
+.dt-v-exit   { background: rgba(244,80,106,0.12); color: var(--red); }
+.dt-stats    { font-size: 10px; color: var(--muted); flex: 1; }
+.dt-acc      { font-size: 11px; font-weight: 700; font-family: var(--mono); }
+.dt-insight  {
+  padding: 8px 10px; margin: 8px 0;
+  background: rgba(91,156,246,0.08);
+  border-left: 3px solid var(--blue);
+  border-radius: 0 4px 4px 0;
+  font-size: 11.5px; color: var(--text);
+}
+.dt-recent-title { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; margin: 8px 0 4px; }
+.dt-recent  { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; }
+.dt-recent-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 4px 6px; background: rgba(0,0,0,0.1); border-radius: 3px;
+  font-size: 10px;
+}
+.dt-r-ticker  { font-family: var(--mono); font-weight: 700; color: var(--blue); }
+.dt-r-price   { color: var(--dim); }
+.dt-r-change  { font-family: var(--mono); font-weight: 600; }
+.dt-r-days    { color: var(--muted); margin-left: auto; }
+.dt-r-outcome { font-size: 9px; font-weight: 700; }
+.dt-clear {
+  font-size: 9.5px; color: var(--muted); background: none;
+  border: 1px solid rgba(26,45,80,0.4); border-radius: 3px;
+  padding: 3px 8px; cursor: pointer;
+}
+.dt-clear:hover { color: var(--red); border-color: rgba(244,80,106,0.3); }
