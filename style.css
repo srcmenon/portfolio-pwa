@@ -2153,18 +2153,18 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
 /* ── Fundamentals grid ── */
 .dsl2-fund-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px 8px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px 6px;
 }
 .dsl2-fund-cell {
   display: flex; flex-direction: column; gap: 1px;
-  padding: 4px 6px;
+  padding: 3px 5px;
   background: rgba(255,255,255,0.03);
-  border-radius: 4px;
-  border: 1px solid rgba(26,45,80,0.3);
+  border-radius: 3px;
+  border: 1px solid rgba(26,45,80,0.25);
 }
 .dsl2-fund-sector {
-  grid-column: span 3;
+  grid-column: span 4;
 }
 .dsl2-fund-label {
   font-size: 8.5px; color: var(--muted);
