@@ -4280,7 +4280,7 @@ function renderNoiseAlert(){
 
 
 const CHECKLIST_STEPS = [
-  { id:"p1_1", phase:1, text:"Exit all small Indian stock positions under €100",
+  { id:"p1_1", phase:1, text:"Review all positions — add, hold or exit based on signals.",
     detail:"DYNAMIC — see live list below", deadline:"3 months", dynamic:true },
   { id:"p1_2", phase:1, text:"Stop all Indian MF SIPs if running",
     detail:"Freeze small cap allocation now. At current valuations (small cap PE ~26x vs Nifty 22x), adding more capital is suboptimal. The 7 small cap funds you hold are already redundant — do not compound the problem.", deadline:"1 week" },
@@ -4578,7 +4578,7 @@ function renderChecklist(state, daysActive){
                   /* Render container, trigger async fill after render */
                   setTimeout(() => buildDynamicSellListHTMLAsync(), 100)
                   return `<div class="dsl-header">
-                    <strong>${data.positions.length} positions detected · ≈€${data.totalEUR.toFixed(0)} combined</strong>
+                    <strong>${data.positions.length} positions analysed · ≈€${data.totalEUR.toFixed(0)} total</strong>
                     <span class="dsl-subhead"> · Analysing technicals + fundamentals + goal alignment…</span>
                   </div>
                   <div id="noiseDynamicList"><div class="dsl-loading"><span class="insights-spinner"></span> Loading analysis…</div></div>`
