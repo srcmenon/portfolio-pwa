@@ -4103,51 +4103,42 @@ const manualFundsMap = await getAllManualFunds()
                      : analystRec === "sell"        ? "var(--red)"
                      : "var(--muted)"
  
+const f = a?.fundamentals
+      const rawData = getFundCache()?.data?.results
+      const ytKey = (()=>{
+        if(!p.key) return null
+        if(p.key.includes('-USD')) return null
+        if(p.key.includes('.')) return p.key
+        if(p.key==='SEMI') return 'CHIP.PA'
+        if(p.key==='EWG2') return 'EWG2.SG'
+        if(p.currency==='EUR'){
+          const t=(p.type||'').toLowerCase()
+          return (t==='etf'||t==='commodity') ? p.key+'.L' : p.key
+        }
+        return p.key+'.NS'
+      })()
+      const raw = rawData?.[ytKey]
+      const targetPrice = raw?.targetMeanPrice
+      const upside = (targetPrice && p.currentPrice)
+        ? ((targetPrice - p.currentPrice) / p.currentPrice * 100).toFixed(0)
+        : null
+      const analystRec   = raw?.recommendationKey || null
+      const analystCount = raw?.numberOfAnalystOpinions || null
+      const recColor = analystRec==="strong_buy"||analystRec==="buy" ? "var(--green)"
+                     : analystRec==="sell"||analystRec==="strong_sell" ? "var(--red)"
+                     : "var(--gold)"
+
       const fundGrid = f ? `
         <div class="dsl2-fund-grid">
-          <div class="dsl2-fund-cell">
-            <span class="dsl2-fund-label">P/E</span>
-            <span class="dsl2-fund-val">${f.pe}</span>
-          </div>
-          <div class="dsl2-fund-cell">
-            <span class="dsl2-fund-label">P/B</span>
-            <span class="dsl2-fund-val">${f.pb}</span>
-          </div>
-          <div class="dsl2-fund-cell">
-            <span class="dsl2-fund-label">ROE</span>
-            <span class="dsl2-fund-val">${f.roe}</span>
-          </div>
-          <div class="dsl2-fund-cell">
-            <span class="dsl2-fund-label">D/E</span>
-            <span class="dsl2-fund-val">${f.de}</span>
-          </div>
-          <div class="dsl2-fund-cell">
-            <span class="dsl2-fund-label">Rev</span>
-            <span class="dsl2-fund-val">${f.revGrow}</span>
-          </div>
-          <div class="dsl2-fund-cell">
-            <span class="dsl2-fund-label">Margin</span>
-            <span class="dsl2-fund-val">${f.margins}</span>
-          </div>
-          ${upside !== null ? `
-          <div class="dsl2-fund-cell">
-            <span class="dsl2-fund-label">Target</span>
-            <span class="dsl2-fund-val" style="color:${parseInt(upside)>0?'var(--green)':'var(--red)'}">
-              ${p.currency==='INR'?'₹':'€'}${targetPrice?.toFixed(0)} (${upside>0?'+':''}${upside}%)
-            </span>
-          </div>` : ''}
-          ${analystRec ? `
-          <div class="dsl2-fund-cell">
-            <span class="dsl2-fund-label">Analyst</span>
-            <span class="dsl2-fund-val" style="color:${recColor};font-size:10px">
-              ${analystRec.replace('_',' ')}${analystCount?` (${analystCount})`: ''}
-            </span>
-          </div>` : ''}
-          ${f.sector && f.sector !== "N/A" ? `
-          <div class="dsl2-fund-cell dsl2-fund-sector">
-            <span class="dsl2-fund-label">Sector</span>
-            <span class="dsl2-fund-val dsl2-sector-val">${f.sector}</span>
-          </div>` : ""}
+          <div class="dsl2-fund-cell"><span class="dsl2-fund-label">P/E</span><span class="dsl2-fund-val">${f.pe}</span></div>
+          <div class="dsl2-fund-cell"><span class="dsl2-fund-label">P/B</span><span class="dsl2-fund-val">${f.pb}</span></div>
+          <div class="dsl2-fund-cell"><span class="dsl2-fund-label">ROE</span><span class="dsl2-fund-val">${f.roe}</span></div>
+          <div class="dsl2-fund-cell"><span class="dsl2-fund-label">D/E</span><span class="dsl2-fund-val">${f.de}</span></div>
+          <div class="dsl2-fund-cell"><span class="dsl2-fund-label">Rev</span><span class="dsl2-fund-val">${f.revGrow}</span></div>
+          <div class="dsl2-fund-cell"><span class="dsl2-fund-label">Margin</span><span class="dsl2-fund-val">${f.margins}</span></div>
+          ${upside!==null?`<div class="dsl2-fund-cell"><span class="dsl2-fund-label">Upside</span><span class="dsl2-fund-val" style="color:${parseInt(upside)>=0?'var(--green)':'var(--red)'}">${upside>0?'+':''}${upside}%</span></div>`:''}
+          ${analystRec?`<div class="dsl2-fund-cell"><span class="dsl2-fund-label">Analyst</span><span class="dsl2-fund-val" style="color:${recColor};font-size:10px">${analystRec.replace('_',' ')}${analystCount?` (${analystCount})`:''}</span></div>`:''}
+          ${f.sector&&f.sector!=="N/A"?`<div class="dsl2-fund-cell dsl2-fund-sector"><span class="dsl2-fund-label">Sector</span><span class="dsl2-fund-val dsl2-sector-val">${f.sector}</span></div>`:''}
         </div>` : ""
  
       /* ── Signals ── */
@@ -4236,7 +4227,6 @@ const manualFundsMap = await getAllManualFunds()
       ${taxStatus}${splitAdvice}
     </div>
     ${groupHTML("ADD — Underfunded quality position","add","📈",groups.ADD)}
-    ${groupHTML("REVIEW — Mixed signals, monitor closely","review","🔍",groups.REVIEW)}
     ${groupHTML("EXIT — Weak, free the capital","exit","📉",groups.EXIT)}
     <div class="dsl-footer">
       Scored: Technical 25% · Fundamental 50% · Goal alignment 25% · Data: NSE + Yahoo Finance · <strong>FREE</strong><br>
