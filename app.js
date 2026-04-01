@@ -3421,7 +3421,12 @@ async function buildDynamicSellListHTMLAsync(){
 const manualFundsMap = await getAllManualFunds()
   /* Fetch fundamental analysis */
   const analysis = await fetchNoiseAnalysis(data.positions)
-
+  recordDecisions(analysis, data.positions)
+      const goals = loadGoals() || {}
+      renderGoalGapSection(goals, lastPortfolio || [])
+      renderMonthlyAllocator(goals, analysis, lastPortfolio || [])
+      renderSellReallocation(analysis, lastPortfolio || [])
+      renderDecisionTracker()
   const LTCG_EXEMPTION = 125000
   const today = new Date()
   let runningLTCGProfit=0, runningSTCGProfit=0, totalLoss=0, runningDETax=0
