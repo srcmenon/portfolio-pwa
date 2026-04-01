@@ -3829,23 +3829,6 @@ function setFundCache(data){
   try{ localStorage.setItem(FUND_CACHE_KEY, JSON.stringify({data, ts:Date.now()})) }catch(e){}
 }
  
- 
-/* ── Manual Fundamentals Storage ─────────────────────────────
-   Saved per stock symbol in IndexedDB "manualFundamentals" store.
-   Schema: { symbol, roe, de, margins, revGrowth, profitGrowth,
-             pb, updatedAt }
-   ─────────────────────────────────────────────────────────── */
- 
-function saveManualFund(symbol, data) {
-  return new Promise((resolve, reject) => {
-    const tx    = db.transaction("manualFundamentals", "readwrite")
-    const store = tx.objectStore("manualFundamentals")
-    store.put({ symbol, ...data, updatedAt: Date.now() })
-    tx.oncomplete = () => resolve()
-    tx.onerror    = () => reject(tx.error)
-  })
-}
- 
 function getManualFund(symbol) {
   return new Promise((resolve) => {
     const tx  = db.transaction("manualFundamentals", "readonly")
@@ -3950,7 +3933,6 @@ async function fetchNoiseAnalysis(positions, force=false){
   if(!force && cached && cached._key === cacheKey) return cached
   try{
     const goals      = loadGoals() || {}
-    const manualFunds = await getAllManualFunds()  /* NEW — include manual data */
     const r = await fetch("/api/fundamentals", {
       method:  "POST",
       headers: { "Content-Type":"application/json" },
@@ -3961,8 +3943,7 @@ async function fetchNoiseAnalysis(positions, force=false){
           totalCurrentEUR: p.totalCurrentEUR, totalBuyEUR: p.totalBuyEUR
         })),
         techMap:      window._techMap || {},
-        goals,
-        manualFunds   /* NEW */
+        goals
       })
     })
     if(!r.ok) return null
@@ -3991,7 +3972,6 @@ async function buildDynamicSellListHTMLAsync(){
   if(!hasCachedData){
     el.innerHTML = `<div class="dsl-loading"><span class="insights-spinner"></span> Analysing ${data.positions.length} positions — fetching fundamentals…</div>`
   }
-const manualFundsMap = await getAllManualFunds()
   /* Fetch fundamental analysis */
   const analysis = await fetchNoiseAnalysis(data.positions)
   recordDecisions(analysis, data.positions)
@@ -4081,28 +4061,6 @@ const manualFundsMap = await getAllManualFunds()
  
       /* ── Fundamentals grid ── */
       const f = a?.fundamentals
-      const raw = f ? (getFundCache()?.data?.results?.[
-        (()=>{ if(!p.key) return null; if(p.key.includes('-USD')) return null;
-               if(p.key.includes('.')) return p.key;
-               if(p.key==='SEMI') return 'CHIP.PA'; if(p.key==='EWG2') return 'EWG2.SG';
-               if(p.currency==='EUR'){ const t=(p.type||'').toLowerCase();
-                 return (t==='etf'||t==='commodity') ? p.key+'.L' : p.key }
-               return p.key+'.NS' })()
-      ]) : null
- 
-      const targetPrice   = raw?.targetMeanPrice
-      const currentPrice  = p.currentPrice || 0
-      const upside        = (targetPrice && currentPrice)
-        ? ((targetPrice - currentPrice) / currentPrice * 100).toFixed(0)
-        : null
-      const analystRec = _raw?.recommendationKey || null
-      const analystCount = _raw?.numberOfAnalystOpinions || null
-      const recColor = analystRec === "strong_buy" ? "var(--green)"
-                     : analystRec === "buy"         ? "var(--green)"
-                     : analystRec === "hold"        ? "var(--gold)"
-                     : analystRec === "sell"        ? "var(--red)"
-                     : "var(--muted)"
- 
       const _rawData = getFundCache()?.data?.results
       const ytKey = (()=>{
         if(!p.key) return null
