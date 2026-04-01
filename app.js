@@ -3465,64 +3465,85 @@ function renderGoalGapSection(goals, portfolio) {
  
 function renderMonthlyAllocator(goals, analysis, portfolio) {
   const el = document.getElementById("monthlyAllocatorSection")
-  if (!el || !analysis?.results) { if(el) el.innerHTML=""; return }
+  if (!el) return
  
   const monthly    = goals?.monthly || 600
   const gaps       = computeGoalGaps(goals, portfolio)
-  const eurINR     = 90  /* approx EUR/INR rate */
+  const eurINR     = 90  /* approx EUR/INR */
  
-  /* Only ADD verdicts */
-  const adds = Object.entries(analysis.results)
-    .filter(([, a]) => a?.verdict === "ADD")
-    .map(([key, a]) => {
-      const pos     = portfolio.find(p => p.key === key) || {}
-      const urgency = a.scores ? (a.signals?.goalAlign?.[0]?.includes("behind") ? 1.5 : 1.0) : 1.0
-      const priority = a.composite * urgency
-      return { key, a, pos, priority, urgency }
-    })
-    .sort((x, y) => y.priority - x.priority)
+  /* ── Scan ALL portfolio positions for ADD verdicts ── */
+  /* analysis.results covers noise (<€100) positions only.
+     For positions above €100, we generate a quick technical-only verdict
+     using window._techMap which covers all positions. */
+  const allAdds = []
  
-  if (!adds.length) {
-    el.innerHTML = `<div class="ma-section"><div class="ma-title">💰 Monthly Allocator</div>
-      <div class="ma-empty">No ADD signals currently. Park €${monthly} in IWDA (EUR) or Nifty 50 index fund (INR).</div></div>`
+  if (analysis?.results) {
+    /* Include ADD verdicts from noise analysis */
+    for (const [key, a] of Object.entries(analysis.results)) {
+      if (a?.verdict !== "ADD") continue
+      const pos = portfolio.find(p => p.key === key)
+      if (!pos) continue
+      allAdds.push({ key, composite: a.composite || 50, pos, fundScore: a.scores?.fundamental || 50 })
+    }
+  }
+ 
+  /* Also check larger positions (>€100) via techMap */
+  const techMap = window._techMap || {}
+  for (const pos of (portfolio || [])) {
+    if (pos.type === "MutualFund") continue
+    if (allAdds.find(a => a.key === pos.key)) continue  /* already included */
+    const tech = techMap[pos.key]
+    if (!tech) continue
+    const isBuy = tech.verdict === "BUY" || tech.verdict === "STRONG BUY"
+    if (!isBuy) continue
+    allAdds.push({ key: pos.key, composite: tech.score || 55, pos, fundScore: 50 })
+  }
+ 
+  if (!allAdds.length) {
+    el.innerHTML = `<div class="ma-section">
+      <div class="ma-title">💰 Monthly Allocation — €${monthly}</div>
+      <div class="ma-empty">No BUY signals currently. Park €${monthly} in IWDA (EUR) or Nifty 50 index MF (INR).</div>
+    </div>`
     return
   }
  
-  /* Split budget: INR vs EUR based on goal gap urgency */
-  let inrBudgetEUR = monthly * 0.6  /* default 60% INR, 40% EUR */
+  /* Sort by composite score */
+  allAdds.sort((a, b) => b.composite - a.composite)
+ 
+  /* ── Budget split based on goal urgency ── */
+  let inrBudgetEUR = monthly * 0.6
   let eurBudget    = monthly * 0.4
   if (gaps) {
     const homeUrgent   = !gaps.home.onTrack
     const retireUrgent = !gaps.retire.onTrack
-    if (homeUrgent && !retireUrgent)        { inrBudgetEUR = monthly * 0.75; eurBudget = monthly * 0.25 }
-    else if (!homeUrgent && retireUrgent)   { inrBudgetEUR = monthly * 0.40; eurBudget = monthly * 0.60 }
-    else if (homeUrgent && retireUrgent)    { inrBudgetEUR = monthly * 0.60; eurBudget = monthly * 0.40 }
+    if (homeUrgent && !retireUrgent)      { inrBudgetEUR = monthly * 0.70; eurBudget = monthly * 0.30 }
+    else if (!homeUrgent && retireUrgent) { inrBudgetEUR = monthly * 0.40; eurBudget = monthly * 0.60 }
   }
   const inrBudgetINR = inrBudgetEUR * eurINR
  
-  /* Allocate across top ADDs */
-  const inrAdds  = adds.filter(x => x.pos.currency === "INR").slice(0, 3)
-  const eurAdds  = adds.filter(x => x.pos.currency !== "INR").slice(0, 2)
-  const allocs   = []
+  const inrAdds = allAdds.filter(x => x.pos.currency === "INR").slice(0, 3)
+  const eurAdds = allAdds.filter(x => x.pos.currency !== "INR").slice(0, 2)
+  const allocs  = []
  
-  /* INR: weight by priority score */
-  const inrTotal = inrAdds.reduce((s, x) => s + x.priority, 0)
-  inrAdds.forEach(x => {
-    const share  = inrTotal > 0 ? x.priority / inrTotal : 1 / inrAdds.length
-    const rupees = Math.round(inrBudgetINR * share / 100) * 100  /* round to ₹100 */
+  /* INR: weight by composite score */
+  const inrTotal = inrAdds.reduce((s, x) => s + x.composite, 0)
+  for (const x of inrAdds) {
+    const share  = inrTotal > 0 ? x.composite / inrTotal : 1 / inrAdds.length
+    const rupees = Math.round(inrBudgetINR * share / 100) * 100
     const qty    = Math.max(1, Math.floor(rupees / (x.pos.currentPrice || 1)))
-    allocs.push({ ...x, amountINR: qty * (x.pos.currentPrice||1), amountEUR: null, qty, currency: "INR" })
-  })
+    const actual = qty * (x.pos.currentPrice || 1)
+    allocs.push({ ...x, amountINR: actual, amountEUR: null, qty, currency: "INR" })
+  }
  
-  /* EUR: equal split among top 2 */
-  const eurShare = eurAdds.length > 0 ? eurBudget / eurAdds.length : 0
-  eurAdds.forEach(x => {
-    allocs.push({ ...x, amountEUR: Math.round(eurShare), amountINR: null, qty: null, currency: "EUR" })
-  })
+  /* EUR: equal split */
+  const eurShare = eurAdds.length > 0 ? Math.floor(eurBudget / eurAdds.length) : 0
+  for (const x of eurAdds) {
+    allocs.push({ ...x, amountEUR: eurShare, amountINR: null, qty: null, currency: "EUR" })
+  }
  
-  /* Remaining budget */
-  const allocatedINR = allocs.filter(x=>x.currency==="INR").reduce((s,x)=>s+x.amountINR,0)
-  const allocatedEUR = allocs.filter(x=>x.currency!=="INR").reduce((s,x)=>s+x.amountEUR,0)
+  /* Remaining */
+  const allocatedINR = allocs.filter(x => x.currency === "INR").reduce((s, x) => s + x.amountINR, 0)
+  const allocatedEUR = allocs.filter(x => x.currency !== "INR").reduce((s, x) => s + x.amountEUR, 0)
   const remainINR    = Math.max(0, inrBudgetINR - allocatedINR)
   const remainEUR    = Math.max(0, eurBudget - allocatedEUR)
  
@@ -3530,33 +3551,38 @@ function renderMonthlyAllocator(goals, analysis, portfolio) {
     <div class="ma-row">
       <div class="ma-row-left">
         <span class="ma-ticker">${x.key}</span>
-        <span class="ma-composite">score ${x.a.composite}</span>
-        ${x.a.scores?.fundamental >= 70 ? `<span class="ma-quality">quality</span>` : ""}
+        <span class="ma-composite">score ${x.composite}</span>
+        ${x.fundScore >= 65 ? `<span class="ma-quality">strong fund</span>` : ""}
       </div>
       <div class="ma-row-right">
         ${x.currency === "INR"
           ? `<span class="ma-amount">₹${Math.round(x.amountINR).toLocaleString()}</span>
-             <span class="ma-detail">${x.qty} shares @ ₹${(x.pos.currentPrice||0).toFixed(0)}</span>`
-          : `<span class="ma-amount">€${x.amountEUR}</span>`
+             <span class="ma-detail">${x.qty} sh @ ₹${(x.pos.currentPrice||0).toFixed(0)}</span>`
+          : `<span class="ma-amount">€${x.amountEUR}</span>
+             <span class="ma-detail">${x.key}</span>`
         }
       </div>
     </div>`).join("")
+ 
+  const remainHTML = (remainINR > 500 || remainEUR > 20) ? `
+    <div class="ma-remain">
+      ${remainINR > 500 ? `₹${Math.round(remainINR).toLocaleString()} → Nifty 50 index fund` : ""}
+      ${remainEUR > 20  ? `€${Math.round(remainEUR)} → IWDA` : ""}
+    </div>` : ""
  
   el.innerHTML = `
   <div class="ma-section">
     <div class="ma-title">💰 Monthly Allocation — €${monthly} budget</div>
     <div class="ma-subtitle">
-      INR budget: ₹${Math.round(inrBudgetINR).toLocaleString()} · EUR budget: €${Math.round(eurBudget)}
-      ${gaps && !gaps.home.onTrack ? " · Home goal behind — INR weighted higher" : ""}
+      INR: ₹${Math.round(inrBudgetINR).toLocaleString()} · EUR: €${Math.round(eurBudget)}
+      ${gaps && !gaps.home.onTrack ? " · 🏠 home goal behind — INR weighted higher" : ""}
+      ${gaps && !gaps.retire.onTrack ? " · 🎯 retirement behind — EUR weighted higher" : ""}
     </div>
     <div class="ma-rows">${rows}</div>
-    ${remainINR > 500 || remainEUR > 20 ? `
-    <div class="ma-remain">
-      Unallocated: ${remainINR > 500 ? `₹${Math.round(remainINR).toLocaleString()} → park in Nifty 50 index fund` : ""}
-      ${remainEUR > 20 ? `€${Math.round(remainEUR)} → add to IWDA` : ""}
-    </div>` : ""}
+    ${remainHTML}
   </div>`
 }
+ 
  
  
 /* ════════════════════════════════════════════════════════════
@@ -4055,6 +4081,28 @@ const manualFundsMap = await getAllManualFunds()
  
       /* ── Fundamentals grid ── */
       const f = a?.fundamentals
+      const raw = f ? (getFundCache()?.data?.results?.[
+        (()=>{ if(!p.key) return null; if(p.key.includes('-USD')) return null;
+               if(p.key.includes('.')) return p.key;
+               if(p.key==='SEMI') return 'CHIP.PA'; if(p.key==='EWG2') return 'EWG2.SG';
+               if(p.currency==='EUR'){ const t=(p.type||'').toLowerCase();
+                 return (t==='etf'||t==='commodity') ? p.key+'.L' : p.key }
+               return p.key+'.NS' })()
+      ]) : null
+ 
+      const targetPrice   = raw?.targetMeanPrice
+      const currentPrice  = p.currentPrice || 0
+      const upside        = (targetPrice && currentPrice)
+        ? ((targetPrice - currentPrice) / currentPrice * 100).toFixed(0)
+        : null
+      const analystRec    = raw?.recommendationKey || null
+      const analystCount  = raw?.numberOfAnalystOpinions || null
+      const recColor = analystRec === "strong_buy" ? "var(--green)"
+                     : analystRec === "buy"         ? "var(--green)"
+                     : analystRec === "hold"        ? "var(--gold)"
+                     : analystRec === "sell"        ? "var(--red)"
+                     : "var(--muted)"
+ 
       const fundGrid = f ? `
         <div class="dsl2-fund-grid">
           <div class="dsl2-fund-cell">
@@ -4074,13 +4122,27 @@ const manualFundsMap = await getAllManualFunds()
             <span class="dsl2-fund-val">${f.de}</span>
           </div>
           <div class="dsl2-fund-cell">
-            <span class="dsl2-fund-label">Rev Growth</span>
+            <span class="dsl2-fund-label">Rev</span>
             <span class="dsl2-fund-val">${f.revGrow}</span>
           </div>
           <div class="dsl2-fund-cell">
-            <span class="dsl2-fund-label">Net Margin</span>
+            <span class="dsl2-fund-label">Margin</span>
             <span class="dsl2-fund-val">${f.margins}</span>
           </div>
+          ${upside !== null ? `
+          <div class="dsl2-fund-cell">
+            <span class="dsl2-fund-label">Target</span>
+            <span class="dsl2-fund-val" style="color:${parseInt(upside)>0?'var(--green)':'var(--red)'}">
+              ${p.currency==='INR'?'₹':'€'}${targetPrice?.toFixed(0)} (${upside>0?'+':''}${upside}%)
+            </span>
+          </div>` : ''}
+          ${analystRec ? `
+          <div class="dsl2-fund-cell">
+            <span class="dsl2-fund-label">Analyst</span>
+            <span class="dsl2-fund-val" style="color:${recColor};font-size:10px">
+              ${analystRec.replace('_',' ')}${analystCount?` (${analystCount})`: ''}
+            </span>
+          </div>` : ''}
           ${f.sector && f.sector !== "N/A" ? `
           <div class="dsl2-fund-cell dsl2-fund-sector">
             <span class="dsl2-fund-label">Sector</span>
