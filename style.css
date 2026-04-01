@@ -2154,7 +2154,7 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
 .dsl2-fund-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 3px 6px;
+  gap: 3px 5px;
 }
 .dsl2-fund-cell {
   display: flex; flex-direction: column; gap: 1px;
@@ -2163,9 +2163,7 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
   border-radius: 3px;
   border: 1px solid rgba(26,45,80,0.25);
 }
-.dsl2-fund-sector {
-  grid-column: span 4;
-}
+.dsl2-fund-sector { grid-column: span 4; }
 .dsl2-fund-label {
   font-size: 8.5px; color: var(--muted);
   text-transform: uppercase; letter-spacing: 0.4px;
