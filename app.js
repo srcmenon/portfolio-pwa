@@ -4103,7 +4103,6 @@ const manualFundsMap = await getAllManualFunds()
                      : analystRec === "sell"        ? "var(--red)"
                      : "var(--muted)"
  
-const f = a?.fundamentals
       const rawData = getFundCache()?.data?.results
       const ytKey = (()=>{
         if(!p.key) return null
