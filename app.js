@@ -4080,7 +4080,7 @@ const f = a?.fundamentals
           <div class="dsl2-fund-cell"><span class="dsl2-fund-label">Rev</span><span class="dsl2-fund-val">${f.revGrow}</span></div>
           <div class="dsl2-fund-cell"><span class="dsl2-fund-label">Margin</span><span class="dsl2-fund-val">${f.margins}</span></div>
           ${upside!==null?`<div class="dsl2-fund-cell"><span class="dsl2-fund-label">Upside</span><span class="dsl2-fund-val" style="color:${parseInt(upside)>=0?'var(--green)':'var(--red)'}">${upside>0?'+':''}${upside}%</span></div>`:''}
-          ${analystRec?`<div class="dsl2-fund-cell"><span class="dsl2-fund-label">Analyst</span><span class="dsl2-fund-val" style="color:${recColor};font-size:10px">${analystRec.replace('_',' ')}${analystCount?` (${analystCount})`:''}</span></div>`:''}
+          ${analystRec&&analystRec!=="none"?`<div class="dsl2-fund-cell"><span class="dsl2-fund-label">Analyst</span><span class="dsl2-fund-val" style="color:${recColor};font-size:10px">${analystRec.replace('_',' ')}${analystCount?` (${analystCount})`:''}</span></div>`:''}
           ${f.sector&&f.sector!=="N/A"?`<div class="dsl2-fund-cell dsl2-fund-sector"><span class="dsl2-fund-label">Sector</span><span class="dsl2-fund-val dsl2-sector-val">${f.sector}</span></div>`:''}
         </div>` : ""
  
