@@ -4061,7 +4061,7 @@ async function buildDynamicSellListHTMLAsync(){
  
       /* ── Fundamentals grid ── */
       const f = a?.fundamentals
-      const _rawData = getFundCache()?.data?.results
+      const _rawData = getFundCache()?.results
       const ytKey = (()=>{
         if(!p.key) return null
         if(p.key.includes('-USD')) return null
