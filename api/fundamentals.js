@@ -173,7 +173,7 @@ function scoreFundamentals(f) {
 
   return {
     score, grade, signals: sigs.slice(0, 4), hasData: true,
-    display: {
+   display: {
       pe:      fmt(f.trailingPE, 1, 1, "x"),
       pb:      fmt(f.priceToBook, 1, 1, "x"),
       roe:     fmt(f.roe, 100, 1, "%"),
@@ -183,6 +183,9 @@ function scoreFundamentals(f) {
       margins: !financial ? fmt(f.profitMargins, 100, 1, "%") : "N/A (bank)",
       sector:  f.sector || f.industry || "N/A",
       grade,
+      targetMeanPrice:         f.targetMeanPrice         || null,
+      recommendationKey:       f.recommendationKey       || null,
+      numberOfAnalystOpinions: f.numberOfAnalystOpinions || null,
     }
   }
 }
