@@ -165,6 +165,33 @@ function scoreFundamentals(f) {
     else             { score -= 16; sigs.push("Profit declining sharply") }
   }
 
+  /* ── Analyst consensus — strong signal, weighted heavily ── */
+  if (f.recommendationKey && f.recommendationKey !== "none") {
+    fields++
+    const rec = f.recommendationKey
+    const n   = f.numberOfAnalystOpinions || 1
+    /* More analysts = more weight, capped at 2x */
+    const weight = Math.min(2, 1 + (n - 1) / 20)
+    if      (rec === "strong_buy")  { score += Math.round(18 * weight); sigs.push(`${n} analysts: strong buy`) }
+    else if (rec === "buy")         { score += Math.round(12 * weight); sigs.push(`${n} analysts: buy`) }
+    else if (rec === "hold")        { score += 2 }
+    else if (rec === "underperform"){ score -= Math.round(8  * weight); sigs.push(`Analysts: underperform`) }
+    else if (rec === "sell")        { score -= Math.round(14 * weight); sigs.push(`${n} analysts: sell`) }
+  }
+
+  /* ── Analyst upside — target vs current price ── */
+  if (f.targetMeanPrice && f.targetMeanPrice > 0) {
+    fields++
+    /* upside stored as raw price — compute % if currentPrice available */
+    const upsidePct = f.upsidePct  /* pre-computed in fetchOracleBatch if available */
+    if (upsidePct != null) {
+      if      (upsidePct > 25) { score += 10; sigs.push(`Analyst target +${upsidePct.toFixed(0)}% upside`) }
+      else if (upsidePct > 10) { score += 5 }
+      else if (upsidePct > 0)  { score += 2 }
+      else if (upsidePct < -10){ score -= 8;  sigs.push(`Analyst target ${upsidePct.toFixed(0)}% downside`) }
+    }
+  }
+
   if (fields === 0) return { score: 50, signals: [], grade: "UNKNOWN", hasData: false, display: null }
 
   score = Math.max(0, Math.min(100, Math.round(score)))
@@ -173,7 +200,7 @@ function scoreFundamentals(f) {
 
   return {
     score, grade, signals: sigs.slice(0, 4), hasData: true,
-   display: {
+    display: {
       pe:      fmt(f.trailingPE, 1, 1, "x"),
       pb:      fmt(f.priceToBook, 1, 1, "x"),
       roe:     fmt(f.roe, 100, 1, "%"),
@@ -186,6 +213,7 @@ function scoreFundamentals(f) {
       targetMeanPrice:         f.targetMeanPrice         || null,
       recommendationKey:       f.recommendationKey       || null,
       numberOfAnalystOpinions: f.numberOfAnalystOpinions || null,
+      upsidePct:               f.upsidePct               || null,
     }
   }
 }
@@ -361,7 +389,13 @@ export default async function handler(req, res) {
   const results = {}
   for (const pos of eligible) {
     const yt   = keyToYahoo[pos.key]
-    const raw  = yt ? (oracleData[yt] || null) : null
+    const rawOracle = yt ? (oracleData[yt] || null) : null
+    const raw = rawOracle ? {
+      ...rawOracle,
+      upsidePct: (rawOracle.targetMeanPrice && pos.currentPrice)
+        ? ((rawOracle.targetMeanPrice - pos.currentPrice) / pos.currentPrice * 100)
+        : null
+    } : null
     const fund = scoreFundamentals(raw)
     const tech = techMap?.[pos.key] || {}
     const goal = scoreGoalAlignment(pos, goals || {})
