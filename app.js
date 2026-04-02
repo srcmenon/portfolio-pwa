@@ -4061,26 +4061,9 @@ async function buildDynamicSellListHTMLAsync(){
  
       /* ── Fundamentals grid ── */
       const f = a?.fundamentals
-      const _rawData = getFundCache()?.results
-      const ytKey = (()=>{
-        if(!p.key) return null
-        if(p.key.includes('-USD')) return null
-        if(p.key.includes('.')) return p.key
-        if(p.key==='SEMI') return 'CHIP.PA'
-        if(p.key==='EWG2') return 'EWG2.SG'
-        if(p.currency==='EUR'){
-          const t=(p.type||'').toLowerCase()
-          return (t==='etf'||t==='commodity') ? p.key+'.L' : p.key
-        }
-        return p.key+'.NS'
-      })()
-      const _raw = _rawData?.[p.key]
-      const targetPrice = _raw?.targetMeanPrice
-      const upside = (targetPrice && p.currentPrice)
-        ? ((targetPrice - p.currentPrice) / p.currentPrice * 100).toFixed(0)
-        : null
-      const analystRec = _raw?.recommendationKey || null
-      const analystCount = _raw?.numberOfAnalystOpinions || null
+const targetPrice  = f?.targetMeanPrice         || null
+const analystRec   = f?.recommendationKey       || null
+const analystCount = f?.numberOfAnalystOpinions || null
       const recColor = analystRec==="strong_buy"||analystRec==="buy" ? "var(--green)"
                      : analystRec==="sell"||analystRec==="strong_sell" ? "var(--red)"
                      : "var(--gold)"
