@@ -4060,6 +4060,7 @@ async function buildDynamicSellListHTMLAsync(){
         </div>` : ""
  
       /* ── Fundamentals grid ── */
+
 const f = a?.fundamentals
       const targetPrice  = f?.targetMeanPrice         || null
       const analystRec   = f?.recommendationKey       || null
@@ -4067,21 +4068,84 @@ const f = a?.fundamentals
       const upside       = (targetPrice && p.currentPrice)
         ? ((targetPrice - p.currentPrice) / p.currentPrice * 100).toFixed(0)
         : null
-      const recColor = analystRec==="strong_buy"||analystRec==="buy" ? "var(--green)"
-                     : analystRec==="sell"||analystRec==="strong_sell" ? "var(--red)"
-                     : "var(--gold)"
+
+      /* Color each metric value based on what's good/bad */
+      const peVal   = parseFloat(f?.pe)
+      const pbVal   = parseFloat(f?.pb)
+      const roeVal  = parseFloat(f?.roe)
+      const deVal   = parseFloat(f?.de)
+      const revVal  = parseFloat(f?.revGrow)
+      const marVal  = parseFloat(f?.margins)
+
+      const peColor  = !isNaN(peVal)  ? (peVal<20?"var(--green)":peVal<40?"var(--gold)":"var(--red)")   : "var(--muted)"
+      const pbColor  = !isNaN(pbVal)  ? (pbVal<2?"var(--green)":pbVal<5?"var(--gold)":"var(--red)")     : "var(--muted)"
+      const roeColor = !isNaN(roeVal) ? (roeVal>15?"var(--green)":roeVal>8?"var(--gold)":"var(--red)")  : "var(--muted)"
+      const deColor  = !isNaN(deVal)  ? (deVal<50?"var(--green)":deVal<120?"var(--gold)":"var(--red)")  : "var(--muted)"
+      const revColor = !isNaN(revVal) ? (revVal>10?"var(--green)":revVal>0?"var(--gold)":"var(--red)")  : "var(--muted)"
+      const marColor = !isNaN(marVal) ? (marVal>15?"var(--green)":marVal>5?"var(--gold)":"var(--red)")  : "var(--muted)"
+      const upColor  = upside!==null  ? (parseInt(upside)>10?"var(--green)":parseInt(upside)>0?"var(--gold)":"var(--red)") : "var(--muted)"
+
+      /* Analyst badge */
+      const showAnalyst = analystRec && analystRec !== "none"
+      const analystColor = analystRec==="strong_buy"||analystRec==="buy" ? "var(--green)"
+                         : analystRec==="sell"||analystRec==="strong_sell" ? "var(--red)"
+                         : "var(--gold)"
+      const analystLabel = analystRec ? analystRec.replace(/_/g," ") : ""
+
+      /* Tooltip definitions */
+      const tips = {
+        pe:      "P/E Ratio: Price ÷ Earnings. Lower = cheaper. <20 good, >40 expensive.",
+        pb:      "P/B Ratio: Price ÷ Book Value. <1.5 = trading near assets. >5 = premium.",
+        roe:     "Return on Equity: profit as % of shareholder funds. >15% = strong business.",
+        de:      "Debt/Equity: how much debt vs equity. <50% = low risk. >150% = high leverage.",
+        rev:     "Revenue Growth YoY: how fast sales are growing. >10% = healthy growth.",
+        margins: "Net Profit Margin: % of revenue kept as profit. >15% = efficient business.",
+        upside:  `Analyst Target: avg price target from ${analystCount||"?"} analysts vs current price.`,
+        analyst: `Analyst consensus from ${analystCount||"?"} analysts. Strong buy = high conviction.`,
+        sector:  "Industry sector this company operates in."
+      }
 
       const fundGrid = f ? `
         <div class="dsl2-fund-grid">
-          <div class="dsl2-fund-cell"><span class="dsl2-fund-label">P/E</span><span class="dsl2-fund-val">${f.pe}</span></div>
-          <div class="dsl2-fund-cell"><span class="dsl2-fund-label">P/B</span><span class="dsl2-fund-val">${f.pb}</span></div>
-          <div class="dsl2-fund-cell"><span class="dsl2-fund-label">ROE</span><span class="dsl2-fund-val">${f.roe}</span></div>
-          <div class="dsl2-fund-cell"><span class="dsl2-fund-label">D/E</span><span class="dsl2-fund-val">${f.de}</span></div>
-          <div class="dsl2-fund-cell"><span class="dsl2-fund-label">Rev</span><span class="dsl2-fund-val">${f.revGrow}</span></div>
-          <div class="dsl2-fund-cell"><span class="dsl2-fund-label">Margin</span><span class="dsl2-fund-val">${f.margins}</span></div>
-          ${upside!==null?`<div class="dsl2-fund-cell"><span class="dsl2-fund-label">Upside</span><span class="dsl2-fund-val" style="color:${parseInt(upside)>=0?'var(--green)':'var(--red)'}">${upside>0?'+':''}${upside}%</span></div>`:''}
-          ${analystRec&&analystRec!=="none"?`<div class="dsl2-fund-cell"><span class="dsl2-fund-label">Analyst</span><span class="dsl2-fund-val" style="color:${recColor};font-size:10px">${analystRec.replace('_',' ')}${analystCount?` (${analystCount})`:''}</span></div>`:''}
-          ${f.sector&&f.sector!=="N/A"?`<div class="dsl2-fund-cell dsl2-fund-sector"><span class="dsl2-fund-label">Sector</span><span class="dsl2-fund-val dsl2-sector-val">${f.sector}</span></div>`:''}
+          <div class="dsl2-fund-cell" title="${tips.pe}">
+            <span class="dsl2-fund-label">P/E ⓘ</span>
+            <span class="dsl2-fund-val" style="color:${peColor}">${f.pe}</span>
+          </div>
+          <div class="dsl2-fund-cell" title="${tips.pb}">
+            <span class="dsl2-fund-label">P/B ⓘ</span>
+            <span class="dsl2-fund-val" style="color:${pbColor}">${f.pb}</span>
+          </div>
+          <div class="dsl2-fund-cell" title="${tips.roe}">
+            <span class="dsl2-fund-label">ROE ⓘ</span>
+            <span class="dsl2-fund-val" style="color:${roeColor}">${f.roe}</span>
+          </div>
+          <div class="dsl2-fund-cell" title="${tips.de}">
+            <span class="dsl2-fund-label">D/E ⓘ</span>
+            <span class="dsl2-fund-val" style="color:${deColor}">${f.de}</span>
+          </div>
+          <div class="dsl2-fund-cell" title="${tips.rev}">
+            <span class="dsl2-fund-label">Rev Growth ⓘ</span>
+            <span class="dsl2-fund-val" style="color:${revColor}">${f.revGrow}</span>
+          </div>
+          <div class="dsl2-fund-cell" title="${tips.margins}">
+            <span class="dsl2-fund-label">Net Margin ⓘ</span>
+            <span class="dsl2-fund-val" style="color:${marColor}">${f.margins}</span>
+          </div>
+          ${upside!==null ? `
+          <div class="dsl2-fund-cell" title="${tips.upside}">
+            <span class="dsl2-fund-label">Analyst Target ⓘ</span>
+            <span class="dsl2-fund-val" style="color:${upColor};font-weight:700">${parseInt(upside)>0?"+":""}${upside}% upside</span>
+          </div>` : ""}
+          ${showAnalyst ? `
+          <div class="dsl2-fund-cell" title="${tips.analyst}">
+            <span class="dsl2-fund-label">Consensus ⓘ</span>
+            <span class="dsl2-fund-val" style="color:${analystColor};font-weight:700;text-transform:capitalize">${analystLabel}${analystCount?" ("+analystCount+")":""}</span>
+          </div>` : ""}
+          ${f.sector&&f.sector!=="N/A" ? `
+          <div class="dsl2-fund-cell dsl2-fund-sector" title="${tips.sector}">
+            <span class="dsl2-fund-label">Sector</span>
+            <span class="dsl2-fund-val dsl2-sector-val">${f.sector}</span>
+          </div>` : ""}
         </div>` : ""
  
       /* ── Signals ── */
