@@ -4074,7 +4074,7 @@ async function buildDynamicSellListHTMLAsync(){
         }
         return p.key+'.NS'
       })()
-      const _raw = _rawData?.[ytKey]
+      const _raw = _rawData?.[p.key]
       const targetPrice = _raw?.targetMeanPrice
       const upside = (targetPrice && p.currentPrice)
         ? ((targetPrice - p.currentPrice) / p.currentPrice * 100).toFixed(0)
