@@ -4067,7 +4067,12 @@ const analystCount = f?.numberOfAnalystOpinions || null
       const recColor = analystRec==="strong_buy"||analystRec==="buy" ? "var(--green)"
                      : analystRec==="sell"||analystRec==="strong_sell" ? "var(--red)"
                      : "var(--gold)"
-
+const targetPrice  = f?.targetMeanPrice         || null
+const analystRec   = f?.recommendationKey       || null
+const analystCount = f?.numberOfAnalystOpinions || null
+const upside       = (targetPrice && p.currentPrice)
+  ? ((targetPrice - p.currentPrice) / p.currentPrice * 100).toFixed(0)
+  : null
       const fundGrid = f ? `
         <div class="dsl2-fund-grid">
           <div class="dsl2-fund-cell"><span class="dsl2-fund-label">P/E</span><span class="dsl2-fund-val">${f.pe}</span></div>
