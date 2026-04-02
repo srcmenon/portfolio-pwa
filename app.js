@@ -4062,12 +4062,10 @@ async function buildDynamicSellListHTMLAsync(){
       /* ── Fundamentals grid ── */
 
 const f = a?.fundamentals
-      const targetPrice  = f?.targetMeanPrice         || null
+      const targetPrice  = f?.targetMeanPrice || null
       const analystRec   = f?.recommendationKey       || null
       const analystCount = f?.numberOfAnalystOpinions || null
-      const upside       = (targetPrice && p.currentPrice)
-        ? ((targetPrice - p.currentPrice) / p.currentPrice * 100).toFixed(0)
-        : null
+      const upside = f?.upsidePct != null ? f.upsidePct.toFixed(0) : null
 
       /* Color each metric value based on what's good/bad */
       const peVal   = parseFloat(f?.pe)
