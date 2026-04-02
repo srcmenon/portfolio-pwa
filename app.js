@@ -4061,9 +4061,6 @@ async function buildDynamicSellListHTMLAsync(){
  
       /* ── Fundamentals grid ── */
       const f = a?.fundamentals
-const targetPrice  = f?.targetMeanPrice         || null
-const analystRec   = f?.recommendationKey       || null
-const analystCount = f?.numberOfAnalystOpinions || null
       const recColor = analystRec==="strong_buy"||analystRec==="buy" ? "var(--green)"
                      : analystRec==="sell"||analystRec==="strong_sell" ? "var(--red)"
                      : "var(--gold)"
