@@ -1,15 +1,11 @@
 /* ============================================================
    CapIntel — api/fundamentals.js  (Vercel Serverless)
 
-   Scoring weights (long-term investor profile):
-     Technical:   25%  (short-term signal, less weight for 4-14yr goals)
-     Fundamental: 50%  (primary signal for quality)
-     Goal:        25%  (gap-urgency aware)
-
-   Sector-aware scoring:
-     - Financial (banks/NBFC): D/E penalty halved, margin scoring skipped
-     - Cyclicals (steel/metals/energy): PE thresholds adjusted
-     - STCG tax status factored into EXIT verdicts
+   Fixes in this version:
+   1. Goal alignment uses PORTFOLIO TOTALS not per-position value
+   2. Concentration risk — tiered warning, not hard block
+   3. Analyst consensus included in fundamental score
+   4. Per-position size penalty removed from goal alignment
    ============================================================ */
 
 function toYahooTicker(key, currency, type) {
@@ -63,6 +59,7 @@ async function fetchOracleBatch(tickers) {
   }
 }
 
+/* ── Fundamental scorer (0–100) — sector-aware + analyst-aware ── */
 function scoreFundamentals(f) {
   if (!f) return { score: 50, signals: [], grade: "UNKNOWN", hasData: false, display: null }
 
@@ -165,31 +162,27 @@ function scoreFundamentals(f) {
     else             { score -= 16; sigs.push("Profit declining sharply") }
   }
 
-  /* ── Analyst consensus — strong signal, weighted heavily ── */
+  /* Analyst consensus — weighted by number of analysts */
   if (f.recommendationKey && f.recommendationKey !== "none") {
     fields++
-    const rec = f.recommendationKey
-    const n   = f.numberOfAnalystOpinions || 1
-    /* More analysts = more weight, capped at 2x */
+    const rec    = f.recommendationKey
+    const n      = f.numberOfAnalystOpinions || 1
     const weight = Math.min(2, 1 + (n - 1) / 20)
-    if      (rec === "strong_buy")  { score += Math.round(18 * weight); sigs.push(`${n} analysts: strong buy`) }
-    else if (rec === "buy")         { score += Math.round(12 * weight); sigs.push(`${n} analysts: buy`) }
-    else if (rec === "hold")        { score += 2 }
-    else if (rec === "underperform"){ score -= Math.round(8  * weight); sigs.push(`Analysts: underperform`) }
-    else if (rec === "sell")        { score -= Math.round(14 * weight); sigs.push(`${n} analysts: sell`) }
+    if      (rec === "strong_buy")   { score += Math.round(18 * weight); sigs.push(`${n} analysts: strong buy`) }
+    else if (rec === "buy")          { score += Math.round(12 * weight); sigs.push(`${n} analysts: buy`) }
+    else if (rec === "hold")         { score += 2 }
+    else if (rec === "underperform") { score -= Math.round(8  * weight); sigs.push("Analysts: underperform") }
+    else if (rec === "sell")         { score -= Math.round(14 * weight); sigs.push(`${n} analysts: sell`) }
   }
 
-  /* ── Analyst upside — target vs current price ── */
-  if (f.targetMeanPrice && f.targetMeanPrice > 0) {
+  /* Analyst upside — target price vs current */
+  if (f.upsidePct != null) {
     fields++
-    /* upside stored as raw price — compute % if currentPrice available */
-    const upsidePct = f.upsidePct  /* pre-computed in fetchOracleBatch if available */
-    if (upsidePct != null) {
-      if      (upsidePct > 25) { score += 10; sigs.push(`Analyst target +${upsidePct.toFixed(0)}% upside`) }
-      else if (upsidePct > 10) { score += 5 }
-      else if (upsidePct > 0)  { score += 2 }
-      else if (upsidePct < -10){ score -= 8;  sigs.push(`Analyst target ${upsidePct.toFixed(0)}% downside`) }
-    }
+    const u = f.upsidePct
+    if      (u > 25) { score += 10; sigs.push(`Analyst target +${u.toFixed(0)}% upside`) }
+    else if (u > 10) { score += 5 }
+    else if (u > 0)  { score += 2 }
+    else if (u < -10){ score -= 8;  sigs.push(`Analyst target ${u.toFixed(0)}% downside`) }
   }
 
   if (fields === 0) return { score: 50, signals: [], grade: "UNKNOWN", hasData: false, display: null }
@@ -218,18 +211,19 @@ function scoreFundamentals(f) {
   }
 }
 
-/* ── Goal gap urgency (0.8–1.8 multiplier) ── */
-function goalGapUrgency(pos, goals) {
-  const g = goals || {}
+/* ── FIX 1: Goal gap urgency using PORTFOLIO TOTALS ── */
+function goalGapUrgency(pos, goals, portfolioTotals) {
+  const g  = goals || {}
+  const pt = portfolioTotals || {}
   const now = new Date()
 
   if (pos.currency === "INR") {
-    const homeTargetINR = (g.homeBudget || 80) * 100000
-    const monthsLeft    = Math.max(1, ((g.homeYear || 2030) - now.getFullYear()) * 12)
-    const totalMonths   = 168  /* 14yr reference horizon */
-    const timeElapsed   = 1 - (monthsLeft / totalMonths)
-    /* Sum all INR positions to estimate total home fund */
-    const fundedPct     = (pos.totalCurrentLocal || 0) / homeTargetINR
+    const homeTargetINR  = (g.homeBudget || 80) * 100000
+    const monthsLeft     = Math.max(1, ((g.homeYear || 2030) - now.getFullYear()) * 12)
+    const timeElapsed    = 1 - (monthsLeft / 168)
+    /* Use TOTAL Indian equity — not this single position */
+    const totalIndianINR = pt.totalIndianINR || (pos.totalCurrentLocal || 0)
+    const fundedPct      = totalIndianINR / homeTargetINR
     if      (fundedPct < timeElapsed * 0.5) return 1.8
     else if (fundedPct < timeElapsed * 0.8) return 1.4
     else if (fundedPct < timeElapsed)       return 1.1
@@ -237,21 +231,21 @@ function goalGapUrgency(pos, goals) {
   }
 
   const corpusTarget = g.corpus || 270000
-  const retireAge    = g.retireAge || 50
-  const currentAge   = 36
-  const yearsLeft    = Math.max(1, retireAge - currentAge)
+  const yearsLeft    = Math.max(1, (g.retireAge || 50) - 36)
   const timeElapsed2 = 1 - (yearsLeft / 14)
-  const fundedPct2   = (pos.totalCurrentEUR || 0) / corpusTarget
+  /* Use TOTAL EUR equity — not this single position */
+  const totalEUR     = pt.totalEUR || (pos.totalCurrentEUR || 0)
+  const fundedPct2   = totalEUR / corpusTarget
   if      (fundedPct2 < timeElapsed2 * 0.5) return 1.8
   else if (fundedPct2 < timeElapsed2 * 0.8) return 1.4
   else if (fundedPct2 < timeElapsed2)       return 1.1
   else                                       return 0.9
 }
 
-/* ── Goal alignment scorer (0–100) ── */
-function scoreGoalAlignment(pos, goals) {
+/* ── Goal alignment scorer — NO per-position size penalty ── */
+function scoreGoalAlignment(pos, goals, portfolioTotals) {
   let score = 50; const sigs = []
-  const urgency = goalGapUrgency(pos, goals)
+  const urgency = goalGapUrgency(pos, goals, portfolioTotals)
 
   if (pos.currency === "INR") {
     score += Math.round(15 * urgency)
@@ -267,10 +261,9 @@ function scoreGoalAlignment(pos, goals) {
     else                     sigs.push("EUR/USD — retirement on track")
   }
 
-  const eur = pos.totalCurrentEUR || 0
-  if      (eur < 30)  { score -= 20; sigs.push("Under €30 — negligible") }
-  else if (eur < 100) { score -= 8;  sigs.push("Under €100 — underfunded") }
-  else if (eur > 500) { score += 5;  sigs.push(`€${eur.toFixed(0)} — meaningful position`) }
+  /* NOTE: Per-position size penalty (€<30, €<100) deliberately removed.
+     All Indian positions contribute equally to home goal regardless of size.
+     Position size is handled by the monthly allocator, not goal alignment. */
 
   return {
     score:   Math.max(0, Math.min(100, Math.round(score))),
@@ -279,8 +272,39 @@ function scoreGoalAlignment(pos, goals) {
   }
 }
 
+/* ── FIX 2: Concentration risk — tiered, not hard block ── */
+function applyConcentrationRisk(verdict, priority, reasoning, action, fundScore, analystRec, sector, sectorMap) {
+  if (verdict !== "ADD") return { verdict, priority, reasoning, action }
+  const sectorPct = sectorMap[sector] || 0
+
+  if (sectorPct >= 25 && sectorPct < 35) {
+    reasoning = reasoning + ` (${sector} at ${sectorPct.toFixed(0)}% — monitor concentration)`
+    return { verdict, priority, reasoning, action }
+  }
+  if (sectorPct >= 35 && sectorPct < 45) {
+    reasoning = reasoning + ` ⚠ ${sector} already ${sectorPct.toFixed(0)}% of portfolio`
+    action = action + ` Note: high ${sector} concentration.`
+    return { verdict, priority, reasoning, action }
+  }
+  if (sectorPct >= 45) {
+    const analystBuy = analystRec === "strong_buy" || analystRec === "buy"
+    if (fundScore >= 75 && analystBuy) {
+      reasoning = `High conviction ADD despite ${sector} at ${sectorPct.toFixed(0)}% — strong fundamentals + analyst buy`
+      action = action + ` ⚠ Sector at ${sectorPct.toFixed(0)}% — high conviction only.`
+      return { verdict, priority, reasoning, action }
+    }
+    return {
+      verdict:   "HOLD",
+      priority:  "LOW",
+      reasoning: `${sector} already ${sectorPct.toFixed(0)}% of portfolio — concentration risk. Need fundScore ≥75 + analyst buy to add more.`,
+      action:    `Hold. Diversify before adding more ${sector} exposure.`
+    }
+  }
+  return { verdict, priority, reasoning, action }
+}
+
 /* ── Verdict — Tech 25% / Fund 50% / Goal 25% ── */
-function getVerdict(techScore, techVerdict, fundScore, fundHasData, goalScore, pos, urgency) {
+function getVerdict(techScore, techVerdict, fundScore, fundHasData, goalScore, pos, urgency, sectorMap) {
   const composite = fundHasData
     ? Math.round(techScore * 0.25 + fundScore * 0.50 + goalScore * 0.25)
     : Math.round(techScore * 0.40 + goalScore * 0.60)
@@ -296,7 +320,7 @@ function getVerdict(techScore, techVerdict, fundScore, fundHasData, goalScore, p
       if (isSTCG && fundScore >= 20) {
         verdict="REVIEW"; priority="MEDIUM"
         reasoning="Weak fundamentals — but STCG applies, hold until LTCG conversion"
-        action=`Hold until 1yr from buy date to save ~20% STCG tax. Reassess on next earnings.`
+        action="Hold until 1yr from buy date to save ~20% STCG tax. Reassess on next earnings."
       } else {
         verdict="EXIT"; priority="HIGH"
         reasoning="Poor fundamentals — exit"
@@ -359,6 +383,19 @@ function getVerdict(techScore, techVerdict, fundScore, fundHasData, goalScore, p
     }
   }
 
+  /* Apply concentration risk check */
+  if (verdict === "ADD" && sectorMap) {
+    const adjusted = applyConcentrationRisk(
+      verdict, priority, reasoning, action,
+      fundScore, pos.analystRec || null,
+      pos.sector || "Unknown", sectorMap
+    )
+    verdict   = adjusted.verdict
+    priority  = adjusted.priority
+    reasoning = adjusted.reasoning
+    action    = adjusted.action
+  }
+
   return { verdict, action, priority, composite, reasoning }
 }
 
@@ -377,6 +414,15 @@ export default async function handler(req, res) {
     p.type !== "MutualFund" && !(p.key||"").includes("-USD")
   )
 
+  /* ── Compute portfolio totals for goal alignment ── */
+  const totalIndianINR = positions
+    .filter(p => p.currency === "INR")
+    .reduce((s, p) => s + (p.totalCurrentLocal || 0), 0)
+  const totalEUR = positions
+    .filter(p => p.currency !== "INR" && p.type !== "MutualFund")
+    .reduce((s, p) => s + (p.totalCurrentEUR || 0), 0)
+  const portfolioTotals = { totalIndianINR, totalEUR }
+
   const keyToYahoo = {}
   for (const pos of eligible) {
     const yt = toYahooTicker(pos.key, pos.currency, pos.type)
@@ -386,23 +432,44 @@ export default async function handler(req, res) {
   const uniqueTickers = [...new Set(Object.values(keyToYahoo))]
   const oracleData    = uniqueTickers.length ? await fetchOracleBatch(uniqueTickers) : {}
 
+  /* ── Compute sector concentration map ── */
+  const totalPortfolioEUR = positions.reduce((s, p) => s + (p.totalCurrentEUR || 0), 0)
+  const sectorMap = {}
+  for (const pos of eligible) {
+    const yt     = keyToYahoo[pos.key]
+    const raw    = yt ? (oracleData[yt] || null) : null
+    const sector = raw?.sector || raw?.industry || "Unknown"
+    sectorMap[sector] = (sectorMap[sector] || 0) +
+      ((pos.totalCurrentEUR || 0) / (totalPortfolioEUR || 1) * 100)
+  }
+  console.log("[sectors]", JSON.stringify(sectorMap))
+
   const results = {}
   for (const pos of eligible) {
-    const yt   = keyToYahoo[pos.key]
+    const yt        = keyToYahoo[pos.key]
     const rawOracle = yt ? (oracleData[yt] || null) : null
-    const raw = rawOracle ? {
+    const raw       = rawOracle ? {
       ...rawOracle,
       upsidePct: (rawOracle.targetMeanPrice && pos.currentPrice)
         ? ((rawOracle.targetMeanPrice - pos.currentPrice) / pos.currentPrice * 100)
         : null
     } : null
+
     const fund = scoreFundamentals(raw)
     const tech = techMap?.[pos.key] || {}
-    const goal = scoreGoalAlignment(pos, goals || {})
-    const out  = getVerdict(
+    const goal = scoreGoalAlignment(pos, goals || {}, portfolioTotals)
+
+    const posEnriched = {
+      ...pos,
+      sector:     raw?.sector || raw?.industry || "Unknown",
+      analystRec: raw?.recommendationKey || null
+    }
+
+    const out = getVerdict(
       tech.score ?? 50, tech.verdict ?? "HOLD",
       fund.score, fund.hasData,
-      goal.score, pos, goal.urgency
+      goal.score, posEnriched, goal.urgency,
+      sectorMap
     )
 
     results[pos.key] = {
