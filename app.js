@@ -606,7 +606,7 @@ function renderPortfolioTable(portfolio){
     row.innerHTML = `
       <td>
         <span class="toggleBtn" data-target="${groupId}">▶</span>
-        <span class="asset-name">${displayName}</span>
+        <span class="asset-name adp-trigger" onclick="openDetailPanel('${pos.key}')">${displayName}</span>
         ${showTicker ? `<span class="asset-sub">${pos.key}</span>` : ""}
       </td>
       <td class="num">${pos.qty.toFixed(3)}</td>
@@ -5329,7 +5329,459 @@ function applyAdvisorResults(data){
     }
   })
 }
-
+/* ── ASSET DETAIL PANEL ──────────────────────────────────── */
+ 
+let _detailPanelPos = null  /* currently displayed position */
+ 
+function openDetailPanel(posKey) {
+  const pos = lastPortfolio.find(p => p.key === posKey)
+  if (!pos) return
+ 
+  _detailPanelPos = pos
+  const panel = document.getElementById("assetDetailPanel")
+  const overlay = document.getElementById("assetDetailOverlay")
+  if (!panel || !overlay) return
+ 
+  /* Set loading state */
+  document.getElementById("adp-title").textContent = resolveDisplayName(pos)
+  document.getElementById("adp-subtitle").textContent = pos.key +
+    (pos.type ? ` · ${pos.type}` : "") +
+    (pos.currency ? ` · ${pos.currency}` : "")
+  document.getElementById("adp-body").innerHTML =
+    `<div class="adp-loading"><span class="insights-spinner"></span> Loading data…</div>`
+ 
+  overlay.classList.add("adp-open")
+  panel.classList.add("adp-open")
+ 
+  if (pos.type === "MutualFund") {
+    loadMFDetail(pos)
+  } else {
+    loadStockDetail(pos)
+  }
+}
+ 
+function closeDetailPanel() {
+  document.getElementById("assetDetailPanel")?.classList.remove("adp-open")
+  document.getElementById("assetDetailOverlay")?.classList.remove("adp-open")
+  _detailPanelPos = null
+}
+ 
+/* ── Stock detail: from existing caches ── */
+function loadStockDetail(pos) {
+  const tech   = window._techMap?.[pos.key] || null
+  const fundCache = getFundCache()
+  const fundResult = fundCache?.results?.[pos.key] || null
+  const f = fundResult?.fundamentals || null
+ 
+  const body = document.getElementById("adp-body")
+  if (!body) return
+ 
+  /* Position summary */
+  const profitLocal = pos.totalCurrentLocal - pos.totalBuyLocal
+  const profitSign  = profitLocal >= 0 ? "+" : ""
+  const profitColor = profitLocal >= 0 ? "var(--green)" : "var(--red)"
+  const growthColor = pos.growth >= 0 ? "var(--green)" : "var(--red)"
+ 
+  /* Verdict badge */
+  const verdict    = fundResult?.verdict || tech?.verdict || "—"
+  const vCls       = { ADD:"adp-v-add", HOLD:"adp-v-hold", REVIEW:"adp-v-review", EXIT:"adp-v-exit" }[verdict] || ""
+  const composite  = fundResult?.composite || "—"
+ 
+  /* Technicals */
+  const techHTML = tech ? `
+    <div class="adp-section">
+      <div class="adp-section-title">📊 Technicals</div>
+      <div class="adp-metrics">
+        ${adpMetric("RSI", tech.rsi?.toFixed(0) ?? "N/A",
+            tech.rsi ? (tech.rsi < 35 ? "var(--green)" : tech.rsi > 70 ? "var(--red)" : "var(--gold)") : "var(--muted)",
+            "RSI: <35 oversold (buy zone), >70 overbought (sell zone)")}
+        ${adpMetric("Score", tech.score ?? "N/A",
+            tech.score > 65 ? "var(--green)" : tech.score > 40 ? "var(--gold)" : "var(--red)",
+            "Composite technical score 0-100 from RSI, MACD, Bollinger Bands, ADX")}
+        ${adpMetric("Signal", tech.verdict ?? "—",
+            { "STRONG BUY":"var(--green)", "BUY":"var(--green)", "HOLD":"var(--blue)", "TRIM":"var(--gold)", "SELL":"var(--red)" }[tech.verdict] || "var(--muted)",
+            "Technical verdict based on momentum and trend indicators")}
+        ${tech.sma200 ? adpMetric("vs 200DMA",
+            pos.currentPrice > tech.sma200 ? "Above ✓" : "Below ✗",
+            pos.currentPrice > tech.sma200 ? "var(--green)" : "var(--red)",
+            "Price vs 200-day moving average. Above = long-term uptrend.") : ""}
+      </div>
+      ${tech.signals?.length ? `
+      <div class="adp-signals">
+        ${tech.signals.slice(0,4).map(s => `<span class="adp-sig">${s}</span>`).join("")}
+      </div>` : ""}
+    </div>` : `<div class="adp-section"><div class="adp-section-title">📊 Technicals</div><div class="adp-empty">Technical data not loaded — wait for price update</div></div>`
+ 
+  /* Fundamentals */
+  const fundHTML = f ? `
+    <div class="adp-section">
+      <div class="adp-section-title">📈 Fundamentals <span class="adp-grade adp-grade-${(f.grade||"").toLowerCase()}">${f.grade || ""}</span></div>
+      <div class="adp-metrics">
+        ${adpMetric("P/E", f.pe, peColor(f.pe), "Price ÷ Earnings. <20 = fair value, >40 = expensive")}
+        ${adpMetric("P/B", f.pb, pbColor(f.pb), "Price ÷ Book Value. <1.5 = trading near assets")}
+        ${adpMetric("ROE", f.roe, roeColor(f.roe), "Return on Equity. >15% = strong business quality")}
+        ${adpMetric("D/E", f.de, deColor(f.de), "Debt ÷ Equity. <50% = low leverage. Banks are structural exceptions.")}
+        ${adpMetric("Rev Growth", f.revGrow, growthValColor(f.revGrow), "Revenue growth year-over-year. >10% = healthy")}
+        ${adpMetric("Net Margin", f.margins, marginColor(f.margins), "% of revenue kept as profit. >15% = efficient")}
+        ${f.upsidePct != null ? adpMetric("Analyst Target",
+            `${f.upsidePct > 0 ? "+" : ""}${f.upsidePct.toFixed(0)}% upside`,
+            f.upsidePct > 10 ? "var(--green)" : f.upsidePct > 0 ? "var(--gold)" : "var(--red)",
+            `Average price target from ${f.numberOfAnalystOpinions || "?"} analysts vs current price`) : ""}
+        ${f.recommendationKey && f.recommendationKey !== "none" ? adpMetric("Consensus",
+            `${f.recommendationKey.replace(/_/g," ")} (${f.numberOfAnalystOpinions || "?"})`,
+            f.recommendationKey.includes("buy") ? "var(--green)" : f.recommendationKey.includes("sell") ? "var(--red)" : "var(--gold)",
+            `Analyst consensus recommendation from ${f.numberOfAnalystOpinions || "?"} analysts`) : ""}
+      </div>
+      ${f.sector && f.sector !== "N/A" ? `<div class="adp-sector-tag">🏭 ${f.sector}</div>` : ""}
+      ${fundResult?.signals?.fundamental?.length ? `
+      <div class="adp-signals">
+        ${fundResult.signals.fundamental.slice(0,4).map(s => `<span class="adp-sig">${s}</span>`).join("")}
+      </div>` : ""}
+    </div>` : `<div class="adp-section"><div class="adp-section-title">📈 Fundamentals</div><div class="adp-empty">Fundamentals not in cache — open Goals tab first to load</div></div>`
+ 
+  /* Verdict section */
+  const verdictHTML = fundResult ? `
+    <div class="adp-section adp-verdict-section adp-vs-${verdict.toLowerCase()}">
+      <div class="adp-verdict-row">
+        <span class="adp-verdict-badge ${vCls}">${verdict}</span>
+        <span class="adp-composite">Composite score: <strong>${composite}</strong></span>
+      </div>
+      <div class="adp-reasoning">${fundResult.reasoning || ""}</div>
+      ${fundResult.action ? `<div class="adp-action">→ ${fundResult.action}</div>` : ""}
+    </div>` : ""
+ 
+  /* Mini chart button */
+  const symbol = resolveTicker({ ticker: pos.key, currency: pos.currency, type: pos.type })
+  const chartHTML = symbol ? `
+    <div class="adp-section">
+      <div class="adp-section-title">📉 Price Chart</div>
+      <div class="adp-chart-wrap">
+        <canvas id="adpMiniChart" height="120"></canvas>
+        <div id="adpChartLoading" class="adp-loading"><span class="insights-spinner"></span></div>
+      </div>
+      <div class="adp-period-row">
+        ${["1mo","3mo","1y","5y"].map(r =>
+          `<button class="adp-period-btn" onclick="loadAdpChart('${symbol}','${r}',this)">${r}</button>`
+        ).join("")}
+      </div>
+    </div>` : ""
+ 
+  body.innerHTML = `
+    <!-- Position summary -->
+    <div class="adp-summary">
+      <div class="adp-sum-item">
+        <span class="adp-sum-label">Holdings</span>
+        <span class="adp-sum-val">${pos.qty.toFixed(2)} shares</span>
+      </div>
+      <div class="adp-sum-item">
+        <span class="adp-sum-label">Avg Buy</span>
+        <span class="adp-sum-val">${formatCurrency(pos.avgBuy, pos.currency)}</span>
+      </div>
+      <div class="adp-sum-item">
+        <span class="adp-sum-label">Current</span>
+        <span class="adp-sum-val">${formatCurrency(pos.currentPrice, pos.currency)}</span>
+      </div>
+      <div class="adp-sum-item">
+        <span class="adp-sum-label">P&L</span>
+        <span class="adp-sum-val" style="color:${profitColor}">${profitSign}${formatCurrency(profitLocal, pos.currency)}</span>
+      </div>
+      <div class="adp-sum-item">
+        <span class="adp-sum-label">Return</span>
+        <span class="adp-sum-val" style="color:${growthColor}">${pos.growth >= 0 ? "+" : ""}${pos.growth.toFixed(2)}%</span>
+      </div>
+      <div class="adp-sum-item">
+        <span class="adp-sum-label">Value</span>
+        <span class="adp-sum-val">€${pos.totalCurrentEUR.toFixed(0)}</span>
+      </div>
+    </div>
+    ${verdictHTML}
+    ${chartHTML}
+    ${techHTML}
+    ${fundHTML}`
+ 
+  /* Auto-load 1mo chart */
+  if (symbol) setTimeout(() => loadAdpChart(symbol, "1mo", document.querySelector(".adp-period-btn")), 100)
+}
+ 
+/* ── Color helpers for metric values ── */
+function peColor(v)  { const n=parseFloat(v); return isNaN(n)?"var(--muted)":n<20?"var(--green)":n<40?"var(--gold)":"var(--red)" }
+function pbColor(v)  { const n=parseFloat(v); return isNaN(n)?"var(--muted)":n<2?"var(--green)":n<5?"var(--gold)":"var(--red)" }
+function roeColor(v) { const n=parseFloat(v); return isNaN(n)?"var(--muted)":n>15?"var(--green)":n>8?"var(--gold)":"var(--red)" }
+function deColor(v)  { const n=parseFloat(v); return isNaN(n)?"var(--muted)":n<50?"var(--green)":n<120?"var(--gold)":"var(--red)" }
+function growthValColor(v) { const n=parseFloat(v); return isNaN(n)?"var(--muted)":n>10?"var(--green)":n>0?"var(--gold)":"var(--red)" }
+function marginColor(v) { const n=parseFloat(v); return isNaN(n)?"var(--muted)":n>15?"var(--green)":n>5?"var(--gold)":"var(--red)" }
+ 
+/* ── Metric card helper ── */
+function adpMetric(label, value, color, tooltip) {
+  return `<div class="adp-metric" title="${tooltip}">
+    <span class="adp-metric-label">${label} ⓘ</span>
+    <span class="adp-metric-val" style="color:${color}">${value ?? "N/A"}</span>
+  </div>`
+}
+ 
+/* ── Mini price chart inside panel ── */
+let _adpChartInstance = null
+async function loadAdpChart(symbol, range, btn) {
+  document.querySelectorAll(".adp-period-btn").forEach(b => b.classList.remove("active"))
+  if (btn) btn.classList.add("active")
+ 
+  const canvas  = document.getElementById("adpMiniChart")
+  const loading = document.getElementById("adpChartLoading")
+  if (!canvas) return
+  if (loading) loading.style.display = "flex"
+  if (_adpChartInstance) { _adpChartInstance.destroy(); _adpChartInstance = null }
+ 
+  try {
+    const r = await fetch(`/api/price?ticker=${encodeURIComponent(symbol)}&range=${range}&history=true`)
+    if (!r.ok) throw new Error("fetch failed")
+    const d = await r.json()
+    if (!d.timestamps?.length) throw new Error("no data")
+ 
+    const labels = d.timestamps.map(ts => new Date(ts).toLocaleDateString([], { month:"short", day:"numeric" }))
+    const values = d.closes
+    const first  = values[0], last = values[values.length - 1]
+    const isUp   = last >= first
+    const color  = isUp ? "#22d17a" : "#f4506a"
+ 
+    if (loading) loading.style.display = "none"
+    canvas.style.display = "block"
+ 
+    _adpChartInstance = new Chart(canvas, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          borderColor: color,
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: true,
+          backgroundColor: ctx => {
+            const g = ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height)
+            g.addColorStop(0, isUp ? "rgba(34,209,122,0.2)" : "rgba(244,80,106,0.2)")
+            g.addColorStop(1, "rgba(0,0,0,0)")
+            return g
+          },
+          tension: 0.3
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { mode: "index", intersect: false } },
+        scales: {
+          x: { ticks: { color:"#8fa3c4", font:{size:9}, maxTicksLimit:5 }, grid: { display:false }, border:{display:false} },
+          y: { ticks: { color:"#8fa3c4", font:{size:9}, maxTicksLimit:4 }, grid: { color:"rgba(91,156,246,0.06)" }, border:{display:false} }
+        }
+      }
+    })
+  } catch(e) {
+    if (loading) loading.style.display = "none"
+    if (canvas) canvas.insertAdjacentHTML("afterend", `<div class="adp-empty">Chart unavailable</div>`)
+  }
+}
+ 
+/* ── MF detail: from mfapi.in ── */
+const MF_DETAIL_CACHE = {}  /* schemeCode → cached data */
+ 
+async function loadMFDetail(pos) {
+  const body = document.getElementById("adp-body")
+  if (!body) return
+ 
+  const schemeCode = pos.key  /* pos.key = scheme code for MFs */
+  const nav        = pos.currentPrice || 0
+  const profitLocal = pos.totalCurrentLocal - pos.totalBuyLocal
+  const profitColor = profitLocal >= 0 ? "var(--green)" : "var(--red)"
+ 
+  /* Position summary — always available */
+  const summaryHTML = `
+    <div class="adp-summary">
+      <div class="adp-sum-item">
+        <span class="adp-sum-label">Units</span>
+        <span class="adp-sum-val">${pos.qty.toFixed(3)}</span>
+      </div>
+      <div class="adp-sum-item">
+        <span class="adp-sum-label">Avg NAV</span>
+        <span class="adp-sum-val">₹${pos.avgBuy.toFixed(2)}</span>
+      </div>
+      <div class="adp-sum-item">
+        <span class="adp-sum-label">Current NAV</span>
+        <span class="adp-sum-val">₹${nav.toFixed(2)}</span>
+      </div>
+      <div class="adp-sum-item">
+        <span class="adp-sum-label">P&L</span>
+        <span class="adp-sum-val" style="color:${profitColor}">₹${Math.round(profitLocal).toLocaleString()}</span>
+      </div>
+      <div class="adp-sum-item">
+        <span class="adp-sum-label">Return</span>
+        <span class="adp-sum-val" style="color:${profitColor}">${pos.growth >= 0 ? "+" : ""}${pos.growth.toFixed(2)}%</span>
+      </div>
+      <div class="adp-sum-item">
+        <span class="adp-sum-label">Value</span>
+        <span class="adp-sum-val">₹${Math.round(pos.totalCurrentLocal).toLocaleString()}</span>
+      </div>
+    </div>`
+ 
+  body.innerHTML = summaryHTML +
+    `<div class="adp-loading"><span class="insights-spinner"></span> Fetching fund data…</div>`
+ 
+  try {
+    /* Check cache first */
+    let mfData = MF_DETAIL_CACHE[schemeCode]
+ 
+    if (!mfData) {
+      /* mfapi.in — free, no key needed */
+      const r = await fetch(`https://api.mfapi.in/mf/${schemeCode}`)
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      mfData = await r.json()
+      MF_DETAIL_CACHE[schemeCode] = mfData
+    }
+ 
+    const meta = mfData.meta || {}
+    const navData = mfData.data || []
+ 
+    /* Compute trailing returns from NAV history */
+    function getReturn(days) {
+      if (navData.length < 2) return null
+      const today = parseFloat(navData[0]?.nav)
+      const target = navData.find((d, i) => i > 0 &&
+        (new Date(navData[0].date) - new Date(d.date)) >= days * 86400000)
+      if (!target) return null
+      const past = parseFloat(target.nav)
+      return past > 0 ? ((today - past) / past * 100) : null
+    }
+ 
+    const ret1y = getReturn(365)
+    const ret3y = getReturn(1095)
+    const ret5y = getReturn(1825)
+ 
+    const fmtRet = (v) => v != null
+      ? `<span style="color:${v >= 0 ? "var(--green)" : "var(--red)"}">${v >= 0 ? "+" : ""}${v.toFixed(1)}%</span>`
+      : `<span style="color:var(--muted)">N/A</span>`
+ 
+    /* Risk rating from category name */
+    const cat = (meta.scheme_category || "").toLowerCase()
+    const risk = cat.includes("liquid") || cat.includes("overnight") ? "Low"
+               : cat.includes("debt") || cat.includes("bond") ? "Low-Moderate"
+               : cat.includes("hybrid") || cat.includes("balanced") ? "Moderate"
+               : cat.includes("large cap") ? "Moderate-High"
+               : cat.includes("mid cap") || cat.includes("flexi") ? "High"
+               : cat.includes("small cap") || cat.includes("micro") ? "Very High"
+               : "Moderate"
+ 
+    const riskColor = risk === "Low" ? "var(--green)"
+                    : risk === "Low-Moderate" ? "var(--green)"
+                    : risk === "Moderate" ? "var(--gold)"
+                    : risk === "Moderate-High" ? "var(--gold)"
+                    : "var(--red)"
+ 
+    /* NAV sparkline data — last 90 days */
+    const last90 = navData.slice(0, 90).reverse()
+    const navLabels = last90.map(d => d.date)
+    const navValues = last90.map(d => parseFloat(d.nav))
+ 
+    body.innerHTML = summaryHTML + `
+      <!-- Fund Info -->
+      <div class="adp-section">
+        <div class="adp-section-title">🏦 Fund Details</div>
+        <div class="adp-mf-info">
+          <div class="adp-mf-row">
+            <span class="adp-mf-label">Fund House</span>
+            <span class="adp-mf-val">${meta.fund_house || "—"}</span>
+          </div>
+          <div class="adp-mf-row">
+            <span class="adp-mf-label">Category</span>
+            <span class="adp-mf-val">${meta.scheme_category || "—"}</span>
+          </div>
+          <div class="adp-mf-row">
+            <span class="adp-mf-label">Type</span>
+            <span class="adp-mf-val">${meta.scheme_type || "—"}</span>
+          </div>
+          <div class="adp-mf-row">
+            <span class="adp-mf-label">Risk</span>
+            <span class="adp-mf-val" style="color:${riskColor};font-weight:700">${risk}</span>
+          </div>
+        </div>
+      </div>
+ 
+      <!-- Returns -->
+      <div class="adp-section">
+        <div class="adp-section-title">📈 Trailing Returns (NAV-based)</div>
+        <div class="adp-metrics">
+          <div class="adp-metric" title="Return over last 1 year based on NAV">
+            <span class="adp-metric-label">1 Year</span>
+            <span class="adp-metric-val">${fmtRet(ret1y)}</span>
+          </div>
+          <div class="adp-metric" title="Return over last 3 years based on NAV">
+            <span class="adp-metric-label">3 Years</span>
+            <span class="adp-metric-val">${fmtRet(ret3y)}</span>
+          </div>
+          <div class="adp-metric" title="Return over last 5 years based on NAV">
+            <span class="adp-metric-label">5 Years</span>
+            <span class="adp-metric-val">${fmtRet(ret5y)}</span>
+          </div>
+          <div class="adp-metric" title="Your personal return since purchase">
+            <span class="adp-metric-label">Your Return</span>
+            <span class="adp-metric-val" style="color:${pos.growth>=0?"var(--green)":"var(--red)"}">${pos.growth>=0?"+":""}${pos.growth.toFixed(1)}%</span>
+          </div>
+        </div>
+        <div class="adp-note">⚠ Benchmark comparison not available from mfapi.in — check Value Research for category rank</div>
+      </div>
+ 
+      <!-- NAV Chart -->
+      <div class="adp-section">
+        <div class="adp-section-title">📉 NAV — Last 90 Days</div>
+        <div class="adp-chart-wrap">
+          <canvas id="adpMiniChart" height="120"></canvas>
+        </div>
+      </div>
+ 
+      <!-- Value Research link -->
+      <div class="adp-section">
+        <a href="https://www.valueresearchonline.com/funds/selector/primary-category/equity/#" target="_blank" class="adp-ext-link">
+          View full analysis on Value Research →
+        </a>
+      </div>`
+ 
+    /* Draw NAV chart */
+    const canvas = document.getElementById("adpMiniChart")
+    if (canvas && navValues.length) {
+      const isUp = navValues[navValues.length-1] >= navValues[0]
+      const color = isUp ? "#22d17a" : "#f4506a"
+      if (_adpChartInstance) { _adpChartInstance.destroy(); _adpChartInstance = null }
+      _adpChartInstance = new Chart(canvas, {
+        type: "line",
+        data: {
+          labels: navLabels,
+          datasets: [{
+            data: navValues, borderColor: color, borderWidth: 2,
+            pointRadius: 0, fill: true, tension: 0.3,
+            backgroundColor: ctx => {
+              const g = ctx.chart.ctx.createLinearGradient(0,0,0,ctx.chart.height)
+              g.addColorStop(0, isUp ? "rgba(34,209,122,0.2)" : "rgba(244,80,106,0.2)")
+              g.addColorStop(1, "rgba(0,0,0,0)")
+              return g
+            }
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { ticks: { color:"#8fa3c4", font:{size:9}, maxTicksLimit:6 }, grid:{display:false}, border:{display:false} },
+            y: { ticks: { color:"#8fa3c4", font:{size:9}, maxTicksLimit:4 }, grid:{color:"rgba(91,156,246,0.06)"}, border:{display:false} }
+          }
+        }
+      })
+    }
+ 
+  } catch(e) {
+    body.innerHTML = summaryHTML + `
+      <div class="adp-section">
+        <div class="adp-empty">Could not load fund data: ${e.message}</div>
+        <a href="https://www.valueresearchonline.com" target="_blank" class="adp-ext-link">View on Value Research →</a>
+      </div>`
+  }
+}
 /* ── BOOT SEQUENCE ────────────────────────────────────────
    These calls run immediately at script parse time.
    bindAssetForm / bindTabs / bindCSVImport attach event listeners.
