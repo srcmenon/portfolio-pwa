@@ -309,12 +309,12 @@ header { display: none; }
 #assetForm hr { grid-column: 1/-1; border: none; border-top: 1px solid var(--border); }
 #assetForm input, #assetForm select {
   padding: 10px 14px;
-  background: var(--surface); border: 1px solid var(--border);
+  background: #17243f; border: 1px solid rgba(91,156,246,0.4); -webkit-appearance: none; appearance: none;
   border-radius: var(--radius-sm); color: var(--text);
   font-family: var(--font); font-size: 14px; outline: none;
   transition: border-color 0.2s;
 }
-#assetForm input:focus, #assetForm select:focus { border-color: var(--blue); }
+#assetForm input:focus, #assetForm select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(91,156,246,0.18); }
 #assetForm input::placeholder { color: var(--muted); }
 #assetForm select option { background: var(--card); }
 #assetForm button {
@@ -339,12 +339,12 @@ header { display: none; }
 }
 .search-wrap input {
   width: 100%; padding: 10px 14px 10px 38px;
-  background: var(--surface); border: 1px solid var(--border);
+  background: #17243f; border: 1px solid rgba(91,156,246,0.4); -webkit-appearance: none; appearance: none;
   border-radius: var(--radius-sm); color: var(--text);
   font-family: var(--font); font-size: 14px; outline: none;
   transition: border-color 0.2s;
 }
-.search-wrap input:focus { border-color: var(--blue); }
+.search-wrap input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(91,156,246,0.18); }
 .search-wrap input::placeholder { color: var(--muted); }
 .search-icon {
   position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
@@ -369,12 +369,12 @@ header { display: none; }
 }
 #filterBar select {
   padding: 10px 14px;
-  background: var(--surface); border: 1px solid var(--border);
+  background: #17243f; border: 1px solid rgba(91,156,246,0.4); -webkit-appearance: none; appearance: none;
   border-radius: var(--radius-sm); color: var(--text);
   font-family: var(--font); font-size: 14px; outline: none;
   cursor: pointer; transition: border-color 0.2s;
 }
-#filterBar select:focus { border-color: var(--blue); }
+#filterBar select:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(91,156,246,0.18); }
 #filterBar select option { background: var(--card); }
 
 /* ══ ASSET TABLE — main holdings table ══
@@ -1425,11 +1425,11 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
 }
 .goals-setup-field input {
   width: 100%; padding: 9px 12px;
-  background: var(--surface); border: 1px solid var(--border);
+  background: #17243f; border: 1px solid rgba(91,156,246,0.4); -webkit-appearance: none; appearance: none;
   border-radius: var(--radius-sm); color: var(--text);
   font-family: var(--font); font-size: 14px; outline: none;
 }
-.goals-setup-field input:focus { border-color: var(--blue); }
+.goals-setup-field input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(91,156,246,0.18); }
 .goals-save-btn {
   padding: 10px 28px;
   background: var(--blue); color: #fff; border: none;
@@ -1517,11 +1517,11 @@ a.insight-headline:hover { color: var(--blue); text-decoration: underline; }
 .tr-form-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .tr-input {
   flex: 1; min-width: 120px; padding: 8px 12px;
-  background: var(--surface); border: 1px solid var(--border);
+  background: #17243f; border: 1px solid rgba(91,156,246,0.4); -webkit-appearance: none; appearance: none;
   border-radius: var(--radius-sm); color: var(--text);
   font-family: var(--font); font-size: 13px; outline: none;
 }
-.tr-input:focus { border-color: var(--blue); }
+.tr-input:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(91,156,246,0.18); }
 .tr-add-btn {
   padding: 8px 20px; background: var(--blue); color: #fff;
   border: none; border-radius: var(--radius-sm);

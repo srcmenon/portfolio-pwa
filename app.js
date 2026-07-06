@@ -544,6 +544,14 @@ async function loadAssets(){
       if(sortVal === "growth")  return b.growth          - a.growth
       if(sortVal === "profit")  return b.profitEUR       - a.profitEUR
       if(sortVal === "value")   return b.totalCurrentEUR - a.totalCurrentEUR
+      if(sortVal === "added"){
+        /* "Added" = when this ticker was FIRST entered, i.e. the lowest
+           autoIncrement id among its lots — NOT buy date (which the user
+           can backdate) and NOT the most recent top-up lot. */
+        const aId = Math.min(...a.list.map(x => x.id))
+        const bId = Math.min(...b.list.map(x => x.id))
+        return bId - aId  /* newest-added ticker first */
+      }
       return resolveDisplayName(a).localeCompare(resolveDisplayName(b))
     })
 
