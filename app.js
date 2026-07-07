@@ -4,21 +4,28 @@
 
    Architecture overview:
    ┌─────────────┐    ┌──────────────┐    ┌──────────────────┐
-   │  IndexedDB  │◄──►│  app.js      │◄──►│  Vercel API      │
+   │  Firestore  │◄──►│  app.js      │◄──►│  Vercel API      │
    │  (db.js)    │    │  (this file) │    │  /api/price.js   │
    └─────────────┘    └──────┬───────┘    │  /api/recommend  │
                              │            └──────────────────┘
                        Chart.js (CDN)
 
    Data flow:
-   1. db.js opens IndexedDB, calls startApp() on success
-   2. startApp() loads assets → calculates portfolio → renders UI
+   1. db.js signs in via Firebase Auth, calls startApp() once authenticated
+   2. startApp() loads assets from Firestore → calculates portfolio → renders UI
    3. updatePrices() fetches live prices from /api/price (Yahoo Finance proxy)
-   4. recordPortfolioSnapshot() saves timestamped value to portfolioHistory store
+   4. recordPortfolioSnapshot() saves timestamped value to Firestore portfolioHistory
    5. Growth chart reads portfolioHistory and plots by period + category
 
+   Cross-device sync: all data lives under users/{uid}/... in Firestore,
+   not in a per-browser local database — this is what makes the same
+   portfolio show up whether you open the app on your Mac or your phone.
+
    Key globals:
-   - db            : IndexedDB database handle (set in db.js)
+   - window._fs    : Firestore functions + db instance (set in db.js —
+                      app.js is a classic script and can't use `import`,
+                      so db.js, which IS a module, exposes what's needed here)
+   - window._getUid() : returns the signed-in user's UID, or null
    - lastPortfolio : cached result of calculatePortfolio(), shared across tabs
    - FX            : live EUR-base exchange rates (updated hourly)
    ============================================================ */
@@ -150,30 +157,46 @@ function convertFromEUR(value, currency){
 
 
 /* ── DATABASE ENGINE ──────────────────────────────────────
-   Thin wrappers around the IndexedDB "assets" object store.
-   The DB handle `db` is set by db.js before startApp() is called.
+   Thin wrappers around Firestore, scoped under the signed-in
+   user's UID. `window._fs` (functions) and `window._getUid()`
+   (current user) are set by db.js before startApp() is called.
+   This used to wrap IndexedDB directly — migrated to Firestore
+   for cross-device sync (see memory notes / conversation history
+   for the architecture decision).
 
-   Schema:
-   - assets store         : keyPath "id" (autoIncrement)
+   Schema (Firestore collections, all under users/{uid}/...):
+   - assets/{docId}
      Fields: name, ticker, broker, type, currency, quantity,
-             buyPrice, buyPriceEUR, currentPrice, buyDate
-   - portfolioHistory store : keyPath "timestamp"
-     Fields: timestamp (ms), value (EUR total), cats (per-category EUR breakdown)
+             buyPrice, buyPriceEUR, currentPrice, buyDate,
+             createdAt (ms, Date.now() at save time — this, NOT the
+             Firestore doc ID, is what "Sort: Date Added" reads;
+             Firestore IDs are random strings with no chronological
+             meaning, unlike the old IndexedDB autoIncrement keys)
+   - portfolioHistory/{docId}
+     Fields: timestamp (ms), value (EUR total), cats (per-category breakdown)
 */
 
-/* Returns a Promise resolving to all asset records. */
-function getAssets(){
-  return new Promise(resolve => {
-    const tx    = db.transaction("assets", "readonly")
-    const store = tx.objectStore("assets")
-    store.getAll().onsuccess = e => resolve(e.target.result)
-  })
+/* Returns a Promise resolving to all asset records.
+   Firestore doc IDs are random strings (not chronological), so every
+   doc carries an explicit createdAt (Date.now()) field written at
+   save time — that field is what "Sort: Date Added" reads. */
+async function getAssets(){
+  const uid = window._getUid()
+  if(!uid) return []
+  const { db, collection, getDocs } = window._fs
+  const snap = await getDocs(collection(db, "users", uid, "assets"))
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
 }
 
 /* Writes a new asset record (no duplicate check — each row is a buy lot). */
-function saveAsset(asset){
-  const tx = db.transaction("assets", "readwrite")
-  tx.objectStore("assets").add(asset)
+async function saveAsset(asset){
+  const uid = window._getUid()
+  if(!uid) return
+  const { db, collection, addDoc } = window._fs
+  await addDoc(collection(db, "users", uid, "assets"), {
+    ...asset,
+    createdAt: asset.createdAt || Date.now()
+  })
 }
 
 /* Deletes a single asset by auto-incremented id, then refreshes the table. */
@@ -214,7 +237,7 @@ function clearDeployedProceeds(){
 
 /* Show sell intent dialog instead of silently deleting */
 async function deleteAsset(id){
-  if(!db) return
+  if(!window._getUid()) return
 
   /* Find the asset to get name, current price, quantity, currency */
   const assets = await getAssets()
@@ -240,11 +263,12 @@ async function deleteAsset(id){
   })
 }
 
-function _hardDeleteAsset(id){
-  if(!db) return
-  const tx = db.transaction("assets","readwrite")
-  tx.objectStore("assets").delete(id)
-  tx.oncomplete = () => loadAssets()
+async function _hardDeleteAsset(id){
+  const uid = window._getUid()
+  if(!uid) return
+  const { db, doc, deleteDoc } = window._fs
+  await deleteDoc(doc(db, "users", uid, "assets", id))
+  loadAssets()
 }
 
 /* Sell intent dialog — shown as modal overlay */
@@ -332,9 +356,9 @@ async function sellPartial(id, currentQty, name){
   const currency = asset.currency || "INR"
   if(proceeds > 0) addProceeds(proceeds, currency, name, asset.ticker||"")
 
-  const tx = db.transaction("assets","readwrite")
-  tx.objectStore("assets").put({ ...asset, quantity: newQty })
-  tx.oncomplete = () => loadAssets()
+  const tx = window._fs
+  await tx.updateDoc(tx.doc(tx.db, "users", window._getUid(), "assets", id), { quantity: newQty })
+  loadAssets()
 }
 
 /* ── REALLOCATION PLANNER ────────────────────────────────
@@ -529,7 +553,7 @@ function calculatePortfolio(groups){
    It reads assets → calculates → sorts → filters → renders everything. */
 
 async function loadAssets(){
-  if(!db) return
+  if(!window._getUid()) return
   try{
     const assets    = await getAssets()
     const groups    = groupAssets(assets)
@@ -545,12 +569,16 @@ async function loadAssets(){
       if(sortVal === "profit")  return b.profitEUR       - a.profitEUR
       if(sortVal === "value")   return b.totalCurrentEUR - a.totalCurrentEUR
       if(sortVal === "added"){
-        /* "Added" = when this ticker was FIRST entered, i.e. the lowest
-           autoIncrement id among its lots — NOT buy date (which the user
-           can backdate) and NOT the most recent top-up lot. */
-        const aId = Math.min(...a.list.map(x => x.id))
-        const bId = Math.min(...b.list.map(x => x.id))
-        return bId - aId  /* newest-added ticker first */
+        /* "Recent activity" = most recent createdAt timestamp per ticker.
+           Firestore doc IDs are random strings with no chronological
+           meaning (unlike the old IndexedDB autoIncrement integer keys),
+           so every asset doc now carries an explicit createdAt (Date.now())
+           field written at save time — see saveAsset(). A top-up on an
+           existing position counts as recent activity and will surface
+           that ticker at the top. */
+        const aTs = Math.max(...a.list.map(x => x.createdAt || 0))
+        const bTs = Math.max(...b.list.map(x => x.createdAt || 0))
+        return bTs - aTs  /* most recently touched ticker first */
       }
       return resolveDisplayName(a).localeCompare(resolveDisplayName(b))
     })
@@ -664,12 +692,12 @@ function renderPortfolioTable(portfolio){
         <td class="num">${formatCurrency(a.currentPrice || a.buyPrice, a.currency)}</td>
         <td colspan="4" style="color:var(--dim)">${a.broker || ""}</td>
         <td>
-          <button class="btn-edit-lot" onclick="editAsset(${a.id})">✏️ Edit</button>
+          <button class="btn-edit-lot" onclick="editAsset('${a.id}')">✏️ Edit</button>
           <button class="btn-sell-partial"
             data-assetid="${a.id}"
             data-qty="${a.quantity}"
             data-name="${(a.name || "").replace(/"/g, "&quot;")}">Sell %</button>
-          <button onclick="deleteAsset(${a.id})">Remove</button>
+          <button onclick="deleteAsset('${a.id}')">Remove</button>
         </td>`
       table.appendChild(sub)
     })
@@ -973,7 +1001,7 @@ function setupToggleButtons(){
     table.onclick = e => {
       const btn = e.target.closest(".btn-sell-partial")
       if(!btn) return
-      sellPartial(Number(btn.dataset.assetid), Number(btn.dataset.qty), btn.dataset.name || "")
+      sellPartial(btn.dataset.assetid, Number(btn.dataset.qty), btn.dataset.name || "")
     }
   }
 }
@@ -1001,7 +1029,7 @@ function setupToggleButtons(){
      Runs every 5 minutes. */
 
 async function updateMutualFundNAV(){
-  if(!db) return
+  if(!window._getUid()) return
   try{
     const res  = await fetch("/api/mfnav")
     const text = await res.text()
@@ -1054,19 +1082,27 @@ async function updateMutualFundNAV(){
     console.groupEnd()
     console.groupEnd()
 
-    /* Write updated NAVs back to the database.
-       Also stamp priceUpdatedAt so the price age indicator shows correctly.
-       MFs always use "CLOSED" as marketState — AMFI publishes once daily after close. */
+    /* Write updated NAVs back to Firestore — batched into one network
+       round trip rather than one write per fund. Only the changed
+       fields are touched (targeted update, not a full doc replace). */
     const navUpdatedAt = Date.now()
-    const tx    = db.transaction("assets", "readwrite")
-    const store = tx.objectStore("assets")
-    for(const a of assets){
-      if(a.type !== "MutualFund") continue
-      const nav = navMap[a.ticker]
-      if(!nav) continue
-      store.put({ ...a, currentPrice: nav, priceUpdatedAt: navUpdatedAt, marketState: "CLOSED" })
+    const uid = window._getUid()
+    if(uid){
+      const { db, doc, writeBatch } = window._fs
+      const batch = writeBatch(db)
+      let any = false
+      for(const a of assets){
+        if(a.type !== "MutualFund") continue
+        const nav = navMap[a.ticker]
+        if(!nav) continue
+        batch.update(doc(db, "users", uid, "assets", a.id), {
+          currentPrice: nav, priceUpdatedAt: navUpdatedAt, marketState: "CLOSED"
+        })
+        any = true
+      }
+      if(any) await batch.commit()
     }
-    tx.oncomplete = () => loadAssets()
+    loadAssets()
 
   }catch(e){
     console.log("MF NAV update failed", e)
@@ -1138,10 +1174,15 @@ async function fetchPrice(asset){
    When US markets are closed, this is yesterday's close — not the live
    European venue price (gettex, Xetra etc.). This is a Yahoo limitation. */
 async function updatePrices(){
-  if(priceUpdateRunning || !db) return
+  const uid = window._getUid()
+  if(priceUpdateRunning || !uid) return
   priceUpdateRunning = true
 
+  const { db, doc, writeBatch } = window._fs
   const assets = await getAssets()
+  const batch  = writeBatch(db)
+  let anyUpdates = false
+
   for(const a of assets){
     if(a.type === "MutualFund") continue
     if(!a.ticker) continue
@@ -1156,20 +1197,19 @@ async function updatePrices(){
         ? price / FX.USD
         : price
 
-      /* Await the DB write so loadAssets() always sees the updated price */
-      await new Promise(resolve => {
-        const tx = db.transaction("assets", "readwrite")
-        tx.objectStore("assets").put({
-          ...a,
-          currentPrice:   adjustedPrice,
-          priceUpdatedAt: Date.now(),
-          marketState                    /* "REGULAR"|"PRE"|"POST"|"CLOSED" */
-        })
-        tx.oncomplete = resolve
-        tx.onerror    = resolve
+      /* Collect into a batch rather than one write per asset — a single
+         network round trip for the whole refresh cycle instead of one
+         per position, matching the pattern used for MF NAV updates. */
+      batch.update(doc(db, "users", uid, "assets", a.id), {
+        currentPrice:   adjustedPrice,
+        priceUpdatedAt: Date.now(),
+        marketState                    /* "REGULAR"|"PRE"|"POST"|"CLOSED" */
       })
+      anyUpdates = true
     }
   }
+
+  if(anyUpdates) await batch.commit()
 
   priceUpdateRunning = false
   await recordPortfolioSnapshot()
@@ -1208,7 +1248,7 @@ async function updatePrices(){
    Old snapshots that predate this feature have no cats field.
    getCatValues() gracefully falls back to the fraction method for those. */
 async function recordPortfolioSnapshot(){
-  if(!db) return
+  if(!window._getUid()) return
 
   /* Only record from lastPortfolio — never use the fallback that reads raw assets,
      because currentPrice may be 0 before the first price fetch completes. */
@@ -1230,9 +1270,12 @@ async function recordPortfolioSnapshot(){
     if(lastSnap.value > 0 && total < lastSnap.value * 0.30) return
   }
 
-  db.transaction("portfolioHistory", "readwrite")
-    .objectStore("portfolioHistory")
-    .put({ timestamp: Date.now(), value: total, cats })
+  const uid = window._getUid()
+  if(!uid) return
+  const { db, collection, addDoc } = window._fs
+  await addDoc(collection(db, "users", uid, "portfolioHistory"), {
+    timestamp: Date.now(), value: total, cats
+  })
 }
 
 
@@ -1468,27 +1511,26 @@ async function buildCategoryChartData(cat, period){
 /* Entry point: loads all history from DB, cleans bad snapshots, renders chart, and binds buttons.
    Bad snapshots (near-zero values from race-condition recordings) are filtered out here
    so they never appear in the chart even if they were already stored in the DB. */
-function drawGrowthChart(){
-  if(!db) return
-  db.transaction("portfolioHistory", "readonly")
-    .objectStore("portfolioHistory")
-    .getAll().onsuccess = e => {
-      const raw = e.target.result || []
+async function drawGrowthChart(){
+  const uid = window._getUid()
+  if(!uid) return
+  const { db, collection, getDocs } = window._fs
+  const snap = await getDocs(collection(db, "users", uid, "portfolioHistory"))
+  const raw  = snap.docs.map(d => d.data())
 
-      /* Remove bad snapshots: any value below 20% of the median is an anomaly.
-         Median is more robust than mean — a few near-zero points won't skew it. */
-      if(raw.length > 2){
-        const sorted = [...raw].sort((a, b) => a.value - b.value)
-        const median = sorted[Math.floor(sorted.length / 2)].value
-        allPortfolioHistory = raw.filter(h => h.value >= median * 0.20)
-      } else {
-        allPortfolioHistory = raw
-      }
+  /* Remove bad snapshots: any value below 20% of the median is an anomaly.
+     Median is more robust than mean — a few near-zero points won't skew it. */
+  if(raw.length > 2){
+    const sorted = [...raw].sort((a, b) => a.value - b.value)
+    const median = sorted[Math.floor(sorted.length / 2)].value
+    allPortfolioHistory = raw.filter(h => h.value >= median * 0.20)
+  } else {
+    allPortfolioHistory = raw
+  }
 
-      renderGrowthChart(currentPeriod, currentCat)
-      bindPeriodButtons()
-      bindCatButtons()
-    }
+  renderGrowthChart(currentPeriod, currentCat)
+  bindPeriodButtons()
+  bindCatButtons()
 }
 
 /* Debounced resize handler — redraws to fill new container width.
@@ -2569,7 +2611,7 @@ function restoreLastAnalysis(){
    Format: Date, Name, Ticker, Broker, Type, Quantity, Price, Currency
    One row per buy lot (not aggregated by ticker). */
 async function exportPortfolioCSV(){
-  if(!db) return
+  if(!window._getUid()) return
   const assets = await getAssets()
   if(!assets.length){ alert("No assets to export."); return }
 
@@ -2602,32 +2644,47 @@ async function exportPortfolioCSV(){
 
 
 /* ── BACKUP & RESTORE ─────────────────────────────────────
-   Solves the iOS PWA storage isolation problem:
-   Safari browser and the home screen PWA use completely separate
-   IndexedDB databases. This feature lets you export the full database
-   (assets + portfolio history snapshots) as a .json file, then
-   import it into any other browser/context (e.g. the home screen app).
+   Originally built to solve the iOS PWA storage isolation problem
+   (Safari and the home-screen PWA icon used separate IndexedDB
+   databases). That problem no longer exists — Firestore is now the
+   single source of truth across every browser/device, so this feature
+   is no longer needed for that purpose.
+
+   It's kept for two reasons:
+   1. A portable point-in-time archive you can keep outside the cloud
+      (e.g. before a risky bulk edit, or as a personal backup).
+   2. It was the exact tool used for the one-time migration of your
+      original IndexedDB data into Firestore: export from the old
+      IndexedDB-based version of this app, then import that same
+      .json file here once signed in to the Firestore-based version.
 
    Export format:
    {
      version: 1,
      exportedAt: "2026-03-17T...",
-     assets: [ ...all asset records from IndexedDB ],
-     portfolioHistory: [ ...all snapshot records from IndexedDB ]
+     assets: [ ...all asset records ],
+     portfolioHistory: [ ...all snapshot records ]
    }
 
-   Import: clears both stores, then bulk-writes the exported records.
-   IDs are preserved so sub-row expand buttons still work. */
+   Import: deletes all existing Firestore docs for this user, then
+   bulk-writes the exported records. Unlike the old IndexedDB version,
+   asset IDs are NOT preserved on import — Firestore assigns fresh
+   doc IDs deliberately (its IDs are random strings with no meaning,
+   so reusing old ones serves no purpose). If an imported asset record
+   predates the createdAt field, it's backfilled with the import time —
+   meaning very old rows will sort as "just added" under Sort: Date
+   Added rather than reflecting their true original entry date. This
+   is an honest limitation of migrating from data that never tracked
+   add-order explicitly, not a bug. */
 
 async function exportBackup(){
-  if(!db) return
+  const uid = window._getUid()
+  if(!uid) return
   try{
-    const assets  = await getAssets()
-    const history = await new Promise(resolve => {
-      db.transaction("portfolioHistory","readonly")
-        .objectStore("portfolioHistory")
-        .getAll().onsuccess = e => resolve(e.target.result || [])
-    })
+    const assets = await getAssets()
+    const { db, collection, getDocs } = window._fs
+    const historySnap = await getDocs(collection(db, "users", uid, "portfolioHistory"))
+    const history = historySnap.docs.map(d => d.data())
 
     const backup = {
       version:         1,
@@ -2656,8 +2713,18 @@ async function exportBackup(){
   }
 }
 
+/* Firestore writeBatch caps at 500 operations. Chunk any array into
+   batches of that size so large history datasets (months of 5-minute
+   snapshots) don't silently fail on a single oversized batch. */
+function _chunk(arr, size){
+  const out = []
+  for(let i=0; i<arr.length; i+=size) out.push(arr.slice(i, i+size))
+  return out
+}
+
 async function importBackup(file){
-  if(!db || !file) return
+  const uid = window._getUid()
+  if(!uid || !file) return
   const statusEl = document.getElementById("backupStatus")
 
   try{
@@ -2683,30 +2750,44 @@ async function importBackup(file){
 
     if(statusEl) statusEl.textContent = "Importing…"
 
-    /* Clear both stores, then write all records */
-    await new Promise((resolve, reject) => {
-      const tx    = db.transaction(["assets","portfolioHistory"], "readwrite")
-      tx.onerror  = () => reject(tx.error)
-      tx.oncomplete = resolve
+    const { db, collection, doc, getDocs, writeBatch } = window._fs
+    const assetsCol  = collection(db, "users", uid, "assets")
+    const historyCol = collection(db, "users", uid, "portfolioHistory")
 
-      const assetStore   = tx.objectStore("assets")
-      const historyStore = tx.objectStore("portfolioHistory")
+    /* Clear existing docs first — chunked deletes */
+    const existingAssets  = await getDocs(assetsCol)
+    const existingHistory = await getDocs(historyCol)
+    const deleteRefs = [...existingAssets.docs, ...existingHistory.docs].map(d => d.ref)
+    for(const chunk of _chunk(deleteRefs, 450)){
+      const batch = writeBatch(db)
+      chunk.forEach(ref => batch.delete(ref))
+      await batch.commit()
+    }
 
-      assetStore.clear().onsuccess = () => {
-        historyStore.clear().onsuccess = () => {
-          /* Write assets — remove id so autoIncrement assigns fresh ones
-             (avoids key conflicts if IDs differ between devices) */
-          backup.assets.forEach(a => {
-            const { id, ...rest } = a
-            assetStore.add(rest)
-          })
-          /* Write history — timestamp is keyPath, preserve as-is */
-          ;(backup.portfolioHistory || []).forEach(h => {
-            historyStore.put(h)
-          })
-        }
-      }
-    })
+    /* Write imported assets — drop the old numeric/string id (Firestore
+       assigns its own), backfill createdAt if the backup predates that
+       field (older exports won't have it — those rows will sort as
+       "added now" under Date Added, which is an honest limitation of
+       migrating from data that never tracked add-order explicitly). */
+    for(const chunk of _chunk(backup.assets, 450)){
+      const batch = writeBatch(db)
+      chunk.forEach(a => {
+        const { id, ...rest } = a
+        const ref = doc(assetsCol)  /* auto-generated id */
+        batch.set(ref, { ...rest, createdAt: rest.createdAt || Date.now() })
+      })
+      await batch.commit()
+    }
+
+    /* Write imported history snapshots */
+    for(const chunk of _chunk(backup.portfolioHistory || [], 450)){
+      const batch = writeBatch(db)
+      chunk.forEach(h => {
+        const ref = doc(historyCol)
+        batch.set(ref, h)
+      })
+      await batch.commit()
+    }
 
     if(statusEl) statusEl.textContent = `✅ Restored ${assetCount} assets + ${historyCount} snapshots`
     setTimeout(() => { if(statusEl) statusEl.textContent = "" }, 5000)
@@ -2857,8 +2938,8 @@ function bindAssetForm(){
   const saveBtn = document.getElementById("saveAsset")
   if(!saveBtn) return
 
-  saveBtn.onclick = () => {
-    if(!db) return
+  saveBtn.onclick = async () => {
+    if(!window._getUid()) return
 
     const name     = document.getElementById("assetName")?.value?.trim()
     const ticker   = document.getElementById("assetTicker")?.value?.trim().toUpperCase()
@@ -2909,7 +2990,7 @@ function bindAssetForm(){
     const quantity = parseNumber(qtyRaw)
     const buyPrice = parseNumber(priceRaw)
 
-    saveAsset({ name, ticker, broker, type, currency, quantity,
+    await saveAsset({ name, ticker, broker, type, currency, quantity,
                 buyPrice, buyPriceEUR: convertToEUR(buyPrice, currency),
                 currentPrice: buyPrice, buyDate })
 
@@ -3028,15 +3109,16 @@ async function editAsset(id){
   const newPrice = parseFloat(prompt(`Edit buy price for ${asset.name} (${asset.currency})\nCurrent: ${asset.buyPrice}`, asset.buyPrice))
   if(isNaN(newPrice) || newPrice < 0){ alert("Invalid price."); return }
 
-  const tx = db.transaction("assets", "readwrite")
-  tx.objectStore("assets").put({
-    ...asset,
+  const uid = window._getUid()
+  if(!uid) return
+  const { db, doc, updateDoc } = window._fs
+  await updateDoc(doc(db, "users", uid, "assets", id), {
     quantity:    newQty,
     buyPrice:    newPrice,
     buyPriceEUR: convertToEUR(newPrice, asset.currency)
     /* currentPrice intentionally preserved — will update on next price fetch */
   })
-  tx.oncomplete = () => loadAssets()
+  loadAssets()
 }
 
 /* Reads a CSV file, parses rows, and bulk-imports assets.
@@ -3061,7 +3143,7 @@ function bindCSVImport(){
 function importCSVFile(file){
 
     const reader = new FileReader()
-    reader.onload = e => {
+    reader.onload = async e => {
       let text = e.target.result
       /* Normalise line endings */
       text = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
@@ -3071,6 +3153,11 @@ function importCSVFile(file){
       rows.shift()  /* remove header row */
 
       let imported = 0, skipped = 0
+      const saves = []  /* collect Firestore write promises — writes are
+                            network round trips now, unlike instant local
+                            IndexedDB, so we must await them all before
+                            reloading or the table will show a stale/
+                            incomplete view right after import. */
       rows.forEach(row => {
         /* Split on commas not inside quoted fields */
         const cols = row.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(c => c.replace(/^"|"$/g, "").trim())
@@ -3097,7 +3184,7 @@ function importCSVFile(file){
         if(isNaN(buy) || isNaN(qty) || qty <= 0 || buy < 0){ skipped++; return }
         if(!["EUR","USD","INR"].includes(cur)) cur = "EUR"
 
-        saveAsset({
+        saves.push(saveAsset({
           name:         cols[nameIdx]   || "Unknown",
           ticker:       cols[tickerIdx] || "",
           broker:       cols[brokerIdx] || "",
@@ -3108,10 +3195,11 @@ function importCSVFile(file){
           buyPriceEUR:  convertToEUR(buy, cur),
           currentPrice: buy,
           buyDate:      hasDate ? cols[0] : new Date().toISOString().split("T")[0]
-        })
+        }))
         imported++
       })
 
+      await Promise.all(saves)
       loadAssets()
       const msg = skipped > 0
         ? `Imported ${imported} assets (${skipped} rows skipped — invalid data).\n\nNote: if you are re-importing to fix prices, first clear existing assets via Settings or use Backup → Restore.`
@@ -3836,104 +3924,11 @@ function getFundCache(){
 function setFundCache(data){
   try{ localStorage.setItem(FUND_CACHE_KEY, JSON.stringify({data, ts:Date.now()})) }catch(e){}
 }
- 
-function getManualFund(symbol) {
-  return new Promise((resolve) => {
-    const tx  = db.transaction("manualFundamentals", "readonly")
-    const req = tx.objectStore("manualFundamentals").get(symbol)
-    req.onsuccess = () => resolve(req.result || null)
-    req.onerror   = () => resolve(null)
-  })
-}
- 
-function getAllManualFunds() {
-  return new Promise((resolve) => {
-    const tx      = db.transaction("manualFundamentals", "readonly")
-    const results = {}
-    tx.objectStore("manualFundamentals").openCursor().onsuccess = e => {
-      const cursor = e.target.result
-      if (cursor) { results[cursor.value.symbol] = cursor.value; cursor.continue() }
-      else resolve(results)
-    }
-  })
-}
- 
-/* ── Staleness logic ──────────────────────────────────────────
-   Indian quarterly results seasons:
-   Q1: mid-Jul to mid-Aug  | Q2: mid-Oct to mid-Nov
-   Q3: mid-Jan to mid-Feb  | Q4: mid-Apr to mid-May
-   Rule: refresh every 90 days. Warn at 90, block at 120.
-   ─────────────────────────────────────────────────────────── */
-function getFundStaleness(updatedAt) {
-  if (!updatedAt) return { status: "none", label: null, days: null }
-  const days = Math.floor((Date.now() - updatedAt) / (1000 * 60 * 60 * 24))
-  if (days < 90)  return { status: "fresh",  label: null,                              days }
-  if (days < 120) return { status: "warn",   label: `⚠️ ${days}d old — refresh soon`, days }
-  return             { status: "stale",  label: `🔴 ${days}d old — stale, re-enter`,  days }
-}
- 
-/* ── Manual Fundamentals Modal ────────────────────────────────
-   Opens when user clicks "✏️" on a stock row.
-   Pre-fills if data already exists.
-   ─────────────────────────────────────────────────────────── */
-let _mfModalSymbol = null
- 
-function openManualFundModal(symbol, displayName) {
-  _mfModalSymbol = symbol
-  document.getElementById("mf-modal-title").textContent   = `${symbol} — ${displayName}`
-  document.getElementById("mf-screener-link").href        = `https://www.screener.in/company/${symbol}/`
-  document.getElementById("mf-modal-status").textContent  = ""
-  document.getElementById("mf-stale-warn").textContent    = ""
- 
-  /* Pre-fill if data exists */
-  getManualFund(symbol).then(d => {
-    const fields = ["roe","de","margins","revGrowth","profitGrowth","pb"]
-    fields.forEach(f => {
-      const el = document.getElementById("mf-" + f)
-      if (el) el.value = d?.[f] != null ? d[f] : ""
-    })
-    if (d?.updatedAt) {
-      const stale = getFundStaleness(d.updatedAt)
-      const dateStr = new Date(d.updatedAt).toLocaleDateString("en-GB", {day:"numeric",month:"short",year:"numeric"})
-      document.getElementById("mf-stale-warn").textContent =
-        stale.status === "fresh"
-          ? `✅ Last updated ${dateStr} (${stale.days}d ago)`
-          : stale.label + ` (last: ${dateStr})`
-    }
-  })
- 
-  document.getElementById("mf-modal-overlay").style.display = "flex"
-}
- 
-function closeManualFundModal() {
-  document.getElementById("mf-modal-overlay").style.display = "none"
-  _mfModalSymbol = null
-}
- 
-async function saveManualFundFromModal() {
-  if (!_mfModalSymbol) return
-  const n = id => { const v = parseFloat(document.getElementById(id)?.value); return isFinite(v) ? v : null }
-  const data = {
-    roe:         n("mf-roe"),
-    de:          n("mf-de"),
-    margins:     n("mf-margins"),
-    revGrowth:   n("mf-revGrowth"),
-    profitGrowth:n("mf-profitGrowth"),
-    pb:          n("mf-pb"),
-  }
-  const hasAny = Object.values(data).some(v => v !== null)
-  if (!hasAny) {
-    document.getElementById("mf-modal-status").textContent = "⚠️ Enter at least one value"
-    return
-  }
-  await saveManualFund(_mfModalSymbol, data)
-  document.getElementById("mf-modal-status").textContent = "✅ Saved!"
-  localStorage.removeItem("capintel_fundamentals_v4")  /* bust cache */
-  setTimeout(() => {
-    closeManualFundModal()
-    buildDynamicSellListHTMLAsync()  /* re-run analysis with new data */
-  }, 800)
-}
+/* Manual fundamentals entry feature (getManualFund, getAllManualFunds,
+   openManualFundModal, closeManualFundModal, saveManualFundFromModal,
+   getFundStaleness) was cancelled and removed here — it was confirmed
+   fully dead: zero onclick triggers anywhere, and saveManualFundFromModal
+   called a saveManualFund() that was never even defined in this file. */
 async function fetchNoiseAnalysis(positions, force=false){
   if(!positions?.length) return null
   const cacheKey = positions.map(p=>p.key).sort().join(",")
@@ -5793,7 +5788,11 @@ async function loadMFDetail(pos) {
 /* ── BOOT SEQUENCE ────────────────────────────────────────
    These calls run immediately at script parse time.
    bindAssetForm / bindTabs / bindCSVImport attach event listeners.
-   initDB() (from db.js) opens IndexedDB; on success it calls startApp(). */
+   startApp() is NOT called from here — db.js's onAuthStateChanged
+   listener calls it directly once Firebase confirms a signed-in
+   user (see db.js). There is no initDB() anymore; the old
+   IndexedDB-open-then-callback pattern doesn't apply to Firebase Auth,
+   which resolves via its own listener instead of an explicit open call. */
 bindAssetForm()
 bindTabs()
 bindCSVImport()
@@ -5802,7 +5801,3 @@ bindSearchDropdown()
 document.getElementById("sortAssets")?.addEventListener("change",  () => loadAssets())
 document.getElementById("filterType")?.addEventListener("change",   () => loadAssets())
 document.getElementById("filterGrowth")?.addEventListener("change", () => loadAssets())
-
-if(typeof initDB === "function"){
-  initDB()
-}

@@ -1,45 +1,157 @@
 /* ============================================================
    CapIntel — db.js
-   IndexedDB initialisation. Loaded before app.js in index.html.
+   Firebase Auth + Firestore initialisation.
+   Replaces IndexedDB entirely (see architecture note in memory —
+   this file used to open a local "portfolioDB" IndexedDB database;
+   that is gone, data now lives in Firestore under users/{uid}/...).
 
-   Creates (or opens) a database called "portfolioDB" at version 2.
-   Object stores:
+   Load order in index.html:
+   1. Firebase SDK <script type="module"> block (app/auth/firestore)
+   2. THIS file (db.js)
+   3. app.js
 
-   1. "assets"         — keyPath: "id" (auto-increment). One row per lot.
-   2. "portfolioHistory" — keyPath: "timestamp". Portfolio snapshots.
-   3. "manualFundamentals" — keyPath: "symbol". Manually entered
-      fundamental data per stock (ROE, D/E, margins, growth, P/B).
-      Added in version 2.
+   Auth flow:
+   - On page load, shows the #loginGate overlay and hides #appRoot.
+   - onAuthStateChanged fires once Firebase resolves whether a user
+     is already signed in (persisted session) or not.
+   - If signed in: hide #loginGate, show #appRoot, call startApp()
+     from app.js — same contract as the old initDB() → startApp().
+   - If not signed in: show #loginGate, wait for the login form submit.
+
+   Firestore paths (all data is scoped under the signed-in user's UID):
+     users/{uid}/assets/{docId}           — one doc per buy lot
+     users/{uid}/portfolioHistory/{docId} — one doc per snapshot
+
+   IMPORTANT: doc IDs from Firestore are random alphanumeric STRINGS,
+   not sequential integers like the old IndexedDB autoIncrement keys.
+   Every asset document now carries an explicit `createdAt` (Date.now())
+   field written at save time — this is what "Sort: Date Added" in
+   app.js reads, NOT the doc ID (Firestore IDs are deliberately
+   randomised for write-scaling and carry no chronological meaning).
    ============================================================ */
 
-let db;
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js"
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js"
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  collection,
+  doc,
+  addDoc,
+  getDocs,
+  getDoc,
+  deleteDoc,
+  updateDoc,
+  writeBatch,
+  query,
+  orderBy
+} from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js"
 
-function initDB(){
-  const request = indexedDB.open("portfolioDB", 2);  /* bumped to 2 */
+/* ── Your Firebase project config ── */
+const firebaseConfig = {
+  apiKey:            "AIzaSyDQ60vw7W8dvoJFSd-2nf9Vlq90Q-h92cA",
+  authDomain:        "capintel070726.firebaseapp.com",
+  projectId:         "capintel070726",
+  storageBucket:     "capintel070726.firebasestorage.app",
+  messagingSenderId: "340420536163",
+  appId:             "1:340420536163:web:63b6caef5dd9998dd41556"
+  /* measurementId intentionally omitted — Analytics not used */
+}
 
-  request.onupgradeneeded = event => {
-    db = event.target.result;
+const firebaseApp = initializeApp(firebaseConfig)
+const auth        = getAuth(firebaseApp)
 
-    if(!db.objectStoreNames.contains("assets")){
-      db.createObjectStore("assets", { keyPath:"id", autoIncrement:true });
+/* Firestore with offline persistence — modern API (enableIndexedDbPersistence
+   is deprecated). Multi-tab manager avoids a "failed-precondition" error if
+   you ever have the app open in two browser tabs on the same machine. */
+const firestoreDb = initializeFirestore(firebaseApp, {
+  localCache: persistentLocalCache({
+    tabManager: persistentMultipleTabManager()
+  })
+})
+
+/* ── Globals used throughout app.js ──────────────────────
+   `db` is kept as the variable name app.js already expects
+   (minimises changes elsewhere) but it is now a Firestore
+   instance, not an IndexedDB database handle.
+   `currentUid` is set once auth resolves — every Firestore
+   path in app.js is built as `users/${currentUid}/...`. */
+let db = firestoreDb
+let currentUid = null
+
+window._firebaseAuth = auth
+window._getUid = () => currentUid
+
+/* app.js is a classic (non-module) script and cannot use `import`.
+   Expose exactly the Firestore functions it needs here, plus the
+   db instance itself. app.js calls these as window._fs.addDoc(...) etc. */
+window._fs = {
+  db: firestoreDb,
+  collection, doc, addDoc, getDocs, getDoc, deleteDoc, updateDoc,
+  writeBatch, query, orderBy
+}
+
+/* ── Auth state listener ──────────────────────────────────
+   Fires on page load (checks persisted session) and again
+   whenever sign-in/sign-out happens. */
+onAuthStateChanged(auth, user => {
+  const gate    = document.getElementById("loginGate")
+  const appRoot = document.getElementById("appRoot")
+
+  if (user) {
+    currentUid = user.uid
+    if (gate)    gate.style.display = "none"
+    if (appRoot) appRoot.style.display = ""
+    if (typeof startApp === "function") {
+      startApp()
     }
-    if(!db.objectStoreNames.contains("portfolioHistory")){
-      db.createObjectStore("portfolioHistory", { keyPath:"timestamp" });
-    }
-    /* NEW in v2 — manual fundamentals entered by user from Screener.in */
-    if(!db.objectStoreNames.contains("manualFundamentals")){
-      db.createObjectStore("manualFundamentals", { keyPath:"symbol" });
-    }
-  };
+  } else {
+    currentUid = null
+    if (gate)    gate.style.display = "flex"
+    if (appRoot) appRoot.style.display = "none"
+  }
+})
 
-  request.onsuccess = event => {
-    db = event.target.result;
-    if(typeof startApp === "function"){
-      startApp();
-    }
-  };
+/* ── Login form handlers — called from index.html ── */
+window.handleLogin = async function(){
+  const emailEl = document.getElementById("loginEmail")
+  const passEl  = document.getElementById("loginPassword")
+  const errEl   = document.getElementById("loginError")
+  const btn     = document.getElementById("loginBtn")
 
-  request.onerror = event => {
-    console.error("IndexedDB failed to open:", request.error);
-  };
+  const email    = emailEl?.value?.trim()
+  const password = passEl?.value
+
+  if (errEl) errEl.textContent = ""
+  if (!email || !password) {
+    if (errEl) errEl.textContent = "Enter both email and password."
+    return
+  }
+
+  if (btn) { btn.disabled = true; btn.textContent = "Signing in…" }
+
+  try {
+    await signInWithEmailAndPassword(auth, email, password)
+    /* onAuthStateChanged above handles showing the app */
+  } catch (e) {
+    if (errEl) {
+      errEl.textContent = e.code === "auth/invalid-credential" || e.code === "auth/wrong-password" || e.code === "auth/user-not-found"
+        ? "Incorrect email or password."
+        : `Sign-in failed: ${e.message}`
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = "Sign in" }
+  }
+}
+
+window.handleLogout = async function(){
+  if (!confirm("Sign out of CapIntel?")) return
+  await signOut(auth)
+  /* onAuthStateChanged above handles showing the login gate */
 }
