@@ -107,7 +107,7 @@ onAuthStateChanged(auth, user => {
   if (user) {
     currentUid = user.uid
     if (gate)    gate.style.display = "none"
-    if (appRoot) appRoot.style.display = ""
+    if (appRoot) appRoot.style.display = "contents"
     if (typeof startApp === "function") {
       startApp()
     }
